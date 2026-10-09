@@ -263,7 +263,7 @@ const styles = StyleSheet.create({
   bottomLeft: { left: 0, bottom: 0, borderLeftWidth: 4, borderBottomWidth: 4, borderBottomLeftRadius: 8 },
   bottomRight: { right: 0, bottom: 0, borderRightWidth: 4, borderBottomWidth: 4, borderBottomRightRadius: 8 },
   topRow: { position: 'absolute', left: 12, right: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  close: { width: touch.min, height: touch.min, borderRadius: touch.min / 2, backgroundColor: 'rgba(16, 23, 19, 0.75)', alignItems: 'center', justifyContent: 'center' },
+  close: { width: touch.round, height: touch.round, borderRadius: touch.round / 2, backgroundColor: 'rgba(16, 23, 19, 0.75)', alignItems: 'center', justifyContent: 'center' },
   pills: { flexDirection: 'row', gap: 8 },
   pill: { height: 36, paddingHorizontal: 12, borderRadius: 999, backgroundColor: 'rgba(16, 23, 19, 0.82)', flexDirection: 'row', alignItems: 'center', gap: 7 },
   dot: { width: 9, height: 9, borderRadius: 5 },

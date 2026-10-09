@@ -7,7 +7,7 @@ import Icon from '../components/Icon';
 import type { Observation, Waypoint } from '../db';
 import { bearingDegrees, compassPoint, distanceMeters, formatDistance, timeAgo, type LngLat } from '../format';
 import { KIND_INFO, WAYPOINT_INFO } from '../kinds';
-import { colors, fonts, palette, space, sync } from '../theme';
+import { colors, fonts, palette, space, sync, touch } from '../theme';
 import { turnHint, useArrowRotation, useHeading } from '../useHeading';
 
 // What the arrow points at, and how to talk about it
@@ -141,7 +141,7 @@ export default function GuideScreen({ target: guide, onBack }: Props) {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.chrome, paddingHorizontal: space.lg },
   header: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  back: { width: 48, height: 48, borderRadius: 24, backgroundColor: colors.chromeRaised, alignItems: 'center', justifyContent: 'center' },
+  back: { width: touch.round, height: touch.round, borderRadius: touch.round / 2, backgroundColor: colors.chromeRaised, alignItems: 'center', justifyContent: 'center' },
   headerText: { flex: 1, gap: 4, alignItems: 'flex-start' },
   badge: { fontSize: 12, fontWeight: '800', letterSpacing: 0.5, borderRadius: 4, overflow: 'hidden', paddingVertical: 3, paddingHorizontal: 8 },
   title: { fontFamily: fonts.display, fontSize: 30, lineHeight: 32, color: colors.chromeText },

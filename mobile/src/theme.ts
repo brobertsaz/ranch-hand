@@ -73,8 +73,8 @@ export const sync = {
 export const radius = { sm: 4, md: 8, lg: 14, pill: 999 } as const;
 export const space = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32 } as const;
 
-// Gloves and sunlight: big targets, heavy type
-export const touch = { min: 48, primary: 64, shutter: 84 } as const;
+// Gloves and sunlight: big targets, heavy type. Nothing tappable under `min`; the main action on a screen is `primary`.
+export const touch = { min: 56, primary: 64, shutter: 88, round: 52 } as const;
 
 export const fonts = {
   // Condensed display face, like the Ranch Atlas headings. Load with @expo-google-fonts/barlow-condensed

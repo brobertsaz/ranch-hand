@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { KeyboardAvoidingView, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { colors, fonts, palette, radius, space } from '../theme';
+import { colors, fonts, palette, radius, space, touch } from '../theme';
 import AppButton from './AppButton';
 
 type Props = {
@@ -68,14 +68,14 @@ const styles = StyleSheet.create({
   hint: { fontSize: 15, color: colors.textMuted },
   chips: { gap: space.sm },
   chip: {
-    minHeight: 44, paddingHorizontal: 14, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.border,
+    minHeight: touch.min, paddingHorizontal: 16, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.border,
     backgroundColor: colors.background, justifyContent: 'center',
   },
   chipOn: { backgroundColor: palette.pine, borderColor: palette.pine },
-  chipText: { fontSize: 15, fontWeight: '600', color: colors.text },
+  chipText: { fontSize: 16, fontWeight: '700', color: colors.text },
   chipTextOn: { color: palette.canvas },
   input: {
-    minHeight: 52, borderWidth: 1, borderColor: colors.input, borderRadius: radius.md, paddingHorizontal: 14,
+    minHeight: touch.min, borderWidth: 1, borderColor: colors.input, borderRadius: radius.md, paddingHorizontal: 14,
     fontSize: 17, color: colors.text, backgroundColor: palette.white,
   },
   actions: { flexDirection: 'row', gap: 10 },

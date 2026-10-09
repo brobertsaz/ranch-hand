@@ -10,7 +10,7 @@ import { getState } from '../db';
 import { timeAgo } from '../format';
 import { useMemberNames, who } from '../members';
 import { crewNews, dayLabel, isNew, markNewsSeen, newsSeenAt, type NewsItem } from '../news';
-import { colors, fonts, palette, space } from '../theme';
+import { colors, fonts, palette, space, touch } from '../theme';
 import type { SyncState } from '../useSync';
 
 type Props = {
@@ -123,8 +123,8 @@ const styles = StyleSheet.create({
   title: { fontFamily: fonts.displayBlack, fontSize: 44, lineHeight: 44, color: colors.chromeText },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: space.md },
   headerMeta: { flex: 1, fontSize: 14, color: colors.chromeTextMuted },
-  syncButton: { minHeight: 44, paddingHorizontal: 14, borderRadius: 999, borderWidth: 1, borderColor: 'rgba(245, 239, 224, 0.3)', justifyContent: 'center' },
-  syncButtonText: { color: colors.chromeText, fontSize: 14, fontWeight: '700' },
+  syncButton: { minHeight: touch.round, paddingHorizontal: 18, borderRadius: 999, borderWidth: 1, borderColor: 'rgba(245, 239, 224, 0.3)', justifyContent: 'center' },
+  syncButtonText: { color: colors.chromeText, fontSize: 15, fontWeight: '700' },
   list: { paddingHorizontal: 12, paddingTop: 14, gap: 10 },
   waiting: {
     borderWidth: 2, borderStyle: 'dashed', borderColor: '#C98A22', backgroundColor: '#FBEFD6', borderRadius: 12,
@@ -135,7 +135,7 @@ const styles = StyleSheet.create({
   empty: { fontSize: 15, lineHeight: 21, color: colors.textMuted, paddingHorizontal: 4, paddingTop: space.sm },
   day: { marginTop: 6, marginHorizontal: 4, fontSize: 13, fontWeight: '800', letterSpacing: 1, color: colors.textMuted },
   row: {
-    minHeight: 64, backgroundColor: colors.surface, borderWidth: 1, borderColor: 'rgba(23, 27, 24, 0.14)', borderRadius: 12,
+    minHeight: 72, backgroundColor: colors.surface, borderWidth: 1, borderColor: 'rgba(23, 27, 24, 0.14)', borderRadius: 12,
     padding: 10, flexDirection: 'row', alignItems: 'center', gap: 12,
   },
   rowNew: { borderColor: palette.trailDark, borderWidth: 2 },

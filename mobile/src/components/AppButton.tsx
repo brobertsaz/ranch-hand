@@ -49,7 +49,7 @@ const styles = StyleSheet.create({
   chrome: { backgroundColor: colors.chromeRaised, borderWidth: 1, borderColor: 'rgba(245, 239, 224, 0.2)' },
   pressed: { opacity: 0.8 },
   disabled: { opacity: 0.45 },
-  label: { fontSize: 16, fontWeight: '700' },
+  label: { fontSize: 17, fontWeight: '700' },
   largeLabel: { fontFamily: fonts.display, fontWeight: undefined, fontSize: 26, letterSpacing: 0.26 },
 });
 

@@ -102,7 +102,7 @@ const styles = StyleSheet.create({
   subheading: { fontFamily: fonts.display, fontSize: 24, color: colors.text, marginTop: space.md },
   empty: { fontSize: 15, color: colors.textMuted },
   ride: {
-    minHeight: 64, flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12,
+    minHeight: 72, flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12,
     backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: 12,
   },
   rideIcon: { width: 40, height: 40, borderRadius: 20, backgroundColor: palette.sky, alignItems: 'center', justifyContent: 'center' },

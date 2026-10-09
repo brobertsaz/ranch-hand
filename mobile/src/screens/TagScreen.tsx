@@ -8,7 +8,7 @@ import Icon from '../components/Icon';
 import { KINDS, type Kind } from '../db';
 import { formatCoords } from '../format';
 import { CONDITIONS, KIND_INFO } from '../kinds';
-import { colors, fonts, palette, space, sync } from '../theme';
+import { colors, fonts, palette, space, sync, touch } from '../theme';
 
 // 'pending' until the first fix comes back; null if none arrived in time
 export type Fix = Location.LocationObject | null | 'pending';
@@ -219,8 +219,8 @@ const styles = StyleSheet.create({
   noPhoto: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 6, paddingTop: 40 },
   noPhotoText: { color: colors.chromeTextMuted, fontSize: 15, fontWeight: '600' },
   stripControls: { position: 'absolute', left: 12, right: 12, flexDirection: 'row', justifyContent: 'space-between' },
-  roundButton: { width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(16, 23, 19, 0.75)', alignItems: 'center', justifyContent: 'center' },
-  retake: { height: 44, paddingHorizontal: 16, borderRadius: 999, backgroundColor: 'rgba(16, 23, 19, 0.75)', justifyContent: 'center' },
+  roundButton: { width: touch.round, height: touch.round, borderRadius: touch.round / 2, backgroundColor: 'rgba(16, 23, 19, 0.75)', alignItems: 'center', justifyContent: 'center' },
+  retake: { height: touch.round, paddingHorizontal: 18, borderRadius: 999, backgroundColor: 'rgba(16, 23, 19, 0.75)', justifyContent: 'center' },
   retakeText: { color: colors.chromeText, fontSize: 15, fontWeight: '700' },
   coords: {
     position: 'absolute', left: 12, bottom: 12, flexDirection: 'row', alignItems: 'center', gap: 6,

@@ -12,7 +12,7 @@ import { relativeTo, timeAgo, type LngLat } from '../format';
 import { KIND_INFO, STATUS_LABEL, WAYPOINT_INFO } from '../kinds';
 import { useMemberNames, who } from '../members';
 import { photoFile } from '../photoFiles';
-import { colors, fonts, palette, space } from '../theme';
+import { colors, fonts, palette, space, touch } from '../theme';
 import GuideScreen, { guideToWaypoint } from './GuideScreen';
 
 type Props = {
@@ -147,7 +147,7 @@ const styles = StyleSheet.create({
   heroIcon: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, alignItems: 'center', justifyContent: 'center' },
   heroShade: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 100, backgroundColor: 'rgba(10, 16, 12, 0.55)' },
   back: {
-    position: 'absolute', left: 12, width: 44, height: 44, borderRadius: 22,
+    position: 'absolute', left: 12, width: touch.round, height: touch.round, borderRadius: touch.round / 2,
     backgroundColor: 'rgba(16, 23, 19, 0.75)', alignItems: 'center', justifyContent: 'center',
   },
   heroText: { paddingHorizontal: space.lg, paddingBottom: space.lg, gap: 6 },

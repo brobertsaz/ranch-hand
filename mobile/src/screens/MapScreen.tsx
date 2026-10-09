@@ -34,7 +34,7 @@ import { estimateTiles, expandBounds, MIN_PACK_SPAN_KM, PACK_MAX_ZOOM, PACK_MIN_
 import { deleteAllPhotos, photoFile } from '../photoFiles';
 import { cumulative, placesOnTrail } from '../trail';
 import { forgetDevice, mapStyleUrl, type Device } from '../settings';
-import { colors, fonts, palette, radius, space, sync } from '../theme';
+import { colors, fonts, palette, radius, space, sync, touch } from '../theme';
 import { useSync, type SyncState } from '../useSync';
 import CaptureScreen from './CaptureScreen';
 import ObservationScreen from './ObservationScreen';
@@ -458,7 +458,7 @@ export default function MapScreen({ device, onSignOut }: Props) {
             </View>
             <SyncPill state={syncState} unsynced={unsynced} onPress={syncState.syncNow} />
           </View>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterRow} contentContainerStyle={[styles.chips, styles.filterChips]}>
             <Chip label="All" on={filter === 'all'} onPress={() => setFilter('all')} />
             {KINDS.map((k) => (
               <Chip key={k} label={KIND_INFO[k].short} color={KIND_INFO[k].pinColor} on={filter === k} onPress={() => setFilter(k)} />
@@ -821,22 +821,26 @@ const styles = StyleSheet.create({
   ranch: { fontFamily: fonts.display, fontSize: 26, lineHeight: 28, color: colors.chromeText },
   counts: { fontSize: 13, color: colors.chromeTextMuted },
   syncPill: {
-    height: 44, paddingHorizontal: 14, borderRadius: radius.pill, flexDirection: 'row', alignItems: 'center', gap: 8,
+    height: touch.round, paddingHorizontal: 16, borderRadius: radius.pill, flexDirection: 'row', alignItems: 'center', gap: 8,
     borderWidth: 1, borderColor: 'rgba(245, 239, 224, 0.2)', backgroundColor: colors.chromeRaised,
   },
   syncPillWarn: { borderColor: 'rgba(227, 163, 59, 0.5)', backgroundColor: 'rgba(227, 163, 59, 0.14)' },
-  syncPillText: { color: colors.chromeText, fontSize: 14, fontWeight: '700' },
+  syncPillText: { color: colors.chromeText, fontSize: 15, fontWeight: '700' },
   chips: { gap: space.sm },
   chip: {
-    height: 40, paddingHorizontal: 14, borderRadius: radius.pill, backgroundColor: 'rgba(16, 23, 19, 0.82)',
+    height: 48, paddingHorizontal: 16, borderRadius: radius.pill, backgroundColor: 'rgba(16, 23, 19, 0.82)',
     flexDirection: 'row', alignItems: 'center', gap: 7,
   },
-  chipOn: { backgroundColor: palette.canvas, paddingHorizontal: 16 },
+  // Same size on and off, so picking a filter doesn't nudge the row
+  chipOn: { backgroundColor: palette.canvas },
   chipDot: { width: 10, height: 10, borderRadius: 5 },
-  chipText: { color: colors.chromeText, fontSize: 14, fontWeight: '600' },
-  chipTextOn: { color: palette.pine, fontWeight: '800' },
+  chipText: { color: colors.chromeText, fontSize: 15, fontWeight: '700' },
+  chipTextOn: { color: palette.pine },
+  // Runs to the screen edges and scrolls, instead of stopping short inside the header's margin
+  filterRow: { marginHorizontal: -12 },
+  filterChips: { paddingHorizontal: 12 },
   controls: { position: 'absolute', right: 12, gap: space.sm },
-  control: { width: 48, height: 48, borderRadius: 12, backgroundColor: colors.chrome, alignItems: 'center', justifyContent: 'center' },
+  control: { width: touch.min, height: touch.min, borderRadius: 14, backgroundColor: colors.chrome, alignItems: 'center', justifyContent: 'center' },
   peek: {
     ...shadow, position: 'absolute', left: 12, right: 12, backgroundColor: colors.surface, borderRadius: 16, padding: 10,
     flexDirection: 'row', alignItems: 'center', gap: 12,
@@ -860,7 +864,7 @@ const styles = StyleSheet.create({
   },
   rideCardText: { flex: 1, gap: 2 },
   rideCardActions: { flexDirection: 'row', alignItems: 'center', gap: space.sm, marginTop: 6 },
-  rideCardClose: { width: 48, height: 48, alignItems: 'center', justifyContent: 'center' },
+  rideCardClose: { width: touch.min, height: touch.min, alignItems: 'center', justifyContent: 'center' },
   backdrop: { flex: 1, backgroundColor: colors.scrim, justifyContent: 'flex-end' },
   sheet: {
     backgroundColor: colors.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20,

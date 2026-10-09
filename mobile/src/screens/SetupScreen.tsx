@@ -8,7 +8,7 @@ import AppButton from '../components/AppButton';
 import Icon from '../components/Icon';
 import Logo from '../components/Logo';
 import { DEFAULT_API_URL, saveDevice, type Device } from '../settings';
-import { colors, fonts, palette, radius, space } from '../theme';
+import { colors, fonts, palette, radius, space, touch } from '../theme';
 
 // The first screen: the brand up top, then join a ranch with the code the owner shares from the Crew tab.
 // No accounts yet; the server address hides behind a link since testers never need to change it.
@@ -126,13 +126,13 @@ const styles = StyleSheet.create({
   title: { fontFamily: fonts.display, fontSize: 32, color: colors.text, marginBottom: space.sm },
   label: { fontSize: 14, fontWeight: '800', letterSpacing: 0.3, color: colors.text, marginTop: space.sm },
   input: {
-    minHeight: 52, borderWidth: 1, borderColor: colors.input, borderRadius: radius.md, paddingHorizontal: 14,
+    minHeight: touch.min, borderWidth: 1, borderColor: colors.input, borderRadius: radius.md, paddingHorizontal: 14,
     backgroundColor: colors.surface, color: colors.text, fontSize: 17,
   },
   codeInput: { fontFamily: fonts.displayBlack, fontSize: 30, letterSpacing: 2, minHeight: 60 },
   hint: { fontSize: 13, color: colors.textMuted },
   error: { backgroundColor: '#F8E1DC', borderRadius: radius.md, padding: 12, marginVertical: space.sm },
   errorText: { color: palette.destructive, fontSize: 15, fontWeight: '600' },
-  serverToggle: { minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, marginTop: space.sm },
+  serverToggle: { minHeight: touch.min, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, marginTop: space.sm },
   serverToggleText: { fontSize: 14, fontWeight: '600', color: colors.textMuted },
 });

@@ -13,7 +13,7 @@ const TABS: { key: Tab; label: string; icon: IconName }[] = [
   { key: 'crew', label: 'Crew', icon: 'crew' },
 ];
 
-const BAR_HEIGHT = 66;
+const BAR_HEIGHT = 72;
 const CAMERA_SIZE = 80;
 
 export function useTabBarHeight() {
@@ -75,7 +75,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
     backgroundColor: colors.chrome,
   },
-  tab: { flex: 1, height: 52, alignItems: 'center', justifyContent: 'center', gap: 4 },
+  tab: { flex: 1, height: 60, alignItems: 'center', justifyContent: 'center', gap: 4 },
   label: { fontSize: 12, fontWeight: '600', color: colors.chromeTextMuted },
   labelOn: { fontWeight: '700', color: colors.chromeText },
   badge: {

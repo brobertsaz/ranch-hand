@@ -1,6 +1,6 @@
 import { StyleSheet, View } from 'react-native';
 
-import { palette } from '../theme';
+import { palette, touch } from '../theme';
 import Icon, { type IconName } from './Icon';
 
 type Props = {
@@ -40,8 +40,8 @@ export default function Pin({ color, onColor, icon, synced, selected, square = f
 }
 
 const styles = StyleSheet.create({
-  // Finger-sized even for the small pin
-  target: { minWidth: 48, minHeight: 48, alignItems: 'center', justifyContent: 'center' },
+  // Glove-sized even for the small pin
+  target: { minWidth: touch.min, minHeight: touch.min, alignItems: 'center', justifyContent: 'center' },
   pin: {
     borderColor: palette.white,
     alignItems: 'center',
