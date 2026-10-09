@@ -11,7 +11,8 @@ import {
 import * as Location from 'expo-location';
 import { addDatabaseChangeListener } from 'expo-sqlite';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, Button, Image, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
+import { Alert, Image, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { liveObservations, photosFor, type Observation } from '../db';
@@ -19,17 +20,12 @@ import { estimateTiles, expandBounds, MIN_PACK_SPAN_KM, PACK_MAX_ZOOM, PACK_MIN_
 import { photoFile } from '../photoFiles';
 import { forgetDevice, mapStyleUrl, type Device } from '../settings';
 import { useSync } from '../useSync';
+import AppButton from '../components/AppButton';
+import { colors, kindColors, palette, radius, touch } from '../theme';
 import CaptureScreen from './CaptureScreen';
 
 // Roughly Sundance, WY, until the phone has a fix
 const START: [number, number] = [-104.376, 44.406];
-
-const KIND_COLORS: Record<string, string> = {
-  sick_animal: '#d93025',
-  feed_check: '#f2a33a',
-  fence_issue: '#7b5cd6',
-  other: '#2f7de1',
-};
 
 type Props = { device: Device; onSignOut: () => void };
 
@@ -126,6 +122,7 @@ export default function MapScreen({ device, onSignOut }: Props) {
 
   return (
     <View style={{ flex: 1 }}>
+      <StatusBar style="light" />
       <Map ref={map} style={{ flex: 1 }} mapStyle={mapStyleUrl(device)} logo={false}>
         {start && <Camera ref={camera} initialViewState={{ center: start, zoom: 14 }} />}
         <UserLocation accuracy />
@@ -133,19 +130,19 @@ export default function MapScreen({ device, onSignOut }: Props) {
           // Keyed on sync status too: the native marker doesn't redraw when only its children change
           <Marker key={`${o.id}:${o._status}`} id={o.id} lngLat={[o.longitude, o.latitude]} onPress={() => select(o)}>
             <View style={styles.pinTarget}>
-              <View style={[styles.pin, { backgroundColor: KIND_COLORS[o.kind] }, o._status !== 'synced' && styles.pinUnsynced]} />
+              <View style={[styles.pin, { backgroundColor: kindColors[o.kind] ?? palette.muted }, o._status !== 'synced' && styles.pinUnsynced]} />
             </View>
           </Marker>
         ))}
       </Map>
 
-      <SafeAreaView edges={['top']} style={styles.statusBar} pointerEvents="box-none">
+      <SafeAreaView edges={['top']} style={[styles.statusBar, styles.statusBarFill]} pointerEvents="box-none">
         <View style={styles.panel}>
           <Text style={styles.bold}>
             {device.ranchName} · {syncState.online ? 'online' : 'offline'}
             {syncState.syncing ? ' · syncing…' : ''}
           </Text>
-          <Text>
+          <Text style={styles.panelText}>
             Waiting to sync: {syncState.pending.records} records, {syncState.pending.uploads} photo uploads
           </Text>
           {syncState.lastResult && <Text style={styles.small}>{syncState.lastResult}</Text>}
@@ -154,13 +151,14 @@ export default function MapScreen({ device, onSignOut }: Props) {
       </SafeAreaView>
 
       <SafeAreaView edges={['bottom']} style={styles.toolbar}>
-        <Button
+        <AppButton
+          variant="chrome"
           title={downloading === null ? 'Download area' : `Downloading ${Math.round(downloading)}%`}
           onPress={downloadArea}
           disabled={downloading !== null}
         />
-        <Button title="Me" onPress={centerOnMe} />
-        <Button title="Sync" onPress={syncState.syncNow} disabled={syncState.syncing} />
+        <AppButton title="Me" variant="chrome" onPress={centerOnMe} />
+        <AppButton title="Sync" variant="chrome" onPress={syncState.syncNow} disabled={syncState.syncing} />
         <Pressable style={styles.addButton} onPress={() => setCapturing(true)} accessibilityLabel="New observation">
           <Text style={styles.addText}>+</Text>
         </Pressable>
@@ -186,10 +184,10 @@ export default function MapScreen({ device, onSignOut }: Props) {
               {selected.photoUris.map((uri) => (
                 <Image key={uri} source={{ uri }} style={styles.photo} />
               ))}
-              <Text style={styles.bold}>{selected.observation.kind.replace('_', ' ')}</Text>
-              {selected.observation.tag_number && <Text>Tag {selected.observation.tag_number}</Text>}
-              {selected.observation.note && <Text>{selected.observation.note}</Text>}
-              <Text style={styles.small}>
+              <Text style={styles.cardTitle}>{selected.observation.kind.replace('_', ' ')}</Text>
+              {selected.observation.tag_number && <Text style={styles.cardTag}>Tag {selected.observation.tag_number}</Text>}
+              {selected.observation.note && <Text style={styles.cardText}>{selected.observation.note}</Text>}
+              <Text style={styles.cardSmall}>
                 {new Date(selected.observation.observed_at).toLocaleString()} · ±{Math.round(selected.observation.accuracy ?? 0)} m ·{' '}
                 {selected.observation._status}
               </Text>
@@ -212,20 +210,29 @@ function describePack(status: OfflinePackStatus): string {
 
 const styles = StyleSheet.create({
   statusBar: { position: 'absolute', top: 0, left: 0, right: 0 },
-  panel: { margin: 8, padding: 10, borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.92)', gap: 2 },
+  statusBarFill: { backgroundColor: colors.chrome },
+  panel: { margin: 8, padding: 12, borderRadius: radius.lg, backgroundColor: colors.chrome, gap: 2 },
+  panelText: { color: colors.chromeText },
   toolbar: {
     position: 'absolute', bottom: 0, left: 0, right: 0, flexDirection: 'row', justifyContent: 'space-around',
-    alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.92)', paddingTop: 8,
+    alignItems: 'center', backgroundColor: colors.chrome, paddingTop: 10, paddingHorizontal: 6, gap: 6,
   },
-  addButton: { width: 56, height: 56, borderRadius: 28, backgroundColor: '#2f7de1', alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
-  addText: { color: 'white', fontSize: 32, lineHeight: 36 },
+  addButton: {
+    width: touch.primary, height: touch.primary, borderRadius: touch.primary / 2, backgroundColor: palette.trail,
+    alignItems: 'center', justifyContent: 'center', marginBottom: 8,
+  },
+  addText: { color: palette.white, fontSize: 36, lineHeight: 40, fontWeight: '600' },
   pinTarget: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }, // finger-sized tap area
-  pin: { width: 18, height: 18, borderRadius: 9, borderWidth: 2, borderColor: 'white' },
-  pinUnsynced: { borderColor: '#222', borderStyle: 'dashed' },
-  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', padding: 24 },
-  card: { backgroundColor: 'white', borderRadius: 10, padding: 14, gap: 6 },
-  photo: { width: '100%', aspectRatio: 3 / 4, borderRadius: 6 },
-  bold: { fontWeight: '600' },
-  small: { fontSize: 12, color: '#444' },
-  signOut: { position: 'absolute', right: 8, bottom: 110, opacity: 0.5 },
+  pin: { width: 24, height: 24, borderRadius: 12, borderWidth: 3, borderColor: palette.white },
+  pinUnsynced: { borderColor: palette.white, borderStyle: 'dashed' },
+  backdrop: { flex: 1, backgroundColor: colors.scrim, justifyContent: 'center', padding: 24 },
+  card: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: 14, gap: 6 },
+  photo: { width: '100%', aspectRatio: 3 / 4, borderRadius: radius.md },
+  cardTitle: { color: colors.text, fontSize: 20, fontWeight: '800', textTransform: 'capitalize' },
+  cardTag: { color: colors.text, fontSize: 17, fontWeight: '700' },
+  cardText: { color: colors.text, fontSize: 16 },
+  cardSmall: { fontSize: 13, color: colors.textMuted },
+  bold: { fontWeight: '700', color: colors.chromeText, fontSize: 16 },
+  small: { fontSize: 12, color: colors.chromeTextMuted },
+  signOut: { position: 'absolute', right: 8, bottom: 120, padding: 6, borderRadius: radius.sm, backgroundColor: colors.scrim },
 });
