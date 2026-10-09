@@ -66,3 +66,18 @@ export function relativeTo(from: LngLat, to: LngLat): string {
   if (meters < 30) return 'Right where you are';
   return `${formatDistance(meters)} ${compassPoint(bearingDegrees(from, to))} of you`;
 }
+
+// "1 h 20 m", "12 m", "40 s"
+export function formatDuration(ms: number): string {
+  const minutes = Math.floor(ms / 60_000);
+  if (minutes < 1) return `${Math.max(0, Math.round(ms / 1000))} s`;
+  if (minutes < 60) return `${minutes} m`;
+  return `${Math.floor(minutes / 60)} h ${minutes % 60} m`;
+}
+
+// "1:05:09", for a running timer
+export function formatClock(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${Math.floor(total / 3600)}:${pad(Math.floor((total % 3600) / 60))}:${pad(total % 60)}`;
+}

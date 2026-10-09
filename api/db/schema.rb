@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_09_200733) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_09_203944) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -68,9 +68,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_09_200733) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.string "waypoint_id"
+    t.datetime "resolved_at"
+    t.bigint "resolved_by_id"
     t.index ["member_id"], name: "index_observations_on_member_id"
     t.index ["ranch_id", "updated_at"], name: "index_observations_on_ranch_id_and_updated_at"
     t.index ["ranch_id"], name: "index_observations_on_ranch_id"
+    t.index ["resolved_by_id"], name: "index_observations_on_resolved_by_id"
     t.index ["waypoint_id"], name: "index_observations_on_waypoint_id"
   end
 
@@ -94,6 +97,21 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_09_200733) do
     t.index ["invite_code"], name: "index_ranches_on_invite_code", unique: true
   end
 
+  create_table "rides", id: :string, force: :cascade do |t|
+    t.bigint "ranch_id", null: false
+    t.bigint "member_id", null: false
+    t.datetime "started_at", null: false
+    t.datetime "ended_at", null: false
+    t.float "distance_meters", default: 0.0, null: false
+    t.jsonb "track", default: [], null: false
+    t.datetime "deleted_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["member_id"], name: "index_rides_on_member_id"
+    t.index ["ranch_id", "updated_at"], name: "index_rides_on_ranch_id_and_updated_at"
+    t.index ["ranch_id"], name: "index_rides_on_ranch_id"
+  end
+
   create_table "waypoints", id: :string, force: :cascade do |t|
     t.bigint "ranch_id", null: false
     t.bigint "member_id", null: false
@@ -114,10 +132,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_09_200733) do
   add_foreign_key "active_storage_variant_records", "active_storage_blobs", column: "blob_id"
   add_foreign_key "members", "ranches"
   add_foreign_key "observations", "members"
+  add_foreign_key "observations", "members", column: "resolved_by_id"
   add_foreign_key "observations", "ranches"
   add_foreign_key "observations", "waypoints"
   add_foreign_key "photos", "observations"
   add_foreign_key "photos", "ranches"
+  add_foreign_key "rides", "members"
+  add_foreign_key "rides", "ranches"
   add_foreign_key "waypoints", "members"
   add_foreign_key "waypoints", "ranches"
 end

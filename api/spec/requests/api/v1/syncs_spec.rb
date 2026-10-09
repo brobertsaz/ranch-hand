@@ -183,6 +183,63 @@ RSpec.describe "Sync", type: :request do
     end
   end
 
+  describe "members" do
+    it "sends the crew's names so pins can say who logged them" do
+      create(:member, ranch: ranch, name: "Sam")
+      create(:member, name: "Outsider")
+
+      pull
+
+      expect(json.dig("changes", "members", "updated").pluck("name")).to contain_exactly(member.name, "Sam")
+    end
+  end
+
+  describe "resolving" do
+    it "records who resolved it and when, as set on the phone" do
+      observation = create(:observation, member: member)
+      teammate = create(:member, ranch: ranch)
+
+      push({ observations: { created: [], updated: [ raw_observation(observation.id, status: "resolved", resolved_at: 1_791_100_000_000, resolved_by_id: teammate.id.to_s) ], deleted: [] } }, as: teammate)
+
+      expect(observation.reload).to have_attributes(status: "resolved", resolved_by: teammate, resolved_at: Time.zone.at(1_791_100_000))
+      pull
+      expect(json.dig("changes", "observations", "created").sole).to include("resolved_at" => 1_791_100_000_000, "resolved_by_id" => teammate.id.to_s)
+    end
+
+    it "won't credit a member of another ranch" do
+      observation = create(:observation, member: member)
+
+      push({ observations: { created: [], updated: [ raw_observation(observation.id, status: "resolved", resolved_by_id: create(:member).id.to_s) ], deleted: [] } })
+
+      expect(response).to have_http_status(:unprocessable_content)
+    end
+  end
+
+  describe "rides" do
+    def raw_ride(id, **overrides)
+      {
+        id: id, started_at: 1_791_000_000_000, ended_at: 1_791_003_600_000, distance_meters: 5230.5,
+        track: [ [ -104.38, 44.43 ], [ -104.37, 44.44 ] ].to_json
+      }.merge(overrides)
+    end
+
+    it "takes a finished ride from the phone and hands it to the crew" do
+      push({ rides: { created: [ raw_ride("ride1") ], updated: [], deleted: [] } })
+
+      expect(response).to have_http_status(:no_content)
+      expect(Ride.find("ride1")).to have_attributes(member: member, ranch: ranch, distance_meters: 5230.5, track: [ [ -104.38, 44.43 ], [ -104.37, 44.44 ] ])
+
+      pull(nil, as: create(:member, ranch: ranch))
+      expect(json.dig("changes", "rides", "created").sole).to include("id" => "ride1", "member_id" => member.id.to_s, "track" => "[[-104.38,44.43],[-104.37,44.44]]")
+    end
+
+    it "rejects a track that isn't a list of points" do
+      push({ rides: { created: [ raw_ride("ride2", track: '{"oops":true}') ], updated: [], deleted: [] } })
+
+      expect(response).to have_http_status(:unprocessable_content)
+    end
+  end
+
   # Acceptance steps 4 and 5 from PLAN.md, at the API level
   it "carries a pin and its photo from one phone to another" do
     other_phone = create(:member, ranch: ranch, name: "Sam")

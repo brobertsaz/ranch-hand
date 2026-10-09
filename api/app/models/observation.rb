@@ -6,6 +6,7 @@ class Observation < ApplicationRecord
   belongs_to :ranch
   belongs_to :member
   belongs_to :waypoint, optional: true
+  belongs_to :resolved_by, class_name: "Member", optional: true
   has_many :photos, dependent: :destroy
 
   # open: needs doing; resolved: was a problem, now handled; ok: a routine check that found nothing wrong
@@ -17,11 +18,15 @@ class Observation < ApplicationRecord
   validates :longitude, numericality: { in: -180..180 }
   validates :observed_at, presence: true
   validate :waypoint_on_same_ranch
+  validate :resolver_on_same_ranch
 
-  CLIENT_FIELDS = %w[kind latitude longitude accuracy tag_number note status waypoint_id].freeze
+  CLIENT_FIELDS = %w[kind latitude longitude accuracy tag_number note status waypoint_id resolved_by_id].freeze
 
   def self.attributes_from_raw(raw)
-    raw.slice(*CLIENT_FIELDS).merge(observed_at: Syncable.from_ms(raw["observed_at"]))
+    raw.slice(*CLIENT_FIELDS).merge(
+      observed_at: Syncable.from_ms(raw["observed_at"]),
+      resolved_at: Syncable.from_ms(raw["resolved_at"])
+    )
   end
 
   def to_raw
@@ -36,11 +41,17 @@ class Observation < ApplicationRecord
       tag_number: tag_number,
       note: note,
       status: status,
-      waypoint_id: waypoint_id
+      waypoint_id: waypoint_id,
+      resolved_at: Syncable.to_ms(resolved_at),
+      resolved_by_id: resolved_by_id&.to_s
     }
   end
 
   private
+
+  def resolver_on_same_ranch
+    errors.add(:resolved_by, "belongs to another ranch") if resolved_by && resolved_by.ranch_id != ranch_id
+  end
 
   def waypoint_on_same_ranch
     errors.add(:waypoint, "belongs to another ranch") if waypoint && waypoint.ranch_id != ranch_id

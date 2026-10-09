@@ -10,6 +10,7 @@ import MiniMap from '../components/MiniMap';
 import { observationsAt, photosFor, type Observation, type Waypoint } from '../db';
 import { relativeTo, timeAgo, type LngLat } from '../format';
 import { KIND_INFO, STATUS_LABEL, WAYPOINT_INFO } from '../kinds';
+import { useMemberNames, who } from '../members';
 import { photoFile } from '../photoFiles';
 import { colors, fonts, palette, space } from '../theme';
 import GuideScreen, { guideToWaypoint } from './GuideScreen';
@@ -31,6 +32,7 @@ export default function WaypointScreen({ waypoint, memberId, mapStyle, here, onB
   const [history, setHistory] = useState<Observation[]>([]);
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [guiding, setGuiding] = useState(false);
+  const names = useMemberNames();
   const latest = history[0] ?? null;
 
   const reload = useCallback(async () => {
@@ -87,7 +89,7 @@ export default function WaypointScreen({ waypoint, memberId, mapStyle, here, onB
                   {latest && <StatusTag status={latest.status} />}
                 </View>
                 <Text style={styles.cardMeta}>
-                  {latest ? `Latest check · ${timeAgo(latest.observed_at)} · ${latest.member_id === memberId ? 'You' : 'Another hand'}` : 'Log one from here next time you ride by'}
+                  {latest ? `Latest check · ${timeAgo(latest.observed_at)} · ${who(names, latest.member_id, memberId)}` : 'Log one from here next time you ride by'}
                 </Text>
               </View>
             </View>
@@ -111,7 +113,7 @@ export default function WaypointScreen({ waypoint, memberId, mapStyle, here, onB
                   <StatusTag status={check.status} />
                 </View>
                 <Text style={styles.cardMeta}>
-                  {timeAgo(check.observed_at)} · {check.member_id === memberId ? 'You' : 'Another hand'}
+                  {timeAgo(check.observed_at)} · {who(names, check.member_id, memberId)}
                   {check._status === 'synced' ? '' : ' · on this phone'}
                 </Text>
               </View>

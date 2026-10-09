@@ -15,6 +15,7 @@ class SyncPush
       apply(Waypoint, "waypoints") { |record, raw| assign_waypoint(record, raw) }
       apply(Observation, "observations") { |record, raw| assign_observation(record, raw) }
       apply(Photo, "photos") { |record, raw| assign_photo(record, raw) }
+      apply(Ride, "rides") { |record, raw| assign_ride(record, raw) }
     end
   end
 
@@ -58,6 +59,11 @@ class SyncPush
   def assign_waypoint(waypoint, raw)
     waypoint.member ||= @member
     waypoint.assign_attributes(Waypoint.attributes_from_raw(raw))
+  end
+
+  def assign_ride(ride, raw)
+    ride.member ||= @member
+    ride.assign_attributes(Ride.attributes_from_raw(raw))
   end
 
   def assign_photo(photo, raw)

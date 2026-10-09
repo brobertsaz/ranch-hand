@@ -9,6 +9,7 @@ import MiniMap from '../components/MiniMap';
 import { photosFor, setObservationStatus, type Observation, type ObservationStatus } from '../db';
 import { dayAndTime, relativeTo, timeAgo, type LngLat } from '../format';
 import { KIND_INFO, STATUS_LABEL } from '../kinds';
+import { initials, useMemberNames, who } from '../members';
 import { photoFile } from '../photoFiles';
 import { colors, fonts, palette, space, sync } from '../theme';
 import GuideScreen, { guideToObservation } from './GuideScreen';
@@ -33,7 +34,9 @@ export default function ObservationScreen({ observation, placeName = null, membe
   const [guiding, setGuiding] = useState(false);
   const info = KIND_INFO[observation.kind];
   const lngLat: LngLat = [observation.longitude, observation.latitude];
-  const mine = observation.member_id === memberId;
+  const names = useMemberNames();
+  const author = who(names, observation.member_id, memberId);
+  const authorName = observation.member_id ? names[observation.member_id] : undefined;
   const synced = observation._status === 'synced';
   const accuracy = `±${Math.round(observation.accuracy ?? 0)} m`;
 
@@ -46,7 +49,7 @@ export default function ObservationScreen({ observation, placeName = null, membe
   }, [observation.id]);
 
   async function changeStatus(status: ObservationStatus) {
-    await setObservationStatus(observation.id, status);
+    await setObservationStatus(observation.id, status, memberId);
     onChanged();
   }
 
@@ -91,11 +94,10 @@ export default function ObservationScreen({ observation, placeName = null, membe
           <View style={styles.card}>
             <View style={[styles.cardRow, styles.cardDivider]}>
               <View style={styles.avatar}>
-                <Icon name="crew" size={18} color={palette.white} />
+                {authorName ? <Text style={styles.avatarText}>{initials(authorName)}</Text> : <Icon name="crew" size={18} color={palette.white} />}
               </View>
               <View>
-                {/* Member names don't sync yet, so other hands show generically */}
-                <Text style={styles.cardTitle}>{mine ? 'You' : 'Another hand'}</Text>
+                <Text style={styles.cardTitle}>{author}</Text>
                 <Text style={styles.cardMeta}>
                   {dayAndTime(observation.observed_at)} · {timeAgo(observation.observed_at)}
                 </Text>
@@ -112,6 +114,16 @@ export default function ObservationScreen({ observation, placeName = null, membe
               </View>
             </View>
           </View>
+
+          {observation.status === 'resolved' && (
+            <View style={styles.syncRow}>
+              <Icon name="check" size={16} color={sync.synced} strokeWidth={3} />
+              <Text style={styles.resolvedText}>
+                Resolved by {who(names, observation.resolved_by_id, memberId)}
+                {observation.resolved_at ? ` · ${timeAgo(observation.resolved_at)}` : ''}
+              </Text>
+            </View>
+          )}
 
           <View style={styles.syncRow}>
             <View style={[styles.dot, { backgroundColor: synced ? sync.synced : sync.pending }]} />
@@ -166,6 +178,8 @@ const styles = StyleSheet.create({
   cardRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10, paddingHorizontal: 14 },
   cardDivider: { borderBottomWidth: 1, borderBottomColor: 'rgba(23, 27, 24, 0.1)', paddingVertical: 12 },
   avatar: { width: 32, height: 32, borderRadius: 16, backgroundColor: palette.sky, alignItems: 'center', justifyContent: 'center' },
+  avatarText: { color: palette.white, fontSize: 13, fontWeight: '800' },
+  resolvedText: { flex: 1, fontSize: 15, fontWeight: '700', color: colors.text },
   cardTitle: { fontSize: 15, fontWeight: '700', color: colors.text },
   cardMeta: { fontSize: 13, color: colors.textMuted },
   where: { flex: 1, gap: 2 },

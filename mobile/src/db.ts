@@ -38,6 +38,22 @@ export type Observation = {
   // open: needs doing; resolved: was a problem, now handled; ok: a routine check that found nothing wrong
   status: ObservationStatus;
   waypoint_id: string | null;
+  resolved_at: number | null;
+  resolved_by_id: string | null;
+  _status: SyncStatus;
+};
+
+// Read-only on the phone: the crew's names, pulled from the server
+export type Member = { id: string; name: string; role: string | null };
+
+// A finished ride. track is JSON text: [[lng, lat], ...]
+export type Ride = {
+  id: string;
+  member_id: string | null;
+  started_at: number;
+  ended_at: number;
+  distance_meters: number;
+  track: string;
   _status: SyncStatus;
 };
 
@@ -82,6 +98,32 @@ const MIGRATIONS = [
   );
   ALTER TABLE observations ADD COLUMN waypoint_id TEXT;
   CREATE INDEX observations_waypoint_id ON observations (waypoint_id);`,
+  `ALTER TABLE observations ADD COLUMN resolved_at INTEGER;
+  ALTER TABLE observations ADD COLUMN resolved_by_id TEXT;
+  CREATE TABLE members (
+    id TEXT PRIMARY KEY NOT NULL,
+    name TEXT NOT NULL,
+    role TEXT,
+    _status TEXT NOT NULL DEFAULT 'synced'
+  );
+  CREATE TABLE rides (
+    id TEXT PRIMARY KEY NOT NULL,
+    member_id TEXT,
+    started_at INTEGER NOT NULL,
+    ended_at INTEGER NOT NULL,
+    distance_meters REAL NOT NULL DEFAULT 0,
+    track TEXT NOT NULL DEFAULT '[]',
+    _status TEXT NOT NULL DEFAULT 'created'
+  );
+  -- GPS fixes for the ride in progress; folded into a rides row when it stops
+  CREATE TABLE ride_points (
+    ride_id TEXT NOT NULL,
+    latitude REAL NOT NULL,
+    longitude REAL NOT NULL,
+    accuracy REAL,
+    recorded_at INTEGER NOT NULL
+  );
+  CREATE INDEX ride_points_ride_id ON ride_points (ride_id);`,
 ];
 
 let database: SQLite.SQLiteDatabase | null = null;
@@ -115,7 +157,7 @@ export function newId(): string {
 export type PlaceChoice = { waypointId: string } | { create: { kind: WaypointKind; name: string } } | null;
 
 export async function createObservation(
-  observation: Omit<Observation, 'id' | '_status' | 'member_id' | 'waypoint_id'>,
+  observation: Omit<Observation, 'id' | '_status' | 'member_id' | 'waypoint_id' | 'resolved_at' | 'resolved_by_id'>,
   photoId: string | null,
   memberId: string,
   place: PlaceChoice = null,
@@ -144,21 +186,35 @@ export async function createObservation(
     // Someone just found this place fine ("Water: Full" after "Low"), so its open problems are handled
     if (waypointId && observation.status === 'ok') {
       await conn.runAsync(
-        `UPDATE observations SET status = 'resolved', _status = CASE _status WHEN 'created' THEN 'created' ELSE 'updated' END
+        `UPDATE observations
+         SET status = 'resolved', resolved_at = ?, resolved_by_id = ?, _status = CASE _status WHEN 'created' THEN 'created' ELSE 'updated' END
          WHERE waypoint_id = ? AND status = 'open'`,
-        waypointId,
+        observation.observed_at, memberId, waypointId,
       );
     }
   });
   return id;
 }
 
-// Resolving (or reopening) is an edit like any other: it syncs up, and the last write wins
-export async function setObservationStatus(id: string, status: ObservationStatus): Promise<void> {
+// Resolving (or reopening) is an edit like any other: it syncs up, and the last write wins.
+// Who and when are stamped here, on the phone, so they're right even with no signal.
+export async function setObservationStatus(id: string, status: ObservationStatus, memberId: string): Promise<void> {
+  const resolved = status === 'resolved';
   await db().runAsync(
-    `UPDATE observations SET status = ?, _status = CASE _status WHEN 'created' THEN 'created' ELSE 'updated' END WHERE id = ?`,
-    status, id,
+    `UPDATE observations
+     SET status = ?, resolved_at = ?, resolved_by_id = ?, _status = CASE _status WHEN 'created' THEN 'created' ELSE 'updated' END
+     WHERE id = ?`,
+    status, resolved ? Date.now() : null, resolved ? memberId : null, id,
   );
+}
+
+export async function memberNames(): Promise<Record<string, string>> {
+  const rows = await db().getAllAsync<Member>('SELECT id, name, role FROM members');
+  return Object.fromEntries(rows.map((m) => [m.id, m.name]));
+}
+
+export function liveRides() {
+  return db().getAllAsync<Ride>(`SELECT * FROM rides WHERE _status != 'deleted' ORDER BY started_at DESC`);
 }
 
 export function liveWaypoints() {
@@ -185,6 +241,7 @@ export async function pendingCounts() {
   const conn = db();
   const records = await conn.getFirstAsync<{ n: number }>(
     `SELECT (SELECT COUNT(*) FROM waypoints WHERE _status != 'synced')
+          + (SELECT COUNT(*) FROM rides WHERE _status != 'synced')
           + (SELECT COUNT(*) FROM observations WHERE _status != 'synced')
           + (SELECT COUNT(*) FROM photos WHERE _status != 'synced') AS n`,
   );

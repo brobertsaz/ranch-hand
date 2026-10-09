@@ -1,5 +1,7 @@
 import {
   Camera,
+  GeoJSONSource,
+  Layer,
   Map,
   Marker,
   OfflineManager,
@@ -19,8 +21,10 @@ import AppButton from '../components/AppButton';
 import Icon from '../components/Icon';
 import Pin from '../components/Pin';
 import TabBar, { useTabBarHeight, type Tab } from '../components/TabBar';
-import { KINDS, liveObservations, liveWaypoints, observationsAt, photosFor, type Kind, type Observation, type Waypoint } from '../db';
-import { distanceMeters, relativeTo, timeAgo, type LngLat } from '../format';
+import { KINDS, liveObservations, liveRides, liveWaypoints, observationsAt, photosFor, type Kind, type Observation, type Ride, type Waypoint } from '../db';
+import { dayAndTime, distanceMeters, formatDistance, formatDuration, relativeTo, timeAgo, type LngLat } from '../format';
+import { useMemberNames, who } from '../members';
+import { activeRide, ridePoints } from '../rides';
 import { KIND_INFO, WAYPOINT_INFO } from '../kinds';
 import { estimateTiles, expandBounds, MIN_PACK_SPAN_KM, PACK_MAX_ZOOM, PACK_MIN_ZOOM, TILE_LIMIT } from '../offline';
 import { photoFile } from '../photoFiles';
@@ -29,6 +33,7 @@ import { colors, fonts, palette, radius, space, sync } from '../theme';
 import { useSync, type SyncState } from '../useSync';
 import CaptureScreen from './CaptureScreen';
 import ObservationScreen from './ObservationScreen';
+import RidesScreen from './RidesScreen';
 import WaypointScreen from './WaypointScreen';
 import StubScreen from './StubScreen';
 
@@ -51,6 +56,12 @@ export default function MapScreen({ device, onSignOut }: Props) {
   const syncState = useSync(device);
   const [observations, setObservations] = useState<Observation[]>([]);
   const [waypoints, setWaypoints] = useState<Waypoint[]>([]);
+  const [rides, setRides] = useState<Ride[]>([]);
+  // The ride picked from the Rides tab, drawn on the map until closed
+  const [shownRideId, setShownRideId] = useState<string | null>(null);
+  // The track of a ride in progress, re-read every few seconds
+  const [liveTrack, setLiveTrack] = useState<LngLat[]>([]);
+  const names = useMemberNames();
   const [filter, setFilter] = useState<Kind | 'all'>('all');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedPhoto, setSelectedPhoto] = useState<string | null>(null);
@@ -70,6 +81,17 @@ export default function MapScreen({ device, onSignOut }: Props) {
   const reload = useCallback(() => {
     liveObservations().then(setObservations);
     liveWaypoints().then(setWaypoints);
+    liveRides().then(setRides);
+  }, []);
+
+  useEffect(() => {
+    const refresh = async () => {
+      const active = await activeRide();
+      setLiveTrack(active ? await ridePoints(active.id) : []);
+    };
+    refresh();
+    const timer = setInterval(refresh, 5000);
+    return () => clearInterval(timer);
   }, []);
 
   useEffect(() => {
@@ -136,7 +158,10 @@ export default function MapScreen({ device, onSignOut }: Props) {
   const openDetail = (id: string) => setDetails((stack) => [...stack, id]);
   const closeDetail = () => setDetails((stack) => stack.slice(0, -1));
   const openCount = observations.filter((o) => o.status === 'open').length;
-  const resolvedCount = observations.filter((o) => o.status === 'resolved').length;
+  // resolved_at is stamped on the phone that resolved it, so this matches across the crew
+  const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  const resolvedCount = observations.filter((o) => o.status === 'resolved' && (o.resolved_at ?? 0) >= weekAgo).length;
+  const shownRide = rides.find((r) => r.id === shownRideId) ?? null;
   const unsynced = observations.filter((o) => o._status !== 'synced').length;
 
   async function select(id: string, photoFrom: string[]) {
@@ -155,6 +180,16 @@ export default function MapScreen({ device, onSignOut }: Props) {
   const selectSighting = (o: Observation) => select(o.id, [o.id]);
   // A place shows the newest photo taken there
   const selectPlace = async (w: Waypoint) => select(w.id, (await observationsAt(w.id)).map((o) => o.id));
+
+  function fitTrack(track: LngLat[]) {
+    if (track.length === 0) return;
+    const lngs = track.map((p) => p[0]);
+    const lats = track.map((p) => p[1]);
+    camera.current?.fitBounds([Math.min(...lngs), Math.min(...lats), Math.max(...lngs), Math.max(...lats)], {
+      padding: { top: 220, right: 60, bottom: 260, left: 60 },
+      duration: 600,
+    });
+  }
 
   async function centerOnMe() {
     try {
@@ -232,6 +267,16 @@ export default function MapScreen({ device, onSignOut }: Props) {
       <Map ref={map} style={StyleSheet.absoluteFill} mapStyle={mapStyleUrl(device)} logo={false} onPress={() => Date.now() - pinPressedAt.current > 500 && setSelectedId(null)}>
         {start && <Camera ref={camera} initialViewState={{ center: start, zoom: 14 }} />}
         <UserLocation accuracy />
+        {shownRide && (
+          <GeoJSONSource id="shown-ride" data={lineString(JSON.parse(shownRide.track) as LngLat[])}>
+            <Layer type="line" id="shown-ride-line" paint={{ 'line-color': palette.sky, 'line-width': 5, 'line-opacity': 0.9 }} layout={{ 'line-cap': 'round', 'line-join': 'round' }} />
+          </GeoJSONSource>
+        )}
+        {liveTrack.length >= 2 && (
+          <GeoJSONSource id="live-ride" data={lineString(liveTrack)}>
+            <Layer type="line" id="live-ride-line" paint={{ 'line-color': palette.trail, 'line-width': 5 }} layout={{ 'line-cap': 'round', 'line-join': 'round' }} />
+          </GeoJSONSource>
+        )}
         {places.map((w) => {
           const info = WAYPOINT_INFO[w.kind];
           const on = w.id === selectedId;
@@ -266,7 +311,7 @@ export default function MapScreen({ device, onSignOut }: Props) {
           <View style={styles.headerText}>
             <Text style={styles.ranch} numberOfLines={1} accessibilityRole="header">{device.ranchName}</Text>
             <Text style={styles.counts}>
-              {openCount} open · {resolvedCount} resolved
+              {openCount} open · {resolvedCount} resolved this week
             </Text>
           </View>
           <SyncPill state={syncState} unsynced={unsynced} onPress={syncState.syncNow} />
@@ -292,7 +337,7 @@ export default function MapScreen({ device, onSignOut }: Props) {
         <PeekCard
           observation={selected}
           photoUri={selectedPhoto}
-          mine={selected.member_id === device.memberId}
+          author={who(names, selected.member_id, device.memberId)}
           here={here}
           bottom={tabBarHeight + 20}
           onPress={() => openDetail(selected.id)}
@@ -322,14 +367,40 @@ export default function MapScreen({ device, onSignOut }: Props) {
           waypoint={selectedPlace}
           latest={latestAt[selectedPlace.id] ?? null}
           photoUri={selectedPhoto}
-          memberId={device.memberId}
+          author={latestAt[selectedPlace.id] ? who(names, latestAt[selectedPlace.id].member_id, device.memberId) : ''}
           here={here}
           bottom={tabBarHeight + 20}
           onPress={() => openDetail(selectedPlace.id)}
         />
       )}
 
-      {tab === 'rides' && <StubScreen title="Rides" icon="rides" body="Ride recording comes in Phase 2: start, stop, and see your track on the map." />}
+      {shownRide && tab === 'map' && !selected && !selectedPlace && (
+        <View style={[styles.rideCard, { bottom: tabBarHeight + 20 }]}>
+          <View style={styles.rideCardText}>
+            <Text style={styles.peekTitle}>{who(names, shownRide.member_id, device.memberId)}'s ride</Text>
+            <Text style={styles.peekSmall}>
+              {dayAndTime(shownRide.started_at)} · {formatDistance(shownRide.distance_meters)} · {formatDuration(shownRide.ended_at - shownRide.started_at)}
+            </Text>
+          </View>
+          <Pressable onPress={() => setShownRideId(null)} accessibilityRole="button" accessibilityLabel="Hide this ride" style={styles.rideCardClose}>
+            <Icon name="close" size={20} color={colors.text} strokeWidth={2.4} />
+          </Pressable>
+        </View>
+      )}
+
+      {tab === 'rides' && (
+        <RidesScreen
+          memberId={device.memberId}
+          onRideSaved={syncState.syncNow}
+          onShowRide={(rideId) => {
+            const ride = rides.find((r) => r.id === rideId);
+            setShownRideId(rideId);
+            setSelectedId(null);
+            setTab('map');
+            if (ride) fitTrack(JSON.parse(ride.track) as LngLat[]);
+          }}
+        />
+      )}
       {tab === 'new' && <StubScreen title="What's new" icon="bell" body="Everything the crew logged since your last sync comes in Phase 3." />}
       {tab === 'crew' && <StubScreen title="Crew" icon="crew" body="Ranch members and invite codes come in Phase 3." />}
 
@@ -448,9 +519,9 @@ function Chip({ label, color, on, onPress }: { label: string; color?: string; on
   );
 }
 
-type PeekProps = { observation: Observation; photoUri: string | null; mine: boolean; here: LngLat | null; bottom: number; onPress: () => void };
+type PeekProps = { observation: Observation; photoUri: string | null; author: string; here: LngLat | null; bottom: number; onPress: () => void };
 
-function PeekCard({ observation, photoUri, mine, here, bottom, onPress }: PeekProps) {
+function PeekCard({ observation, photoUri, author, here, bottom, onPress }: PeekProps) {
   const info = KIND_INFO[observation.kind];
   const title = [observation.tag_number && `Tag ${observation.tag_number}`, observation.note].filter(Boolean).join(' · ') || info.label;
   const where = here ? relativeTo(here, [observation.longitude, observation.latitude]) : `±${Math.round(observation.accuracy ?? 0)} m`;
@@ -464,7 +535,7 @@ function PeekCard({ observation, photoUri, mine, here, bottom, onPress }: PeekPr
         <View style={styles.peekMeta}>
           <Text style={[styles.peekBadge, { backgroundColor: info.badgeColor, color: info.onColor }]}>{info.short.toUpperCase()}</Text>
           <Text style={styles.peekSmall}>
-            {timeAgo(observation.observed_at)} · {mine ? 'You' : 'Crew'}
+            {timeAgo(observation.observed_at)} · {author}
           </Text>
         </View>
         <Text style={styles.peekTitle} numberOfLines={1}>{title}</Text>
@@ -482,17 +553,17 @@ type PlacePeekProps = {
   waypoint: Waypoint;
   latest: Observation | null;
   photoUri: string | null;
-  memberId: string;
+  author: string;
   here: LngLat | null;
   bottom: number;
   onPress: () => void;
 };
 
-function PlacePeekCard({ waypoint, latest, photoUri, memberId, here, bottom, onPress }: PlacePeekProps) {
+function PlacePeekCard({ waypoint, latest, photoUri, author, here, bottom, onPress }: PlacePeekProps) {
   const info = WAYPOINT_INFO[waypoint.kind];
   const where = here ? relativeTo(here, [waypoint.longitude, waypoint.latitude]) : 'Fixed place';
   const status = latest
-    ? [latest.note ?? 'Checked', latest.status === 'resolved' && 'resolved', timeAgo(latest.observed_at), latest.member_id === memberId ? 'You' : 'Crew']
+    ? [latest.note ?? 'Checked', latest.status === 'resolved' && 'resolved', timeAgo(latest.observed_at), author]
         .filter(Boolean)
         .join(' · ')
     : 'No checks yet';
@@ -513,6 +584,10 @@ function PlacePeekCard({ waypoint, latest, photoUri, memberId, here, bottom, onP
       <Icon name="chevronRight" size={22} color={colors.textMuted} strokeWidth={2.2} />
     </Pressable>
   );
+}
+
+function lineString(coordinates: LngLat[]): GeoJSON.Feature<GeoJSON.LineString> {
+  return { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates } };
 }
 
 function describePack(status: OfflinePackStatus): string {
@@ -566,6 +641,12 @@ const styles = StyleSheet.create({
   peekBadge: { fontSize: 12, fontWeight: '800', letterSpacing: 0.3, borderRadius: 4, overflow: 'hidden', paddingVertical: 2, paddingHorizontal: 7 },
   peekTitle: { fontFamily: fonts.display, fontSize: 24, lineHeight: 25, color: colors.text },
   peekSmall: { fontSize: 13, color: colors.textMuted },
+  rideCard: {
+    ...shadow, position: 'absolute', left: 12, right: 12, backgroundColor: colors.surface, borderRadius: 16,
+    paddingVertical: 12, paddingLeft: 16, paddingRight: 8, flexDirection: 'row', alignItems: 'center', gap: 8,
+  },
+  rideCardText: { flex: 1, gap: 2 },
+  rideCardClose: { width: 48, height: 48, alignItems: 'center', justifyContent: 'center' },
   backdrop: { flex: 1, backgroundColor: colors.scrim, justifyContent: 'flex-end' },
   sheet: {
     backgroundColor: colors.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20,

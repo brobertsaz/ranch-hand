@@ -42,7 +42,11 @@
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "Ranch Hand records where each observation was made."
+          "locationWhenInUsePermission": "Ranch Hand records where each observation was made.",
+          "locationAlwaysAndWhenInUsePermission": "Ranch Hand records your ride track while the phone is in your pocket.",
+          "isAndroidBackgroundLocationEnabled": true,
+          "isAndroidForegroundServiceEnabled": true,
+          "isIosBackgroundLocationEnabled": true
         }
       ],
       [

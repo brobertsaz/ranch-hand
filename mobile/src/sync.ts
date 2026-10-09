@@ -2,7 +2,7 @@ import { File } from 'expo-file-system';
 import { UploadType } from 'expo-file-system';
 
 import { authHeader, photoFileUrl, pullChanges, pushChanges } from './api';
-import { db, getState, setState, type Observation, type Photo, type Waypoint } from './db';
+import { db, getState, setState, type Member, type Observation, type Photo, type Ride, type Waypoint } from './db';
 import { photoFile } from './photoFiles';
 import type { Device } from './settings';
 
@@ -12,17 +12,23 @@ type TableChanges<T> = { created: T[]; updated: T[]; deleted: string[] };
 type RawObservation = Omit<Observation, '_status'>;
 type RawPhoto = Omit<Photo, '_status'>;
 type RawWaypoint = Omit<Waypoint, '_status'>;
+type RawRide = Omit<Ride, '_status'>;
 export type Changes = {
+  members?: TableChanges<Member>; // pull only
   waypoints: TableChanges<RawWaypoint>;
   observations: TableChanges<RawObservation>;
   photos: TableChanges<RawPhoto>;
+  rides: TableChanges<RawRide>;
 };
 
 const NO_CHANGES = { created: [], updated: [], deleted: [] };
+const MEMBER_COLUMNS = ['id', 'name', 'role'] as const;
 const WAYPOINT_COLUMNS = ['id', 'member_id', 'kind', 'name', 'latitude', 'longitude', 'note'] as const;
 const OBSERVATION_COLUMNS = [
   'id', 'member_id', 'kind', 'latitude', 'longitude', 'accuracy', 'observed_at', 'tag_number', 'note', 'status', 'waypoint_id',
+  'resolved_at', 'resolved_by_id',
 ] as const;
+const RIDE_COLUMNS = ['id', 'member_id', 'started_at', 'ended_at', 'distance_meters', 'track'] as const;
 const PHOTO_COLUMNS = ['id', 'observation_id', 'uploaded_at'] as const;
 
 export type SyncResult = { pulled: number; pushed: number; uploaded: number; downloaded: number };
@@ -52,9 +58,11 @@ async function pull(device: Device): Promise<number> {
   let count = 0;
 
   await conn.withTransactionAsync(async () => {
+    count += await applyRemote('members', MEMBER_COLUMNS, changes.members ?? NO_CHANGES);
     count += await applyRemote('waypoints', WAYPOINT_COLUMNS, changes.waypoints ?? NO_CHANGES);
     count += await applyRemote('observations', OBSERVATION_COLUMNS, changes.observations);
     count += await applyRemote('photos', PHOTO_COLUMNS, changes.photos);
+    count += await applyRemote('rides', RIDE_COLUMNS, changes.rides ?? NO_CHANGES);
     await setState('last_pulled_at', String(timestamp));
   });
 
@@ -93,16 +101,18 @@ async function push(device: Device): Promise<number> {
   const waypoints = await conn.getAllAsync<Waypoint>(`SELECT * FROM waypoints WHERE _status != 'synced'`);
   const observations = await conn.getAllAsync<Observation>(`SELECT * FROM observations WHERE _status != 'synced'`);
   const photos = await conn.getAllAsync<Photo>(`SELECT * FROM photos WHERE _status != 'synced'`);
-  if (waypoints.length === 0 && observations.length === 0 && photos.length === 0) return 0;
+  const rides = await conn.getAllAsync<Ride>(`SELECT * FROM rides WHERE _status != 'synced'`);
+  if (waypoints.length + observations.length + photos.length + rides.length === 0) return 0;
 
   await pushChanges(device, {
     waypoints: localChanges(waypoints),
     observations: localChanges(observations),
     photos: localChanges(photos),
+    rides: localChanges(rides),
   });
 
   await conn.withTransactionAsync(async () => {
-    for (const [table, rows] of [['waypoints', waypoints], ['observations', observations], ['photos', photos]] as const) {
+    for (const [table, rows] of [['waypoints', waypoints], ['observations', observations], ['photos', photos], ['rides', rides]] as const) {
       for (const row of rows) {
         // Only settle rows nobody edited while the push was in flight
         if (row._status === 'deleted') {
@@ -113,7 +123,7 @@ async function push(device: Device): Promise<number> {
       }
     }
   });
-  return waypoints.length + observations.length + photos.length;
+  return waypoints.length + observations.length + photos.length + rides.length;
 }
 
 function localChanges<T extends { id: string; _status: string }>(rows: T[]): TableChanges<Omit<T, '_status'>> {
