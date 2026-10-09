@@ -9,6 +9,9 @@ module Api
       DEFAULT_TILE_URL = "https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer/tile/{z}/{y}/{x}".freeze
 
       def show
+        # Rails' default must-revalidate makes MapLibre refuse the copy stored in an offline pack
+        # when there's no network, so a cold start offline shows no map
+        expires_in 1.hour, public: true
         render json: {
           version: 8,
           name: "Ranch Hand imagery",
