@@ -4,8 +4,24 @@ import * as SQLite from 'expo-sqlite';
 // sync client knows what still has to go up: synced | created | updated | deleted.
 export type SyncStatus = 'synced' | 'created' | 'updated' | 'deleted';
 
-export const KINDS = ['sick_animal', 'feed_check', 'fence_issue', 'other'] as const;
+// Same order as the canvas's kind grid
+export const KINDS = ['sick_animal', 'feed_check', 'water_check', 'fence_issue', 'gate_issue', 'other'] as const;
 export type Kind = (typeof KINDS)[number];
+
+export const WAYPOINT_KINDS = ['feed', 'water', 'gate', 'fence', 'other'] as const;
+export type WaypointKind = (typeof WAYPOINT_KINDS)[number];
+
+// A place that stays put (feed station, tank, gate). Observations made there link to it.
+export type Waypoint = {
+  id: string;
+  member_id: string | null;
+  kind: WaypointKind;
+  name: string;
+  latitude: number;
+  longitude: number;
+  note: string | null;
+  _status: SyncStatus;
+};
 
 export type Observation = {
   id: string;
@@ -18,6 +34,7 @@ export type Observation = {
   tag_number: string | null;
   note: string | null;
   status: 'open' | 'resolved';
+  waypoint_id: string | null;
   _status: SyncStatus;
 };
 
@@ -50,6 +67,18 @@ const MIGRATIONS = [
   );
   CREATE INDEX photos_observation_id ON photos (observation_id);
   CREATE TABLE sync_state (key TEXT PRIMARY KEY NOT NULL, value TEXT);`,
+  `CREATE TABLE waypoints (
+    id TEXT PRIMARY KEY NOT NULL,
+    member_id TEXT,
+    kind TEXT NOT NULL,
+    name TEXT NOT NULL,
+    latitude REAL NOT NULL,
+    longitude REAL NOT NULL,
+    note TEXT,
+    _status TEXT NOT NULL DEFAULT 'created'
+  );
+  ALTER TABLE observations ADD COLUMN waypoint_id TEXT;
+  CREATE INDEX observations_waypoint_id ON observations (waypoint_id);`,
 ];
 
 let database: SQLite.SQLiteDatabase | null = null;
@@ -79,25 +108,50 @@ export function newId(): string {
   return Array.from({ length: 16 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
 }
 
+// Where an observation belongs: an existing place, a new one made on the spot, or nowhere
+export type PlaceChoice = { waypointId: string } | { create: { kind: WaypointKind; name: string } } | null;
+
 export async function createObservation(
-  observation: Omit<Observation, 'id' | '_status' | 'status' | 'member_id'>,
+  observation: Omit<Observation, 'id' | '_status' | 'status' | 'member_id' | 'waypoint_id'>,
   photoId: string | null,
   memberId: string,
+  place: PlaceChoice = null,
 ): Promise<string> {
   const id = newId();
   const conn = db();
   await conn.withTransactionAsync(async () => {
+    let waypointId: string | null = null;
+    if (place && 'waypointId' in place) waypointId = place.waypointId;
+    if (place && 'create' in place) {
+      waypointId = newId();
+      await conn.runAsync(
+        `INSERT INTO waypoints (id, member_id, kind, name, latitude, longitude, _status) VALUES (?, ?, ?, ?, ?, ?, 'created')`,
+        waypointId, memberId, place.create.kind, place.create.name, observation.latitude, observation.longitude,
+      );
+    }
     await conn.runAsync(
-      `INSERT INTO observations (id, member_id, kind, latitude, longitude, accuracy, observed_at, tag_number, note, status, _status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', 'created')`,
+      `INSERT INTO observations (id, member_id, kind, latitude, longitude, accuracy, observed_at, tag_number, note, status, waypoint_id, _status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, 'created')`,
       id, memberId, observation.kind, observation.latitude, observation.longitude, observation.accuracy,
-      observation.observed_at, observation.tag_number, observation.note,
+      observation.observed_at, observation.tag_number, observation.note, waypointId,
     );
     if (photoId) {
       await conn.runAsync(`INSERT INTO photos (id, observation_id, _status) VALUES (?, ?, 'created')`, photoId, id);
     }
   });
   return id;
+}
+
+export function liveWaypoints() {
+  return db().getAllAsync<Waypoint>(`SELECT * FROM waypoints WHERE _status != 'deleted' ORDER BY name`);
+}
+
+// Newest first: the first one is the place's current status
+export function observationsAt(waypointId: string) {
+  return db().getAllAsync<Observation>(
+    `SELECT * FROM observations WHERE waypoint_id = ? AND _status != 'deleted' ORDER BY observed_at DESC`,
+    waypointId,
+  );
 }
 
 export function liveObservations() {
@@ -111,7 +165,9 @@ export function photosFor(observationId: string) {
 export async function pendingCounts() {
   const conn = db();
   const records = await conn.getFirstAsync<{ n: number }>(
-    `SELECT (SELECT COUNT(*) FROM observations WHERE _status != 'synced') + (SELECT COUNT(*) FROM photos WHERE _status != 'synced') AS n`,
+    `SELECT (SELECT COUNT(*) FROM waypoints WHERE _status != 'synced')
+          + (SELECT COUNT(*) FROM observations WHERE _status != 'synced')
+          + (SELECT COUNT(*) FROM photos WHERE _status != 'synced') AS n`,
   );
   const uploads = await conn.getFirstAsync<{ n: number }>(`SELECT COUNT(*) AS n FROM photos WHERE uploaded_at IS NULL AND _status != 'deleted'`);
   return { records: records?.n ?? 0, uploads: uploads?.n ?? 0 };

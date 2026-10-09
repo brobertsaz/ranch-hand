@@ -50,7 +50,9 @@ export const colors = {
 export const kindColors: Record<Kind, string> = {
   sick_animal: palette.trail,
   feed_check: palette.harvest,
+  water_check: palette.creek,
   fence_issue: palette.leather,
+  gate_issue: palette.sky,
   other: palette.muted,
 };
 

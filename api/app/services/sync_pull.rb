@@ -15,6 +15,7 @@ class SyncPull
 
     {
       changes: {
+        waypoints: changes_for(@ranch.waypoints),
         observations: changes_for(@ranch.observations),
         photos: changes_for(@ranch.photos)
       },

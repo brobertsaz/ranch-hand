@@ -8,12 +8,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import AppButton from '../components/AppButton';
 import Icon from '../components/Icon';
-import { createObservation, newId, type Kind } from '../db';
-import { clockParts } from '../format';
-import { composeNote } from '../kinds';
+import { createObservation, liveWaypoints, newId, type Kind, type PlaceChoice, type Waypoint } from '../db';
+import { clockParts, formatDistance } from '../format';
+import { composeNote, nearestPlace, nextPlaceName, PLACE_KIND, WAYPOINT_INFO } from '../kinds';
 import { keepPhoto, photoFile } from '../photoFiles';
 import { colors, fonts, palette, sync, touch } from '../theme';
-import TagScreen, { type Fix } from './TagScreen';
+import TagScreen, { type Fix, type PlaceMode } from './TagScreen';
 
 // Ask for a fix as soon as the camera opens, so it's ready by the time the form is filled in
 async function locate(): Promise<Location.LocationObject | null> {
@@ -36,6 +36,25 @@ export default function CaptureScreen({ memberId, onDone }: Props) {
   const [picks, setPicks] = useState<string[]>([]);
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
+  const [waypoints, setWaypoints] = useState<Waypoint[]>([]);
+  // null: let the app decide (join a place nearby, else save a new one)
+  const [placeMode, setPlaceMode] = useState<PlaceMode | null>(null);
+
+  useEffect(() => {
+    liveWaypoints().then(setWaypoints);
+  }, []);
+
+  const placeKind = PLACE_KIND[kind];
+  const nearby = placeKind && fix && fix !== 'pending' ? nearestPlace(waypoints, placeKind, [fix.coords.longitude, fix.coords.latitude]) : null;
+  const newPlaceName = placeKind ? nextPlaceName(waypoints, placeKind) : '';
+  const mode: PlaceMode = placeMode ?? (nearby ? 'existing' : 'new');
+
+  function placeChoice(): PlaceChoice {
+    if (!placeKind) return null;
+    if (mode === 'existing' && nearby) return { waypointId: nearby.waypoint.id };
+    if (mode === 'new') return { create: { kind: placeKind, name: newPlaceName } };
+    return null;
+  }
 
   useEffect(() => {
     if (permission && !permission.granted && permission.canAskAgain) requestPermission();
@@ -91,6 +110,7 @@ export default function CaptureScreen({ memberId, onDone }: Props) {
       },
       photo?.id ?? null,
       memberId,
+      placeChoice(),
     );
     onDone(true);
   }
@@ -103,9 +123,24 @@ export default function CaptureScreen({ memberId, onDone }: Props) {
         kind={kind}
         onKind={(next) => {
           // Each kind has its own list, so picks from the last one don't carry over
-          if (next !== kind) setPicks([]);
+          if (next !== kind) {
+            setPicks([]);
+            setPlaceMode(null);
+          }
           setKind(next);
         }}
+        place={
+          placeKind
+            ? {
+                label: WAYPOINT_INFO[placeKind].label,
+                nearby: nearby ? { name: nearby.waypoint.name, distance: formatDistance(nearby.meters) } : null,
+                newName: newPlaceName,
+                locating: fix === 'pending',
+                mode,
+                onMode: setPlaceMode,
+              }
+            : null
+        }
         picks={picks}
         onTogglePick={(pick) => setPicks((current) => (current.includes(pick) ? current.filter((p) => p !== pick) : [...current, pick]))}
         tagNumber={tagNumber}

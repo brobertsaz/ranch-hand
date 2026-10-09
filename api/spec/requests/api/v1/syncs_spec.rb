@@ -116,6 +116,61 @@ RSpec.describe "Sync", type: :request do
     end
   end
 
+  describe "waypoints" do
+    def raw_waypoint(id, **overrides)
+      { id: id, kind: "water", name: "Water 1", latitude: 44.4301, longitude: -104.3801, note: nil }.merge(overrides)
+    end
+
+    it "pulls the ranch's places alongside observations" do
+      waypoint = create(:waypoint, member: member, name: "North tank")
+      create(:observation, member: member, kind: "water_check", waypoint: waypoint, note: "Low")
+      create(:waypoint) # another ranch
+
+      pull
+
+      expect(json.dig("changes", "waypoints", "created")).to eq(
+        [ { "id" => waypoint.id, "member_id" => member.id.to_s, "kind" => "water", "name" => "North tank",
+            "latitude" => 44.43, "longitude" => -104.38, "note" => nil } ]
+      )
+      expect(json.dig("changes", "observations", "created").sole).to include("kind" => "water_check", "waypoint_id" => waypoint.id)
+    end
+
+    it "creates a new place and an observation linked to it in one push" do
+      push({
+        waypoints: { created: [ raw_waypoint("tank1") ], updated: [], deleted: [] },
+        observations: { created: [ raw_observation("check1", kind: "water_check", note: "Low", waypoint_id: "tank1") ], updated: [], deleted: [] }
+      })
+
+      expect(response).to have_http_status(:no_content)
+      expect(Waypoint.find("tank1")).to have_attributes(ranch: ranch, member: member, kind: "water", name: "Water 1")
+      expect(Observation.find("check1").waypoint_id).to eq("tank1")
+    end
+
+    it "accepts the gate kind" do
+      push({ observations: { created: [ raw_observation("gate1", kind: "gate_issue", note: "Left open") ], updated: [], deleted: [] } })
+
+      expect(Observation.find("gate1").kind).to eq("gate_issue")
+    end
+
+    it "won't link an observation to another ranch's place" do
+      outsider = create(:waypoint)
+
+      push({ observations: { created: [ raw_observation("sneaky", waypoint_id: outsider.id) ], updated: [], deleted: [] } })
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(Observation.exists?("sneaky")).to be(false)
+    end
+
+    it "refuses to rename another ranch's place" do
+      outsider = create(:waypoint)
+
+      push({ waypoints: { created: [], updated: [ raw_waypoint(outsider.id, name: "Mine") ], deleted: [] } })
+
+      expect(response).to have_http_status(:forbidden)
+      expect(outsider.reload.name).not_to eq("Mine")
+    end
+  end
+
   # Acceptance steps 4 and 5 from PLAN.md, at the API level
   it "carries a pin and its photo from one phone to another" do
     other_phone = create(:member, ranch: ranch, name: "Sam")

@@ -11,7 +11,8 @@ class SyncPush
 
   def call
     ActiveRecord::Base.transaction do
-      # observations first: photos reference them
+      # parents before children: observations point at waypoints, photos at observations
+      apply(Waypoint, "waypoints") { |record, raw| assign_waypoint(record, raw) }
       apply(Observation, "observations") { |record, raw| assign_observation(record, raw) }
       apply(Photo, "photos") { |record, raw| assign_photo(record, raw) }
     end
@@ -52,6 +53,11 @@ class SyncPush
   def assign_observation(observation, raw)
     observation.member ||= @member
     observation.assign_attributes(Observation.attributes_from_raw(raw))
+  end
+
+  def assign_waypoint(waypoint, raw)
+    waypoint.member ||= @member
+    waypoint.assign_attributes(Waypoint.attributes_from_raw(raw))
   end
 
   def assign_photo(photo, raw)

@@ -6,12 +6,61 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
 
 import Icon from '../components/Icon';
-import type { Observation } from '../db';
+import type { Observation, Waypoint } from '../db';
 import { bearingDegrees, compassPoint, distanceMeters, formatDistance, timeAgo, type LngLat } from '../format';
-import { KIND_INFO } from '../kinds';
+import { KIND_INFO, WAYPOINT_INFO } from '../kinds';
 import { colors, fonts, palette, space, sync } from '../theme';
 
-type Props = { observation: Observation; onBack: () => void };
+// What the arrow points at, and how to talk about it
+export type GuideTarget = {
+  lngLat: LngLat;
+  title: string;
+  badge: string;
+  badgeColor: string;
+  badgeText: string;
+  moves: boolean | null;
+  caveat: string;
+  arrivedTitle: string;
+  arrivedNote: string;
+};
+
+export function guideToObservation(observation: Observation): GuideTarget {
+  const info = KIND_INFO[observation.kind];
+  const seen = timeAgo(observation.observed_at);
+  return {
+    lngLat: [observation.longitude, observation.latitude],
+    title: observation.tag_number ? `Tag ${observation.tag_number}` : info.label,
+    badge: info.badge,
+    badgeColor: info.badgeColor,
+    badgeText: info.onColor,
+    moves: info.moves,
+    caveat:
+      info.moves === true
+        ? `Last seen here ${seen}. Animals move, so look around as you get close.`
+        : info.moves === false
+          ? `${info.label} spots stay put. Logged ${seen}.`
+          : `Logged here ${seen}.`,
+    arrivedTitle: info.moves ? 'Look around' : "You're here",
+    arrivedNote: info.moves ? `It was right about here ${seen}.` : 'This is the spot.',
+  };
+}
+
+export function guideToWaypoint(waypoint: Waypoint): GuideTarget {
+  const info = WAYPOINT_INFO[waypoint.kind];
+  return {
+    lngLat: [waypoint.longitude, waypoint.latitude],
+    title: waypoint.name,
+    badge: info.label.toUpperCase(),
+    badgeColor: info.badgeColor,
+    badgeText: info.onColor,
+    moves: false,
+    caveat: `${waypoint.name} is a fixed place, so it'll be right where the pin is.`,
+    arrivedTitle: "You're here",
+    arrivedNote: `This is ${waypoint.name}.`,
+  };
+}
+
+type Props = { target: GuideTarget; onBack: () => void };
 
 // Close enough to stop following the arrow and start looking around
 const ARRIVED_MIN_METERS = 15;
@@ -21,10 +70,9 @@ const MOVING_METERS_PER_SECOND = 1;
 
 // "Take me there": a straight-line arrow to the pin, video-game style.
 // No roads or routes (there aren't any out there), just GPS plus the compass, so it works with no signal.
-export default function GuideScreen({ observation, onBack }: Props) {
+export default function GuideScreen({ target: guide, onBack }: Props) {
   const insets = useSafeAreaInsets();
-  const info = KIND_INFO[observation.kind];
-  const target: LngLat = [observation.longitude, observation.latitude];
+  const target = guide.lngLat;
   const [fix, setFix] = useState<Location.LocationObject | null>(null);
   const [compass, setCompass] = useState<Location.LocationHeadingObject | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -83,14 +131,6 @@ export default function GuideScreen({ observation, onBack }: Props) {
   }, [arrowAngle, rotation]);
   const rotate = rotation.interpolate({ inputRange: [-3600, 3600], outputRange: ['-3600deg', '3600deg'] });
 
-  const seen = timeAgo(observation.observed_at);
-  const caveat =
-    info.moves === true
-      ? `Last seen here ${seen}. Animals move, so look around as you get close.`
-      : info.moves === false
-        ? `${info.label} spots stay put. Logged ${seen}.`
-        : `Logged here ${seen}.`;
-
   return (
     <View style={[styles.screen, { paddingTop: insets.top + 8, paddingBottom: insets.bottom + space.lg }]}>
       <StatusBar style="light" />
@@ -99,9 +139,9 @@ export default function GuideScreen({ observation, onBack }: Props) {
           <Icon name="back" size={22} color={colors.chromeText} strokeWidth={2.4} />
         </Pressable>
         <View style={styles.headerText}>
-          <Text style={[styles.badge, { backgroundColor: info.badgeColor, color: info.onColor }]}>{info.badge}</Text>
+          <Text style={[styles.badge, { backgroundColor: guide.badgeColor, color: guide.badgeText }]}>{guide.badge}</Text>
           <Text style={styles.title} numberOfLines={1} accessibilityRole="header">
-            {observation.tag_number ? `Tag ${observation.tag_number}` : info.label}
+            {guide.title}
           </Text>
         </View>
       </View>
@@ -112,12 +152,12 @@ export default function GuideScreen({ observation, onBack }: Props) {
         ) : meters === null ? (
           <Text style={styles.message}>Finding your position…</Text>
         ) : arrived ? (
-          <View style={styles.arrived} accessible accessibilityLabel={info.moves ? 'You are where it was seen. Look around.' : 'You are there.'}>
+          <View style={styles.arrived} accessible accessibilityLabel={`${guide.arrivedTitle}. ${guide.arrivedNote}`}>
             <View style={styles.arrivedRing}>
               <Icon name="check" size={96} color={palette.white} strokeWidth={2.8} />
             </View>
-            <Text style={styles.distance}>{info.moves ? 'Look around' : "You're here"}</Text>
-            <Text style={styles.instruction}>{info.moves ? `It was right about here ${seen}.` : `Within ${formatDistance(meters)} of the pin.`}</Text>
+            <Text style={styles.distance}>{guide.arrivedTitle}</Text>
+            <Text style={styles.instruction}>{guide.arrivedNote}</Text>
           </View>
         ) : (
           <View style={styles.pointer} accessible accessibilityLabel={`${turnHint(arrowAngle, facing !== null)}. ${formatDistance(meters)} to go, heading ${compassPoint(bearing ?? 0)}.`}>
@@ -137,7 +177,7 @@ export default function GuideScreen({ observation, onBack }: Props) {
       </View>
 
       <View style={styles.footer}>
-        <Text style={styles.caveat}>{caveat}</Text>
+        <Text style={styles.caveat}>{guide.caveat}</Text>
         <View style={styles.statusRow}>
           <View style={[styles.dot, { backgroundColor: accuracy === null ? sync.pending : accuracy <= 20 ? sync.synced : sync.pending }]} />
           <Text style={styles.status}>{accuracy === null ? 'Waiting for GPS' : `GPS ±${Math.round(accuracy)} m`}</Text>

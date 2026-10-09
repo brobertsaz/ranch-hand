@@ -13,11 +13,24 @@ import { colors, fonts, palette, space, sync } from '../theme';
 // 'pending' until the first fix comes back; null if none arrived in time
 export type Fix = Location.LocationObject | null | 'pending';
 
+// existing: the place nearby; new: save this spot as a new place; none: don't tie it to a place
+export type PlaceMode = 'existing' | 'new' | 'none';
+
+type PlaceProps = {
+  label: string; // "Water"
+  nearby: { name: string; distance: string } | null;
+  newName: string; // "Water 3"
+  locating: boolean;
+  mode: PlaceMode;
+  onMode: (mode: PlaceMode) => void;
+};
+
 type Props = {
   photoUri: string | null;
   fix: Fix;
   kind: Kind;
   onKind: (kind: Kind) => void;
+  place: PlaceProps | null;
   picks: string[];
   onTogglePick: (pick: string) => void;
   tagNumber: string;
@@ -32,7 +45,7 @@ type Props = {
 
 // Mockup 3 · Tag it & save
 export default function TagScreen(props: Props) {
-  const { photoUri, fix, kind, onKind, picks, onTogglePick, tagNumber, onTagNumber, note, onNote, saving, onSave, onCancel, onRetake } = props;
+  const { photoUri, fix, kind, onKind, place, picks, onTogglePick, tagNumber, onTagNumber, note, onNote, saving, onSave, onCancel, onRetake } = props;
   const conditions = CONDITIONS[kind];
   const insets = useSafeAreaInsets();
 
@@ -111,6 +124,8 @@ export default function TagScreen(props: Props) {
           })}
         </View>
 
+        {place && <PlacePicker {...place} />}
+
         <View style={styles.fields}>
           {kind === 'sick_animal' && (
             <View style={styles.tagField}>
@@ -156,6 +171,48 @@ export default function TagScreen(props: Props) {
   );
 }
 
+// Feed, water and gate checks belong to a place that stays put
+function PlacePicker({ label, nearby, newName, locating, mode, onMode }: PlaceProps) {
+  const lower = label.toLowerCase();
+  const options: { mode: PlaceMode; title: string; detail: string }[] = nearby
+    ? [
+        { mode: 'existing', title: nearby.name, detail: `${nearby.distance} away. Adds this check to its history.` },
+        { mode: 'new', title: `A different ${lower} spot`, detail: `Saves here as ${newName}.` },
+      ]
+    : [{ mode: 'new', title: `Save this spot as ${newName}`, detail: 'So the crew can find it again with Take me there.' }];
+
+  return (
+    <View style={styles.placeSection}>
+      <Text style={styles.subheading} accessibilityRole="header">Which {lower} spot?</Text>
+      {locating ? (
+        <Text style={styles.placeDetail}>Finding nearby places…</Text>
+      ) : (
+        options.map((option) => {
+          const on = mode === option.mode;
+          return (
+            <Pressable
+              key={option.mode}
+              // With only one option, tapping it again unticks it: log this check without a place
+              onPress={() => onMode(on && !nearby ? 'none' : option.mode)}
+              accessibilityRole={nearby ? 'radio' : 'checkbox'}
+              accessibilityState={nearby ? { selected: on } : { checked: on }}
+              style={[styles.place, on && styles.pickOn]}
+            >
+              <View style={[nearby ? styles.radio : styles.box, on && styles.boxOn]}>
+                {on && (nearby ? <View style={styles.radioDot} /> : <Icon name="check" size={16} color={palette.white} strokeWidth={3} />)}
+              </View>
+              <View style={styles.placeText}>
+                <Text style={[styles.pickText, on && styles.pickTextOn]}>{option.title}</Text>
+                <Text style={[styles.placeDetail, on && styles.placeDetailOn]}>{option.detail}</Text>
+              </View>
+            </Pressable>
+          );
+        })
+      )}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.background },
   strip: { backgroundColor: colors.chrome },
@@ -176,7 +233,7 @@ const styles = StyleSheet.create({
   heading: { fontFamily: fonts.display, fontSize: 30, lineHeight: 32, color: colors.text, marginBottom: -8 },
   kinds: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
   kind: {
-    flexBasis: '48%', flexGrow: 1, height: 84, borderRadius: 12, borderWidth: 1, borderColor: colors.border,
+    flexBasis: '31%', flexGrow: 1, height: 84, borderRadius: 12, borderWidth: 1, borderColor: colors.border,
     backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center', gap: 6,
   },
   kindOn: { backgroundColor: colors.primary, borderWidth: 3, borderColor: colors.chrome },
@@ -194,6 +251,16 @@ const styles = StyleSheet.create({
   boxOn: { borderColor: palette.white },
   pickText: { flex: 1, fontSize: 16, fontWeight: '700', color: colors.text },
   pickTextOn: { color: colors.secondaryText },
+  placeSection: { gap: space.sm },
+  place: {
+    minHeight: 64, borderRadius: 12, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface,
+    flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 12, paddingVertical: 10,
+  },
+  placeText: { flex: 1, gap: 2 },
+  placeDetail: { fontSize: 14, color: colors.textMuted },
+  placeDetailOn: { color: 'rgba(255, 255, 255, 0.85)' },
+  radio: { width: 24, height: 24, borderRadius: 12, borderWidth: 2, borderColor: colors.input, alignItems: 'center', justifyContent: 'center' },
+  radioDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: palette.white },
   fields: { flexDirection: 'row', gap: 10 },
   tagField: { width: 132, gap: 6 },
   noteField: { flex: 1, gap: 6 },

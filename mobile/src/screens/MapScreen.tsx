@@ -19,9 +19,9 @@ import AppButton from '../components/AppButton';
 import Icon from '../components/Icon';
 import Pin from '../components/Pin';
 import TabBar, { useTabBarHeight, type Tab } from '../components/TabBar';
-import { KINDS, liveObservations, photosFor, type Kind, type Observation } from '../db';
+import { KINDS, liveObservations, liveWaypoints, observationsAt, photosFor, type Kind, type Observation, type Waypoint } from '../db';
 import { relativeTo, timeAgo, type LngLat } from '../format';
-import { KIND_INFO } from '../kinds';
+import { KIND_INFO, WAYPOINT_INFO } from '../kinds';
 import { estimateTiles, expandBounds, MIN_PACK_SPAN_KM, PACK_MAX_ZOOM, PACK_MIN_ZOOM, TILE_LIMIT } from '../offline';
 import { photoFile } from '../photoFiles';
 import { forgetDevice, mapStyleUrl, type Device } from '../settings';
@@ -29,6 +29,7 @@ import { colors, fonts, palette, radius, space, sync } from '../theme';
 import { useSync, type SyncState } from '../useSync';
 import CaptureScreen from './CaptureScreen';
 import ObservationScreen from './ObservationScreen';
+import WaypointScreen from './WaypointScreen';
 import StubScreen from './StubScreen';
 
 // Roughly Sundance, WY, until the phone has a fix
@@ -44,10 +45,12 @@ export default function MapScreen({ device, onSignOut }: Props) {
   const tabBarHeight = useTabBarHeight();
   const syncState = useSync(device);
   const [observations, setObservations] = useState<Observation[]>([]);
+  const [waypoints, setWaypoints] = useState<Waypoint[]>([]);
   const [filter, setFilter] = useState<Kind | 'all'>('all');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedPhoto, setSelectedPhoto] = useState<string | null>(null);
-  const [detailId, setDetailId] = useState<string | null>(null);
+  // A stack, so Back from a check opened inside a place returns to the place. Ids name either kind of record.
+  const [details, setDetails] = useState<string[]>([]);
   const [tab, setTab] = useState<Tab>('map');
   const [capturing, setCapturing] = useState(false);
   const [layersOpen, setLayersOpen] = useState(false);
@@ -61,6 +64,7 @@ export default function MapScreen({ device, onSignOut }: Props) {
 
   const reload = useCallback(() => {
     liveObservations().then(setObservations);
+    liveWaypoints().then(setWaypoints);
   }, []);
 
   useEffect(() => {
@@ -85,24 +89,46 @@ export default function MapScreen({ device, onSignOut }: Props) {
     return () => sub.remove();
   }, [reload]);
 
-  const visible = useMemo(() => (filter === 'all' ? observations : observations.filter((o) => o.kind === filter)), [observations, filter]);
+  const placeIds = useMemo(() => new Set(waypoints.map((w) => w.id)), [waypoints]);
+  // A check made at a place shows through the place's pin, not a pin of its own
+  const sightings = useMemo(
+    () => observations.filter((o) => !(o.waypoint_id && placeIds.has(o.waypoint_id)) && (filter === 'all' || o.kind === filter)),
+    [observations, placeIds, filter],
+  );
+  const places = useMemo(() => (filter === 'all' ? waypoints : waypoints.filter((w) => WAYPOINT_INFO[w.kind].kind === filter)), [waypoints, filter]);
+  // observations come newest first, so the first one seen for a place is its current status
+  const latestAt = useMemo(() => {
+    const latest: Record<string, Observation> = {};
+    for (const o of observations) if (o.waypoint_id && !latest[o.waypoint_id]) latest[o.waypoint_id] = o;
+    return latest;
+  }, [observations]);
   const selected = observations.find((o) => o.id === selectedId) ?? null;
+  const selectedPlace = waypoints.find((w) => w.id === selectedId) ?? null;
+  const detailId = details.at(-1) ?? null;
   const detail = observations.find((o) => o.id === detailId) ?? null;
+  const detailPlace = waypoints.find((w) => w.id === detailId) ?? null;
+  const openDetail = (id: string) => setDetails((stack) => [...stack, id]);
+  const closeDetail = () => setDetails((stack) => stack.slice(0, -1));
   const openCount = observations.filter((o) => o.status === 'open').length;
   const resolvedCount = observations.length - openCount;
   const unsynced = observations.filter((o) => o._status !== 'synced').length;
 
-  async function select(observation: Observation) {
+  async function select(id: string, photoFrom: string[]) {
     pinPressedAt.current = Date.now();
-    setSelectedId(observation.id);
+    setSelectedId(id);
     setSelectedPhoto(null);
-    const photos = await photosFor(observation.id);
-    const file = photos.map((p) => photoFile(p.id)).find((f) => f.exists);
-    setSelectedPhoto(file?.uri ?? null);
     Location.getLastKnownPositionAsync()
       .then((fix) => fix && setHere([fix.coords.longitude, fix.coords.latitude]))
       .catch(() => {});
+    for (const observationId of photoFrom) {
+      const file = (await photosFor(observationId)).map((p) => photoFile(p.id)).find((f) => f.exists);
+      if (file) return setSelectedPhoto(file.uri);
+    }
   }
+
+  const selectSighting = (o: Observation) => select(o.id, [o.id]);
+  // A place shows the newest photo taken there
+  const selectPlace = async (w: Waypoint) => select(w.id, (await observationsAt(w.id)).map((o) => o.id));
 
   async function centerOnMe() {
     try {
@@ -180,18 +206,25 @@ export default function MapScreen({ device, onSignOut }: Props) {
       <Map ref={map} style={StyleSheet.absoluteFill} mapStyle={mapStyleUrl(device)} logo={false} onPress={() => Date.now() - pinPressedAt.current > 500 && setSelectedId(null)}>
         {start && <Camera ref={camera} initialViewState={{ center: start, zoom: 14 }} />}
         <UserLocation accuracy />
-        {visible.map((o) => (
-          // Keyed on sync status and selection too: the native marker doesn't redraw when only its children change
-          <Marker
-            key={`${o.id}:${o._status}:${o.id === selectedId}`}
-            id={o.id}
-            lngLat={[o.longitude, o.latitude]}
-            anchor={o.id === selectedId ? 'bottom' : 'center'}
-            onPress={() => select(o)}
-          >
-            <Pin kind={o.kind} synced={o._status === 'synced'} selected={o.id === selectedId} />
-          </Marker>
-        ))}
+        {places.map((w) => {
+          const info = WAYPOINT_INFO[w.kind];
+          const on = w.id === selectedId;
+          return (
+            // Keyed on sync status and selection too: the native marker doesn't redraw when only its children change
+            <Marker key={`${w.id}:${w._status}:${on}`} id={w.id} lngLat={[w.longitude, w.latitude]} anchor={on ? 'bottom' : 'center'} onPress={() => selectPlace(w)}>
+              <Pin color={info.color} onColor={info.onColor} icon={info.icon} synced={w._status === 'synced'} selected={on} square />
+            </Marker>
+          );
+        })}
+        {sightings.map((o) => {
+          const info = KIND_INFO[o.kind];
+          const on = o.id === selectedId;
+          return (
+            <Marker key={`${o.id}:${o._status}:${on}`} id={o.id} lngLat={[o.longitude, o.latitude]} anchor={on ? 'bottom' : 'center'} onPress={() => selectSighting(o)}>
+              <Pin color={info.pinColor} onColor={info.onColor} icon={info.icon} synced={o._status === 'synced'} selected={on} />
+            </Marker>
+          );
+        })}
       </Map>
 
       <View style={[styles.top, { top: insets.top + 8 }]} pointerEvents="box-none">
@@ -228,7 +261,18 @@ export default function MapScreen({ device, onSignOut }: Props) {
           mine={selected.member_id === device.memberId}
           here={here}
           bottom={tabBarHeight + 20}
-          onPress={() => setDetailId(selected.id)}
+          onPress={() => openDetail(selected.id)}
+        />
+      )}
+      {selectedPlace && tab === 'map' && (
+        <PlacePeekCard
+          waypoint={selectedPlace}
+          latest={latestAt[selectedPlace.id] ?? null}
+          photoUri={selectedPhoto}
+          memberId={device.memberId}
+          here={here}
+          bottom={tabBarHeight + 20}
+          onPress={() => openDetail(selectedPlace.id)}
         />
       )}
 
@@ -254,15 +298,26 @@ export default function MapScreen({ device, onSignOut }: Props) {
         </SafeAreaProvider>
       </Modal>
 
-      <Modal visible={!!detail} animationType="slide" statusBarTranslucent navigationBarTranslucent onRequestClose={() => setDetailId(null)}>
+      <Modal visible={!!detail || !!detailPlace} animationType="slide" statusBarTranslucent navigationBarTranslucent onRequestClose={closeDetail}>
         <SafeAreaProvider>
           {detail && (
             <ObservationScreen
               observation={detail}
+              placeName={detail.waypoint_id ? (waypoints.find((w) => w.id === detail.waypoint_id)?.name ?? null) : null}
               memberId={device.memberId}
               mapStyle={mapStyleUrl(device)}
               here={here}
-              onBack={() => setDetailId(null)}
+              onBack={closeDetail}
+            />
+          )}
+          {detailPlace && (
+            <WaypointScreen
+              waypoint={detailPlace}
+              memberId={device.memberId}
+              mapStyle={mapStyleUrl(device)}
+              here={here}
+              onBack={closeDetail}
+              onOpenObservation={(o) => openDetail(o.id)}
             />
           )}
         </SafeAreaProvider>
@@ -369,6 +424,41 @@ function PeekCard({ observation, photoUri, mine, here, bottom, onPress }: PeekPr
   );
 }
 
+type PlacePeekProps = {
+  waypoint: Waypoint;
+  latest: Observation | null;
+  photoUri: string | null;
+  memberId: string;
+  here: LngLat | null;
+  bottom: number;
+  onPress: () => void;
+};
+
+function PlacePeekCard({ waypoint, latest, photoUri, memberId, here, bottom, onPress }: PlacePeekProps) {
+  const info = WAYPOINT_INFO[waypoint.kind];
+  const where = here ? relativeTo(here, [waypoint.longitude, waypoint.latitude]) : 'Fixed place';
+  const status = latest
+    ? `${latest.note ?? 'Checked'} · ${timeAgo(latest.observed_at)} · ${latest.member_id === memberId ? 'You' : 'Crew'}`
+    : 'No checks yet';
+
+  return (
+    <Pressable onPress={onPress} accessibilityRole="button" accessibilityHint="Opens the place" style={[styles.peek, { bottom }]}>
+      <View style={[styles.peekPhoto, styles.peekPlace]}>
+        {photoUri ? <Image source={{ uri: photoUri }} style={StyleSheet.absoluteFill} /> : <Icon name={info.icon} size={28} color={colors.chromeTextMuted} />}
+      </View>
+      <View style={styles.peekText}>
+        <View style={styles.peekMeta}>
+          <Text style={[styles.peekBadge, { backgroundColor: info.badgeColor, color: info.onColor }]}>{info.label.toUpperCase()}</Text>
+          <Text style={styles.peekSmall}>{where}</Text>
+        </View>
+        <Text style={styles.peekTitle} numberOfLines={1}>{waypoint.name}</Text>
+        <Text style={styles.peekSmall} numberOfLines={1}>{status}</Text>
+      </View>
+      <Icon name="chevronRight" size={22} color={colors.textMuted} strokeWidth={2.2} />
+    </Pressable>
+  );
+}
+
 function describePack(status: OfflinePackStatus): string {
   const mb = (status.completedTileSize / 1_000_000).toFixed(1);
   return `${status.state} ${Math.round(status.percentage)}% · ${status.completedTileCount} tiles · ${mb} MB`;
@@ -411,6 +501,8 @@ const styles = StyleSheet.create({
     width: 72, height: 72, borderRadius: 10, overflow: 'hidden', backgroundColor: colors.chromeRaised,
     alignItems: 'center', justifyContent: 'center',
   },
+  // Square, like the place's pin
+  peekPlace: { borderRadius: 6 },
   peekText: { flex: 1, gap: 3, minWidth: 0 },
   peekMeta: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
   peekBadge: { fontSize: 12, fontWeight: '800', letterSpacing: 0.3, borderRadius: 4, overflow: 'hidden', paddingVertical: 2, paddingHorizontal: 7 },

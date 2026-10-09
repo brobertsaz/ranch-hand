@@ -1,4 +1,3 @@
-import { Camera, Map, Marker } from '@maplibre/maplibre-react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
 import { Alert, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -6,15 +5,18 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import AppButton from '../components/AppButton';
 import Icon from '../components/Icon';
+import MiniMap from '../components/MiniMap';
 import { photosFor, type Observation } from '../db';
 import { dayAndTime, relativeTo, timeAgo, type LngLat } from '../format';
 import { KIND_INFO } from '../kinds';
 import { photoFile } from '../photoFiles';
 import { colors, fonts, palette, space, sync } from '../theme';
-import GuideScreen from './GuideScreen';
+import GuideScreen, { guideToObservation } from './GuideScreen';
 
 type Props = {
   observation: Observation;
+  // The place this check was made at, if any
+  placeName?: string | null;
   memberId: string;
   mapStyle: string;
   here: LngLat | null;
@@ -22,7 +24,7 @@ type Props = {
 };
 
 // Mockup 4 · Observation
-export default function ObservationScreen({ observation, memberId, mapStyle, here, onBack }: Props) {
+export default function ObservationScreen({ observation, placeName = null, memberId, mapStyle, here, onBack }: Props) {
   const insets = useSafeAreaInsets();
   // undefined: no photo was taken; null: there is one, but it hasn't downloaded to this phone yet
   const [photoUri, setPhotoUri] = useState<string | null | undefined>(undefined);
@@ -41,7 +43,7 @@ export default function ObservationScreen({ observation, memberId, mapStyle, her
     });
   }, [observation.id]);
 
-  if (guiding) return <GuideScreen observation={observation} onBack={() => setGuiding(false)} />;
+  if (guiding) return <GuideScreen target={guideToObservation(observation)} onBack={() => setGuiding(false)} />;
 
   return (
     <View style={styles.screen}>
@@ -93,29 +95,13 @@ export default function ObservationScreen({ observation, memberId, mapStyle, her
               </View>
             </View>
             <View style={styles.cardRow}>
-              <View style={styles.thumb} pointerEvents="none">
-                <Map
-                  style={StyleSheet.absoluteFill}
-                  mapStyle={mapStyle}
-                  dragPan={false}
-                  touchZoom={false}
-                  doubleTapZoom={false}
-                  doubleTapHoldZoom={false}
-                  touchRotate={false}
-                  touchPitch={false}
-                  attribution={false}
-                  logo={false}
-                  compass={false}
-                >
-                  <Camera initialViewState={{ center: lngLat, zoom: 15 }} />
-                  <Marker lngLat={lngLat}>
-                    <View style={[styles.thumbPin, { backgroundColor: info.pinColor }]} />
-                  </Marker>
-                </Map>
-              </View>
+              <MiniMap mapStyle={mapStyle} lngLat={lngLat} color={info.pinColor} />
               <View style={styles.where}>
-                <Text style={styles.cardTitle}>{here ? relativeTo(here, lngLat) : 'Where it was logged'}</Text>
-                <Text style={styles.cardMeta}>{accuracy} accuracy</Text>
+                <Text style={styles.cardTitle}>{placeName ? `At ${placeName}` : here ? relativeTo(here, lngLat) : 'Where it was logged'}</Text>
+                <Text style={styles.cardMeta}>
+                  {placeName && here ? `${relativeTo(here, lngLat)} · ` : ''}
+                  {accuracy} accuracy
+                </Text>
               </View>
             </View>
           </View>
@@ -171,8 +157,6 @@ const styles = StyleSheet.create({
   avatar: { width: 32, height: 32, borderRadius: 16, backgroundColor: palette.sky, alignItems: 'center', justifyContent: 'center' },
   cardTitle: { fontSize: 15, fontWeight: '700', color: colors.text },
   cardMeta: { fontSize: 13, color: colors.textMuted },
-  thumb: { width: 104, height: 64, borderRadius: 8, overflow: 'hidden', backgroundColor: colors.surfaceSunken },
-  thumbPin: { width: 16, height: 16, borderRadius: 8, borderWidth: 2.5, borderColor: palette.white },
   where: { flex: 1, gap: 2 },
   syncRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
   dot: { width: 9, height: 9, borderRadius: 5 },

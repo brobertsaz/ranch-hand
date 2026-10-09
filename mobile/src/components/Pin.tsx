@@ -1,29 +1,35 @@
 import { StyleSheet, View } from 'react-native';
 
-import type { Kind } from '../db';
-import { KIND_INFO } from '../kinds';
 import { palette } from '../theme';
-import Icon from './Icon';
+import Icon, { type IconName } from './Icon';
 
-type Props = { kind: Kind; synced: boolean; selected: boolean };
+type Props = {
+  color: string;
+  onColor: string;
+  icon: IconName;
+  synced: boolean;
+  selected: boolean;
+  // Square for a place that stays put, round for a one-off sighting (as on the design canvas)
+  square?: boolean;
+};
 
-// Map pin: kind color plus an icon, so color is never the only cue.
+// Map pin: a color plus an icon, so color is never the only cue.
 // A dashed ring means it's still only on this phone.
-export default function Pin({ kind, synced, selected }: Props) {
-  const info = KIND_INFO[kind];
+export default function Pin({ color, onColor, icon, synced, selected, square = false }: Props) {
   const size = selected ? 56 : 40;
+  const corner = square ? (selected ? 12 : 8) : size / 2;
 
   return (
     <View style={styles.target}>
       <View
         style={[
           styles.pin,
-          { width: size, height: size, borderRadius: size / 2, borderWidth: selected ? 4 : 3, backgroundColor: info.pinColor },
+          { width: size, height: size, borderRadius: corner, borderWidth: selected ? 4 : 3, backgroundColor: color },
           !synced && styles.unsynced,
           selected && styles.halo,
         ]}
       >
-        <Icon name={info.icon} size={selected ? 26 : 20} color={info.onColor} strokeWidth={info.icon === 'plus' ? 2.8 : 2.4} />
+        <Icon name={icon} size={selected ? 26 : 20} color={onColor} strokeWidth={icon === 'plus' ? 2.8 : 2.4} />
       </View>
       {selected && <View style={styles.pointer} />}
     </View>
