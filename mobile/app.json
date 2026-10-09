@@ -12,7 +12,9 @@
       "supportsTablet": false,
       "infoPlist": {
         "NSLocalNetworkUsageDescription": "Ranch Hand syncs with the test server on your local network.",
-        "NSAppTransportSecurity": { "NSAllowsArbitraryLoads": true }
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": true
+        }
       }
     },
     "android": {
@@ -46,9 +48,12 @@
       [
         "expo-build-properties",
         {
-          "android": { "usesCleartextTraffic": true }
+          "android": {
+            "usesCleartextTraffic": true
+          }
         }
-      ]
+      ],
+      "expo-font"
     ]
   }
 }

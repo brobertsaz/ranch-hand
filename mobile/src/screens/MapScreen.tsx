@@ -10,36 +10,54 @@ import {
 } from '@maplibre/maplibre-react-native';
 import * as Location from 'expo-location';
 import { addDatabaseChangeListener } from 'expo-sqlite';
-import { useCallback, useEffect, useRef, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { Alert, Image, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Alert, Image, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { liveObservations, photosFor, type Observation } from '../db';
+import AppButton from '../components/AppButton';
+import Icon from '../components/Icon';
+import Pin from '../components/Pin';
+import TabBar, { useTabBarHeight, type Tab } from '../components/TabBar';
+import { KINDS, liveObservations, photosFor, type Kind, type Observation } from '../db';
+import { relativeTo, timeAgo, type LngLat } from '../format';
+import { KIND_INFO } from '../kinds';
 import { estimateTiles, expandBounds, MIN_PACK_SPAN_KM, PACK_MAX_ZOOM, PACK_MIN_ZOOM, TILE_LIMIT } from '../offline';
 import { photoFile } from '../photoFiles';
 import { forgetDevice, mapStyleUrl, type Device } from '../settings';
-import { useSync } from '../useSync';
-import AppButton from '../components/AppButton';
-import { colors, kindColors, palette, radius, touch } from '../theme';
+import { colors, fonts, palette, radius, space, sync } from '../theme';
+import { useSync, type SyncState } from '../useSync';
 import CaptureScreen from './CaptureScreen';
+import ObservationScreen from './ObservationScreen';
+import StubScreen from './StubScreen';
 
 // Roughly Sundance, WY, until the phone has a fix
 const START: [number, number] = [-104.376, 44.406];
 
 type Props = { device: Device; onSignOut: () => void };
 
+// Mockup 1 · Ranch map, plus the tab bar that hosts the other screens
 export default function MapScreen({ device, onSignOut }: Props) {
   const map = useRef<MapRef>(null);
   const camera = useRef<CameraRef>(null);
+  const insets = useSafeAreaInsets();
+  const tabBarHeight = useTabBarHeight();
   const syncState = useSync(device);
   const [observations, setObservations] = useState<Observation[]>([]);
-  const [selected, setSelected] = useState<{ observation: Observation; photoUris: string[] } | null>(null);
+  const [filter, setFilter] = useState<Kind | 'all'>('all');
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedPhoto, setSelectedPhoto] = useState<string | null>(null);
+  const [detailId, setDetailId] = useState<string | null>(null);
+  const [tab, setTab] = useState<Tab>('map');
   const [capturing, setCapturing] = useState(false);
+  const [layersOpen, setLayersOpen] = useState(false);
   const [pack, setPack] = useState<string>('No offline area yet');
   // Where the map opens: the phone's last fix, or START for a phone that has never had one
   const [start, setStart] = useState<[number, number] | null>(null);
+  const [here, setHere] = useState<LngLat | null>(null);
   const [downloading, setDownloading] = useState<number | null>(null);
+  // A tap on a pin also reaches the map underneath; without this the map's tap clears the pin just selected
+  const pinPressedAt = useRef(0);
 
   const reload = useCallback(() => {
     liveObservations().then(setObservations);
@@ -53,7 +71,10 @@ export default function MapScreen({ device, onSignOut }: Props) {
       .then(({ granted }) => (granted ? Location.getLastKnownPositionAsync() : null))
       .catch(() => null)
       .then(async (fix) => {
-        if (fix) return setStart([fix.coords.longitude, fix.coords.latitude]);
+        if (fix) {
+          setHere([fix.coords.longitude, fix.coords.latitude]);
+          return setStart([fix.coords.longitude, fix.coords.latitude]);
+        }
         const [newest] = await liveObservations();
         setStart(newest ? [newest.longitude, newest.latitude] : START);
       });
@@ -64,15 +85,29 @@ export default function MapScreen({ device, onSignOut }: Props) {
     return () => sub.remove();
   }, [reload]);
 
+  const visible = useMemo(() => (filter === 'all' ? observations : observations.filter((o) => o.kind === filter)), [observations, filter]);
+  const selected = observations.find((o) => o.id === selectedId) ?? null;
+  const detail = observations.find((o) => o.id === detailId) ?? null;
+  const openCount = observations.filter((o) => o.status === 'open').length;
+  const resolvedCount = observations.length - openCount;
+  const unsynced = observations.filter((o) => o._status !== 'synced').length;
+
   async function select(observation: Observation) {
+    pinPressedAt.current = Date.now();
+    setSelectedId(observation.id);
+    setSelectedPhoto(null);
     const photos = await photosFor(observation.id);
-    const photoUris = photos.map((p) => photoFile(p.id)).filter((f) => f.exists).map((f) => f.uri);
-    setSelected({ observation, photoUris });
+    const file = photos.map((p) => photoFile(p.id)).find((f) => f.exists);
+    setSelectedPhoto(file?.uri ?? null);
+    Location.getLastKnownPositionAsync()
+      .then((fix) => fix && setHere([fix.coords.longitude, fix.coords.latitude]))
+      .catch(() => {});
   }
 
   async function centerOnMe() {
     try {
       const fix = (await Location.getLastKnownPositionAsync()) ?? (await Location.getCurrentPositionAsync());
+      setHere([fix.coords.longitude, fix.coords.latitude]);
       camera.current?.flyTo({ center: [fix.coords.longitude, fix.coords.latitude], zoom: 15 });
     } catch {
       Alert.alert('No location yet', 'Turn on Location for Ranch Hand, or step into the open for a GPS fix.');
@@ -80,9 +115,9 @@ export default function MapScreen({ device, onSignOut }: Props) {
   }
 
   async function downloadArea() {
-    const visible = await map.current?.getBounds();
-    if (!visible) return;
-    const bounds = expandBounds(visible);
+    const visibleBounds = await map.current?.getBounds();
+    if (!visibleBounds) return;
+    const bounds = expandBounds(visibleBounds);
     const tiles = estimateTiles(bounds);
     if (tiles > TILE_LIMIT) {
       Alert.alert('Area too big', `About ${tiles} tiles. Zoom in until it's under ${TILE_LIMIT}.`);
@@ -124,91 +159,213 @@ export default function MapScreen({ device, onSignOut }: Props) {
     }
   }
 
-  async function signOut() {
-    await forgetDevice();
-    onSignOut();
+  function confirmSignOut() {
+    Alert.alert('Leave this ranch?', 'This phone stops syncing with the crew until it joins again.', [
+      { text: 'Stay', style: 'cancel' },
+      {
+        text: 'Leave',
+        style: 'destructive',
+        onPress: async () => {
+          setLayersOpen(false);
+          await forgetDevice();
+          onSignOut();
+        },
+      },
+    ]);
   }
 
   return (
-    <View style={{ flex: 1 }}>
+    <View style={styles.screen}>
       <StatusBar style="light" />
-      <Map ref={map} style={{ flex: 1 }} mapStyle={mapStyleUrl(device)} logo={false}>
+      <Map ref={map} style={StyleSheet.absoluteFill} mapStyle={mapStyleUrl(device)} logo={false} onPress={() => Date.now() - pinPressedAt.current > 500 && setSelectedId(null)}>
         {start && <Camera ref={camera} initialViewState={{ center: start, zoom: 14 }} />}
         <UserLocation accuracy />
-        {observations.map((o) => (
-          // Keyed on sync status too: the native marker doesn't redraw when only its children change
-          <Marker key={`${o.id}:${o._status}`} id={o.id} lngLat={[o.longitude, o.latitude]} onPress={() => select(o)}>
-            <View style={styles.pinTarget}>
-              <View style={[styles.pin, { backgroundColor: kindColors[o.kind] ?? palette.muted }, o._status !== 'synced' && styles.pinUnsynced]} />
-            </View>
+        {visible.map((o) => (
+          // Keyed on sync status and selection too: the native marker doesn't redraw when only its children change
+          <Marker
+            key={`${o.id}:${o._status}:${o.id === selectedId}`}
+            id={o.id}
+            lngLat={[o.longitude, o.latitude]}
+            anchor={o.id === selectedId ? 'bottom' : 'center'}
+            onPress={() => select(o)}
+          >
+            <Pin kind={o.kind} synced={o._status === 'synced'} selected={o.id === selectedId} />
           </Marker>
         ))}
       </Map>
 
-      <SafeAreaView edges={['top']} style={[styles.statusBar, styles.statusBarFill]} pointerEvents="box-none">
-        <View style={styles.panel}>
-          <Text style={styles.bold}>
-            {device.ranchName} · {syncState.online ? 'online' : 'offline'}
-            {syncState.syncing ? ' · syncing…' : ''}
-          </Text>
-          <Text style={styles.panelText}>
-            Waiting to sync: {syncState.pending.records} records, {syncState.pending.uploads} photo uploads
-          </Text>
-          {syncState.lastResult && <Text style={styles.small}>{syncState.lastResult}</Text>}
-          <Text style={styles.small}>Offline map: {pack}</Text>
+      <View style={[styles.top, { top: insets.top + 8 }]} pointerEvents="box-none">
+        <View style={styles.header}>
+          <View style={styles.headerText}>
+            <Text style={styles.ranch} numberOfLines={1} accessibilityRole="header">{device.ranchName}</Text>
+            <Text style={styles.counts}>
+              {openCount} open · {resolvedCount} resolved
+            </Text>
+          </View>
+          <SyncPill state={syncState} unsynced={unsynced} onPress={syncState.syncNow} />
         </View>
-      </SafeAreaView>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
+          <Chip label="All" on={filter === 'all'} onPress={() => setFilter('all')} />
+          {KINDS.map((k) => (
+            <Chip key={k} label={KIND_INFO[k].short} color={KIND_INFO[k].pinColor} on={filter === k} onPress={() => setFilter(k)} />
+          ))}
+        </ScrollView>
+      </View>
 
-      <SafeAreaView edges={['bottom']} style={styles.toolbar}>
-        <AppButton
-          variant="chrome"
-          title={downloading === null ? 'Download area' : `Downloading ${Math.round(downloading)}%`}
-          onPress={downloadArea}
-          disabled={downloading !== null}
-        />
-        <AppButton title="Me" variant="chrome" onPress={centerOnMe} />
-        <AppButton title="Sync" variant="chrome" onPress={syncState.syncNow} disabled={syncState.syncing} />
-        <Pressable style={styles.addButton} onPress={() => setCapturing(true)} accessibilityLabel="New observation">
-          <Text style={styles.addText}>+</Text>
+      <View style={[styles.controls, { top: insets.top + 164 }]}>
+        <Pressable onPress={() => setLayersOpen(true)} accessibilityRole="button" accessibilityLabel="Map layers and offline areas" style={styles.control}>
+          <Icon name="layers" size={22} color={colors.chromeText} />
         </Pressable>
-      </SafeAreaView>
+        <Pressable onPress={centerOnMe} accessibilityRole="button" accessibilityLabel="Center on me" style={styles.control}>
+          <Icon name="locate" size={22} color={colors.chromeText} />
+        </Pressable>
+      </View>
 
-      <Modal visible={capturing} animationType="slide" onRequestClose={() => setCapturing(false)}>
-        <CaptureScreen
-          memberId={device.memberId}
-          onDone={(saved) => {
-            setCapturing(false);
-            if (saved) {
-              centerOnMe();
-              syncState.syncNow();
-            }
-          }}
+      {selected && tab === 'map' && (
+        <PeekCard
+          observation={selected}
+          photoUri={selectedPhoto}
+          mine={selected.member_id === device.memberId}
+          here={here}
+          bottom={tabBarHeight + 20}
+          onPress={() => setDetailId(selected.id)}
         />
+      )}
+
+      {tab === 'rides' && <StubScreen title="Rides" icon="rides" body="Ride recording comes in Phase 2: start, stop, and see your track on the map." />}
+      {tab === 'new' && <StubScreen title="What's new" icon="bell" body="Everything the crew logged since your last sync comes in Phase 3." />}
+      {tab === 'crew' && <StubScreen title="Crew" icon="crew" body="Ranch members and invite codes come in Phase 3." />}
+
+      <TabBar active={tab} onChange={setTab} onCapture={() => setCapturing(true)} />
+
+      <Modal visible={capturing} animationType="slide" statusBarTranslucent navigationBarTranslucent onRequestClose={() => setCapturing(false)}>
+        <SafeAreaProvider>
+          <CaptureScreen
+            memberId={device.memberId}
+            onDone={(saved) => {
+              setCapturing(false);
+              if (saved) {
+                setTab('map');
+                centerOnMe();
+                syncState.syncNow();
+              }
+            }}
+          />
+        </SafeAreaProvider>
       </Modal>
 
-      <Modal visible={!!selected} transparent animationType="fade" onRequestClose={() => setSelected(null)}>
-        <Pressable style={styles.backdrop} onPress={() => setSelected(null)}>
-          {selected && (
-            <View style={styles.card}>
-              {selected.photoUris.map((uri) => (
-                <Image key={uri} source={{ uri }} style={styles.photo} />
-              ))}
-              <Text style={styles.cardTitle}>{selected.observation.kind.replace('_', ' ')}</Text>
-              {selected.observation.tag_number && <Text style={styles.cardTag}>Tag {selected.observation.tag_number}</Text>}
-              {selected.observation.note && <Text style={styles.cardText}>{selected.observation.note}</Text>}
-              <Text style={styles.cardSmall}>
-                {new Date(selected.observation.observed_at).toLocaleString()} · ±{Math.round(selected.observation.accuracy ?? 0)} m ·{' '}
-                {selected.observation._status}
-              </Text>
-            </View>
+      <Modal visible={!!detail} animationType="slide" statusBarTranslucent navigationBarTranslucent onRequestClose={() => setDetailId(null)}>
+        <SafeAreaProvider>
+          {detail && (
+            <ObservationScreen
+              observation={detail}
+              memberId={device.memberId}
+              mapStyle={mapStyleUrl(device)}
+              here={here}
+              onBack={() => setDetailId(null)}
+            />
           )}
-        </Pressable>
+        </SafeAreaProvider>
       </Modal>
 
-      <Pressable onLongPress={signOut} style={styles.signOut}>
-        <Text style={styles.small}>hold to leave ranch</Text>
-      </Pressable>
+      <Modal visible={layersOpen} transparent animationType="fade" statusBarTranslucent onRequestClose={() => setLayersOpen(false)}>
+        <Pressable style={styles.backdrop} onPress={() => setLayersOpen(false)} accessibilityLabel="Close">
+          <Pressable style={[styles.sheet, { paddingBottom: insets.bottom + space.xl }]} onPress={() => {}}>
+            <Text style={styles.sheetTitle} accessibilityRole="header">Offline map</Text>
+            <Text style={styles.sheetText}>{pack}</Text>
+            <AppButton
+              title={downloading === null ? 'Download this area' : `Downloading ${Math.round(downloading)}%`}
+              onPress={downloadArea}
+              disabled={downloading !== null}
+              icon={<Icon name="download" size={20} color={palette.white} strokeWidth={2.4} />}
+            />
+            <Text style={styles.sheetHint}>Saves imagery at least {MIN_PACK_SPAN_KM} km across around the current view.</Text>
+
+            <View style={styles.sheetDivider} />
+            <Text style={styles.sheetTitle}>Sync</Text>
+            <Text style={styles.sheetText}>
+              {syncState.online ? 'Online' : 'No signal'} · {syncState.pending.records} records and {syncState.pending.uploads} photos waiting
+            </Text>
+            {syncState.lastResult && <Text style={styles.sheetHint}>Last run {syncState.lastResult}</Text>}
+            <AppButton
+              variant="secondary"
+              title={syncState.syncing ? 'Syncing…' : 'Sync now'}
+              onPress={syncState.syncNow}
+              disabled={syncState.syncing}
+              icon={<Icon name="refresh" size={20} color={palette.white} />}
+            />
+
+            <View style={styles.sheetDivider} />
+            <AppButton variant="ghost" title="Leave this ranch" onPress={confirmSignOut} />
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
+  );
+}
+
+function SyncPill({ state, unsynced, onPress }: { state: SyncState; unsynced: number; onPress: () => void }) {
+  const photos = state.pending.uploads;
+  const pill = state.syncing
+    ? { icon: 'refresh' as const, color: colors.chromeText, label: 'Syncing…', warn: false }
+    : unsynced > 0
+      ? { icon: 'cloudOff' as const, color: palette.harvest, label: `${unsynced} waiting`, warn: true }
+      : photos > 0
+        ? { icon: 'cloudOff' as const, color: palette.harvest, label: `${photos} photo${photos === 1 ? '' : 's'} waiting`, warn: true }
+        : !state.online
+          ? { icon: 'cloudOff' as const, color: palette.harvest, label: 'Offline', warn: true }
+          : { icon: 'check' as const, color: sync.synced, label: 'Synced', warn: false };
+
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={state.syncing}
+      accessibilityRole="button"
+      accessibilityLabel={`${pill.label}. Sync now`}
+      style={[styles.syncPill, pill.warn && styles.syncPillWarn]}
+    >
+      <Icon name={pill.icon} size={18} color={pill.color} strokeWidth={2.2} />
+      <Text style={styles.syncPillText}>{pill.label}</Text>
+    </Pressable>
+  );
+}
+
+function Chip({ label, color, on, onPress }: { label: string; color?: string; on: boolean; onPress: () => void }) {
+  return (
+    <Pressable onPress={onPress} accessibilityRole="button" accessibilityState={{ selected: on }} style={[styles.chip, on && styles.chipOn]}>
+      {color && <View style={[styles.chipDot, { backgroundColor: color }]} />}
+      <Text style={[styles.chipText, on && styles.chipTextOn]}>{label}</Text>
+    </Pressable>
+  );
+}
+
+type PeekProps = { observation: Observation; photoUri: string | null; mine: boolean; here: LngLat | null; bottom: number; onPress: () => void };
+
+function PeekCard({ observation, photoUri, mine, here, bottom, onPress }: PeekProps) {
+  const info = KIND_INFO[observation.kind];
+  const title = [observation.tag_number && `Tag ${observation.tag_number}`, observation.note].filter(Boolean).join(' · ') || info.label;
+  const where = here ? relativeTo(here, [observation.longitude, observation.latitude]) : `±${Math.round(observation.accuracy ?? 0)} m`;
+
+  return (
+    <Pressable onPress={onPress} accessibilityRole="button" accessibilityHint="Opens the observation" style={[styles.peek, { bottom }]}>
+      <View style={styles.peekPhoto}>
+        {photoUri ? <Image source={{ uri: photoUri }} style={StyleSheet.absoluteFill} /> : <Icon name={info.icon} size={28} color={colors.chromeTextMuted} />}
+      </View>
+      <View style={styles.peekText}>
+        <View style={styles.peekMeta}>
+          <Text style={[styles.peekBadge, { backgroundColor: info.badgeColor, color: info.onColor }]}>{info.short.toUpperCase()}</Text>
+          <Text style={styles.peekSmall}>
+            {timeAgo(observation.observed_at)} · {mine ? 'You' : 'Crew'}
+          </Text>
+        </View>
+        <Text style={styles.peekTitle} numberOfLines={1}>{title}</Text>
+        <Text style={styles.peekSmall}>
+          {where}
+          {observation._status !== 'synced' ? ' · on this phone' : ''}
+        </Text>
+      </View>
+      <Icon name="chevronRight" size={22} color={colors.textMuted} strokeWidth={2.2} />
+    </Pressable>
   );
 }
 
@@ -217,31 +374,55 @@ function describePack(status: OfflinePackStatus): string {
   return `${status.state} ${Math.round(status.percentage)}% · ${status.completedTileCount} tiles · ${mb} MB`;
 }
 
+const shadow = { elevation: 8, shadowColor: '#0A100C', shadowOpacity: 0.35, shadowRadius: 12, shadowOffset: { width: 0, height: 6 } };
+
 const styles = StyleSheet.create({
-  statusBar: { position: 'absolute', top: 0, left: 0, right: 0 },
-  statusBarFill: { backgroundColor: colors.chrome },
-  panel: { margin: 8, padding: 12, borderRadius: radius.lg, backgroundColor: colors.chrome, gap: 2 },
-  panelText: { color: colors.chromeText },
-  toolbar: {
-    position: 'absolute', bottom: 0, left: 0, right: 0, flexDirection: 'row', justifyContent: 'space-around',
-    alignItems: 'center', backgroundColor: colors.chrome, paddingTop: 10, paddingHorizontal: 6, gap: 6,
+  screen: { flex: 1, backgroundColor: colors.chrome },
+  top: { position: 'absolute', left: 12, right: 12, gap: 10 },
+  header: {
+    ...shadow, backgroundColor: colors.chrome, borderRadius: radius.lg, paddingVertical: 12, paddingLeft: 16, paddingRight: 12,
+    flexDirection: 'row', alignItems: 'center', gap: 12,
   },
-  addButton: {
-    width: touch.primary, height: touch.primary, borderRadius: touch.primary / 2, backgroundColor: palette.trail,
-    alignItems: 'center', justifyContent: 'center', marginBottom: 8,
+  headerText: { flex: 1, gap: 1 },
+  ranch: { fontFamily: fonts.display, fontSize: 26, lineHeight: 28, color: colors.chromeText },
+  counts: { fontSize: 13, color: colors.chromeTextMuted },
+  syncPill: {
+    height: 44, paddingHorizontal: 14, borderRadius: radius.pill, flexDirection: 'row', alignItems: 'center', gap: 8,
+    borderWidth: 1, borderColor: 'rgba(245, 239, 224, 0.2)', backgroundColor: colors.chromeRaised,
   },
-  addText: { color: palette.white, fontSize: 36, lineHeight: 40, fontWeight: '600' },
-  pinTarget: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }, // finger-sized tap area
-  pin: { width: 24, height: 24, borderRadius: 12, borderWidth: 3, borderColor: palette.white },
-  pinUnsynced: { borderColor: palette.white, borderStyle: 'dashed' },
-  backdrop: { flex: 1, backgroundColor: colors.scrim, justifyContent: 'center', padding: 24 },
-  card: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: 14, gap: 6 },
-  photo: { width: '100%', aspectRatio: 3 / 4, borderRadius: radius.md },
-  cardTitle: { color: colors.text, fontSize: 20, fontWeight: '800', textTransform: 'capitalize' },
-  cardTag: { color: colors.text, fontSize: 17, fontWeight: '700' },
-  cardText: { color: colors.text, fontSize: 16 },
-  cardSmall: { fontSize: 13, color: colors.textMuted },
-  bold: { fontWeight: '700', color: colors.chromeText, fontSize: 16 },
-  small: { fontSize: 12, color: colors.chromeTextMuted },
-  signOut: { position: 'absolute', right: 8, bottom: 120, padding: 6, borderRadius: radius.sm, backgroundColor: colors.scrim },
+  syncPillWarn: { borderColor: 'rgba(227, 163, 59, 0.5)', backgroundColor: 'rgba(227, 163, 59, 0.14)' },
+  syncPillText: { color: colors.chromeText, fontSize: 14, fontWeight: '700' },
+  chips: { gap: space.sm },
+  chip: {
+    height: 40, paddingHorizontal: 14, borderRadius: radius.pill, backgroundColor: 'rgba(16, 23, 19, 0.82)',
+    flexDirection: 'row', alignItems: 'center', gap: 7,
+  },
+  chipOn: { backgroundColor: palette.canvas, paddingHorizontal: 16 },
+  chipDot: { width: 10, height: 10, borderRadius: 5 },
+  chipText: { color: colors.chromeText, fontSize: 14, fontWeight: '600' },
+  chipTextOn: { color: palette.pine, fontWeight: '800' },
+  controls: { position: 'absolute', right: 12, gap: space.sm },
+  control: { width: 48, height: 48, borderRadius: 12, backgroundColor: colors.chrome, alignItems: 'center', justifyContent: 'center' },
+  peek: {
+    ...shadow, position: 'absolute', left: 12, right: 12, backgroundColor: colors.surface, borderRadius: 16, padding: 10,
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+  },
+  peekPhoto: {
+    width: 72, height: 72, borderRadius: 10, overflow: 'hidden', backgroundColor: colors.chromeRaised,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  peekText: { flex: 1, gap: 3, minWidth: 0 },
+  peekMeta: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
+  peekBadge: { fontSize: 12, fontWeight: '800', letterSpacing: 0.3, borderRadius: 4, overflow: 'hidden', paddingVertical: 2, paddingHorizontal: 7 },
+  peekTitle: { fontFamily: fonts.display, fontSize: 24, lineHeight: 25, color: colors.text },
+  peekSmall: { fontSize: 13, color: colors.textMuted },
+  backdrop: { flex: 1, backgroundColor: colors.scrim, justifyContent: 'flex-end' },
+  sheet: {
+    backgroundColor: colors.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    paddingTop: space.xl, paddingHorizontal: space.lg, gap: 10,
+  },
+  sheetTitle: { fontFamily: fonts.display, fontSize: 26, color: colors.text },
+  sheetText: { fontSize: 15, color: colors.text },
+  sheetHint: { fontSize: 13, color: colors.textMuted },
+  sheetDivider: { height: 1, backgroundColor: colors.border, marginVertical: 6 },
 });
