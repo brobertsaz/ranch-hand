@@ -19,7 +19,7 @@ type KindInfo = {
 
 export const KIND_INFO: Record<Kind, KindInfo> = {
   sick_animal: {
-    label: 'Sick animal', short: 'Sick', badge: 'SICK ANIMAL', icon: 'plus',
+    label: 'Sick animal', short: 'Sick', badge: 'SICK ANIMAL', icon: 'cow',
     pinColor: kindColors.sick_animal, badgeColor: palette.trailDark, onColor: palette.white, tint: palette.trailDark, moves: true,
   },
   feed_check: {

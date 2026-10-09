@@ -31,7 +31,7 @@ export default function Pin({ color, onColor, icon, synced, selected, square = f
           selected && styles.halo,
         ]}
       >
-        <Icon name={icon} size={selected ? 26 : 20} color={onColor} strokeWidth={icon === 'plus' ? 2.8 : 2.4} />
+        <Icon name={icon} size={selected ? 26 : 20} color={onColor} strokeWidth={2.4} />
         {alert && <View style={styles.alert} />}
       </View>
       {selected && <View style={styles.pointer} />}

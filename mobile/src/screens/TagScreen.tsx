@@ -96,7 +96,7 @@ export default function TagScreen(props: Props) {
                 accessibilityState={{ selected: on }}
                 style={[styles.kind, on && styles.kindOn]}
               >
-                <Icon name={info.icon} size={26} color={on ? palette.white : info.tint} strokeWidth={info.icon === 'plus' ? 2.6 : 2.2} />
+                <Icon name={info.icon} size={26} color={on ? palette.white : info.tint} strokeWidth={2.2} />
                 <Text style={[styles.kindText, on && styles.kindTextOn]}>{info.label}</Text>
               </Pressable>
             );

@@ -18,7 +18,7 @@ import { Alert, Image, Modal, Pressable, ScrollView, StyleSheet, Text, View } fr
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import AppButton from '../components/AppButton';
-import Icon from '../components/Icon';
+import Icon, { type IconName } from '../components/Icon';
 import Pin from '../components/Pin';
 import FollowSheet from '../components/FollowSheet';
 import NameRideSheet from '../components/NameRideSheet';
@@ -458,16 +458,25 @@ export default function MapScreen({ device, onSignOut }: Props) {
             </View>
             <SyncPill state={syncState} unsynced={unsynced} onPress={syncState.syncNow} />
           </View>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterRow} contentContainerStyle={[styles.chips, styles.filterChips]}>
-            <Chip label="All" on={filter === 'all'} onPress={() => setFilter('all')} />
+          {/* Seven equal cells, so the row always fits and doubles as the map's legend */}
+          <View style={styles.filterRow} accessibilityRole="radiogroup" accessibilityLabel="Show on the map">
+            <FilterCell label="All" icon="all" color={palette.canvas} onColor={palette.pine} on={filter === 'all'} onPress={() => setFilter('all')} />
             {KINDS.map((k) => (
-              <Chip key={k} label={KIND_INFO[k].short} color={KIND_INFO[k].pinColor} on={filter === k} onPress={() => setFilter(k)} />
+              <FilterCell
+                key={k}
+                label={KIND_INFO[k].short}
+                icon={KIND_INFO[k].icon}
+                color={KIND_INFO[k].pinColor}
+                onColor={KIND_INFO[k].onColor}
+                on={filter === k}
+                onPress={() => setFilter(k)}
+              />
             ))}
-          </ScrollView>
+          </View>
         </View>
       )}
 
-      <View style={[styles.controls, { top: insets.top + (riding || following ? 8 : 164) }]}>
+      <View style={[styles.controls, { top: insets.top + (riding || following ? 8 : 172) }]}>
         <Pressable onPress={() => setLayersOpen(true)} accessibilityRole="button" accessibilityLabel="Map layers and offline areas" style={styles.control}>
           <Icon name="layers" size={22} color={colors.chromeText} />
         </Pressable>
@@ -719,6 +728,17 @@ function SyncPill({ state, unsynced, onPress }: { state: SyncState; unsynced: nu
   );
 }
 
+function FilterCell({ label, icon, color, onColor, on, onPress }: { label: string; icon: IconName; color: string; onColor: string; on: boolean; onPress: () => void }) {
+  return (
+    <Pressable onPress={onPress} accessibilityRole="radio" accessibilityState={{ selected: on }} accessibilityLabel={label} style={[styles.filterCell, on && styles.filterCellOn]}>
+      <View style={[styles.filterIcon, { backgroundColor: color }]}>
+        <Icon name={icon} size={17} color={onColor} strokeWidth={2.4} />
+      </View>
+      <Text style={[styles.filterLabel, on && styles.filterLabelOn]} numberOfLines={1}>{label}</Text>
+    </Pressable>
+  );
+}
+
 function Chip({ label, color, on, onPress }: { label: string; color?: string; on: boolean; onPress: () => void }) {
   return (
     <Pressable onPress={onPress} accessibilityRole="button" accessibilityState={{ selected: on }} style={[styles.chip, on && styles.chipOn]}>
@@ -836,9 +856,15 @@ const styles = StyleSheet.create({
   chipDot: { width: 10, height: 10, borderRadius: 5 },
   chipText: { color: colors.chromeText, fontSize: 15, fontWeight: '700' },
   chipTextOn: { color: palette.pine },
-  // Runs to the screen edges and scrolls, instead of stopping short inside the header's margin
-  filterRow: { marginHorizontal: -12 },
-  filterChips: { paddingHorizontal: 12 },
+  filterRow: { flexDirection: 'row', gap: 5 },
+  filterCell: {
+    flex: 1, minHeight: 60, borderRadius: 12, backgroundColor: 'rgba(16, 23, 19, 0.85)',
+    alignItems: 'center', justifyContent: 'center', gap: 3, paddingVertical: 5,
+  },
+  filterCellOn: { backgroundColor: palette.canvas },
+  filterIcon: { width: 28, height: 28, borderRadius: 14, borderWidth: 2, borderColor: palette.white, alignItems: 'center', justifyContent: 'center' },
+  filterLabel: { color: colors.chromeText, fontSize: 12, fontWeight: '700' },
+  filterLabelOn: { color: palette.pine, fontWeight: '800' },
   controls: { position: 'absolute', right: 12, gap: space.sm },
   control: { width: touch.min, height: touch.min, borderRadius: 14, backgroundColor: colors.chrome, alignItems: 'center', justifyContent: 'center' },
   peek: {
