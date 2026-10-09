@@ -41,6 +41,8 @@ export default function MapScreen({ device, onSignOut }: Props) {
   const [selected, setSelected] = useState<{ observation: Observation; photoUris: string[] } | null>(null);
   const [capturing, setCapturing] = useState(false);
   const [pack, setPack] = useState<string>('No offline area yet');
+  // Where the map opens: the phone's last fix, or START for a phone that has never had one
+  const [start, setStart] = useState<[number, number] | null>(null);
   const [downloading, setDownloading] = useState<number | null>(null);
 
   const reload = useCallback(() => {
@@ -50,11 +52,10 @@ export default function MapScreen({ device, onSignOut }: Props) {
   useEffect(() => {
     reload();
     const sub = addDatabaseChangeListener(reload);
-    // Open where the phone is; START is only for a phone that has never had a fix
-    Location.requestForegroundPermissionsAsync().then(async ({ granted }) => {
-      const fix = granted ? await Location.getLastKnownPositionAsync() : null;
-      if (fix) camera.current?.jumpTo({ center: [fix.coords.longitude, fix.coords.latitude], zoom: 14 });
-    });
+    Location.requestForegroundPermissionsAsync()
+      .then(({ granted }) => (granted ? Location.getLastKnownPositionAsync() : null))
+      .catch(() => null)
+      .then((fix) => setStart(fix ? [fix.coords.longitude, fix.coords.latitude] : START));
     OfflineManager.getPacks().then(async (packs) => {
       const last = packs.at(-1);
       if (last) setPack(describePack(await last.status()));
@@ -126,11 +127,14 @@ export default function MapScreen({ device, onSignOut }: Props) {
   return (
     <View style={{ flex: 1 }}>
       <Map ref={map} style={{ flex: 1 }} mapStyle={mapStyleUrl(device)} logo={false}>
-        <Camera ref={camera} initialViewState={{ center: START, zoom: 13 }} />
+        {start && <Camera ref={camera} initialViewState={{ center: start, zoom: 14 }} />}
         <UserLocation accuracy />
         {observations.map((o) => (
-          <Marker key={o.id} id={o.id} lngLat={[o.longitude, o.latitude]} onPress={() => select(o)}>
-            <View style={[styles.pin, { backgroundColor: KIND_COLORS[o.kind] }, o._status !== 'synced' && styles.pinUnsynced]} />
+          // Keyed on sync status too: the native marker doesn't redraw when only its children change
+          <Marker key={`${o.id}:${o._status}`} id={o.id} lngLat={[o.longitude, o.latitude]} onPress={() => select(o)}>
+            <View style={styles.pinTarget}>
+              <View style={[styles.pin, { backgroundColor: KIND_COLORS[o.kind] }, o._status !== 'synced' && styles.pinUnsynced]} />
+            </View>
           </Marker>
         ))}
       </Map>
@@ -215,6 +219,7 @@ const styles = StyleSheet.create({
   },
   addButton: { width: 56, height: 56, borderRadius: 28, backgroundColor: '#2f7de1', alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
   addText: { color: 'white', fontSize: 32, lineHeight: 36 },
+  pinTarget: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }, // finger-sized tap area
   pin: { width: 18, height: 18, borderRadius: 9, borderWidth: 2, borderColor: 'white' },
   pinUnsynced: { borderColor: '#222', borderStyle: 'dashed' },
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', padding: 24 },
