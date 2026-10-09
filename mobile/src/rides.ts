@@ -26,7 +26,7 @@ const RIDE_UPDATES: Location.LocationTaskOptions = {
   showsBackgroundLocationIndicator: true,
   foregroundService: {
     notificationTitle: 'Recording your ride',
-    notificationBody: 'Ranch Hand is tracking where you ride. Stop it from the Rides tab.',
+    notificationBody: 'Ranch Hand is tracking where you ride. Hold Stop on the map to finish.',
     notificationColor: palette.trail,
   },
 };
@@ -78,6 +78,15 @@ export async function ridePoints(rideId: string): Promise<LngLat[]> {
     rideId,
   );
   return rows.map((r) => [r.longitude, r.latitude]);
+}
+
+// The newest kept fix, for the sheet's GPS reading
+export async function lastFix(rideId: string): Promise<{ accuracy: number; at: number } | null> {
+  const row = await db().getFirstAsync<{ accuracy: number; recorded_at: number }>(
+    'SELECT accuracy, recorded_at FROM ride_points WHERE ride_id = ? ORDER BY recorded_at DESC LIMIT 1',
+    rideId,
+  );
+  return row ? { accuracy: row.accuracy, at: row.recorded_at } : null;
 }
 
 export function trackDistance(track: LngLat[]): number {

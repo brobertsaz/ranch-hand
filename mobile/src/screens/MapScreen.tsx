@@ -20,12 +20,13 @@ import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-cont
 import AppButton from '../components/AppButton';
 import Icon from '../components/Icon';
 import Pin from '../components/Pin';
+import RideSheet, { RecordingPill } from '../components/RideSheet';
 import TabBar, { useTabBarHeight, type Tab } from '../components/TabBar';
 import { KINDS, liveObservations, liveRides, liveWaypoints, observationsAt, photosFor, type Kind, type Observation, type Ride, type Waypoint } from '../db';
 import { dayAndTime, distanceMeters, formatDistance, formatDuration, relativeTo, timeAgo, type LngLat } from '../format';
 import { useMemberNames, who } from '../members';
 import { crewNews, isNew, newsSeenAt } from '../news';
-import { activeRide, ridePoints } from '../rides';
+import { activeRide, resumeRideIfNeeded, ridePoints, startRide, stopRide, type ActiveRide } from '../rides';
 import { KIND_INFO, WAYPOINT_INFO } from '../kinds';
 import { estimateTiles, expandBounds, MIN_PACK_SPAN_KM, PACK_MAX_ZOOM, PACK_MIN_ZOOM, TILE_LIMIT } from '../offline';
 import { photoFile } from '../photoFiles';
@@ -61,8 +62,10 @@ export default function MapScreen({ device, onSignOut }: Props) {
   const [rides, setRides] = useState<Ride[]>([]);
   // The ride picked from the Rides tab, drawn on the map until closed
   const [shownRideId, setShownRideId] = useState<string | null>(null);
-  // The track of a ride in progress, re-read every few seconds
+  // The ride in progress and its track, re-read every few seconds
+  const [ride, setRide] = useState<ActiveRide | null>(null);
   const [liveTrack, setLiveTrack] = useState<LngLat[]>([]);
+  const [rideSheetHeight, setRideSheetHeight] = useState(0);
   const names = useMemberNames();
   // Unread count for the New tab
   const [newsCount, setNewsCount] = useState(0);
@@ -92,8 +95,10 @@ export default function MapScreen({ device, onSignOut }: Props) {
   useEffect(() => {
     const refresh = async () => {
       const active = await activeRide();
+      setRide(active);
       setLiveTrack(active ? await ridePoints(active.id) : []);
     };
+    resumeRideIfNeeded().catch(() => {});
     refresh();
     const timer = setInterval(refresh, 5000);
     return () => clearInterval(timer);
@@ -167,6 +172,10 @@ export default function MapScreen({ device, onSignOut }: Props) {
   const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
   const resolvedCount = observations.filter((o) => o.status === 'resolved' && (o.resolved_at ?? 0) >= weekAgo).length;
   const shownRide = rides.find((r) => r.id === shownRideId) ?? null;
+  // While riding, the ride sheet takes the tab bar's place on the map
+  const riding = !!ride && tab === 'map';
+  const bottomInset = riding ? rideSheetHeight : tabBarHeight;
+  const pinsDropped = ride ? observations.filter((o) => o.member_id === device.memberId && o.observed_at >= ride.startedAt).length : 0;
   const unsynced = observations.filter((o) => o._status !== 'synced').length;
 
   async function select(id: string, photoFrom: string[]) {
@@ -198,10 +207,46 @@ export default function MapScreen({ device, onSignOut }: Props) {
     if (track.length === 0) return;
     const lngs = track.map((p) => p[0]);
     const lats = track.map((p) => p[1]);
-    camera.current?.fitBounds([Math.min(...lngs), Math.min(...lats), Math.max(...lngs), Math.max(...lats)], {
+    // A short ride would zoom past the imagery (it stops at z16), so show at least ~500 m around it
+    const pad = (min: number, max: number, span: number) => {
+      const extra = Math.max(0, (span - (max - min)) / 2);
+      return [min - extra, max + extra];
+    };
+    const [west, east] = pad(Math.min(...lngs), Math.max(...lngs), 0.006);
+    const [south, north] = pad(Math.min(...lats), Math.max(...lats), 0.0045);
+    camera.current?.fitBounds([west, south, east, north], {
       padding: { top: 220, right: 60, bottom: 260, left: 60 },
       duration: 600,
     });
+  }
+
+  async function beginRide() {
+    try {
+      const started = await startRide();
+      setRide(started);
+      setLiveTrack([]);
+      setShownRideId(null);
+      setSelectedId(null);
+      setTab('map');
+      centerOnMe();
+    } catch (error) {
+      Alert.alert("Couldn't start the ride", (error as Error).message);
+    }
+  }
+
+  async function endRide() {
+    const track = liveTrack;
+    const saved = await stopRide(device.memberId);
+    setRide(null);
+    setLiveTrack([]);
+    if (!saved) {
+      Alert.alert('Nothing to save', "The phone didn't get enough GPS fixes to draw a track.");
+      return;
+    }
+    syncState.syncNow();
+    // Leave the finished ride on the map, with its card
+    setShownRideId(saved.id);
+    fitTrack(track);
   }
 
   async function centerOnMe() {
@@ -287,7 +332,14 @@ export default function MapScreen({ device, onSignOut }: Props) {
         )}
         {liveTrack.length >= 2 && (
           <GeoJSONSource id="live-ride" data={lineString(liveTrack)}>
-            <Layer type="line" id="live-ride-line" paint={{ 'line-color': palette.trail, 'line-width': 5 }} layout={{ 'line-cap': 'round', 'line-join': 'round' }} />
+            <Layer type="line" id="live-ride-casing" paint={{ 'line-color': palette.pine, 'line-width': 9, 'line-opacity': 0.35 }} layout={{ 'line-cap': 'round', 'line-join': 'round' }} />
+            <Layer type="line" id="live-ride-line" paint={{ 'line-color': palette.focus, 'line-width': 5 }} layout={{ 'line-cap': 'round', 'line-join': 'round' }} />
+          </GeoJSONSource>
+        )}
+        {liveTrack.length >= 1 && (
+          // Where the ride started
+          <GeoJSONSource id="live-ride-start" data={{ type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: liveTrack[0] } }}>
+            <Layer type="circle" id="live-ride-start-dot" paint={{ 'circle-radius': 7, 'circle-color': palette.canvas, 'circle-stroke-color': palette.pine, 'circle-stroke-width': 3 }} />
           </GeoJSONSource>
         )}
         {places.map((w) => {
@@ -319,25 +371,31 @@ export default function MapScreen({ device, onSignOut }: Props) {
         })}
       </Map>
 
-      <View style={[styles.top, { top: insets.top + 8 }]} pointerEvents="box-none">
-        <View style={styles.header}>
-          <View style={styles.headerText}>
-            <Text style={styles.ranch} numberOfLines={1} accessibilityRole="header">{device.ranchName}</Text>
-            <Text style={styles.counts}>
-              {openCount} open · {resolvedCount} resolved this week
-            </Text>
-          </View>
-          <SyncPill state={syncState} unsynced={unsynced} onPress={syncState.syncNow} />
+      {riding ? (
+        <View style={[styles.top, { top: insets.top + 8 }]} pointerEvents="none">
+          <RecordingPill />
         </View>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
-          <Chip label="All" on={filter === 'all'} onPress={() => setFilter('all')} />
-          {KINDS.map((k) => (
-            <Chip key={k} label={KIND_INFO[k].short} color={KIND_INFO[k].pinColor} on={filter === k} onPress={() => setFilter(k)} />
-          ))}
-        </ScrollView>
-      </View>
+      ) : (
+        <View style={[styles.top, { top: insets.top + 8 }]} pointerEvents="box-none">
+          <View style={styles.header}>
+            <View style={styles.headerText}>
+              <Text style={styles.ranch} numberOfLines={1} accessibilityRole="header">{device.ranchName}</Text>
+              <Text style={styles.counts}>
+                {openCount} open · {resolvedCount} resolved this week
+              </Text>
+            </View>
+            <SyncPill state={syncState} unsynced={unsynced} onPress={syncState.syncNow} />
+          </View>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
+            <Chip label="All" on={filter === 'all'} onPress={() => setFilter('all')} />
+            {KINDS.map((k) => (
+              <Chip key={k} label={KIND_INFO[k].short} color={KIND_INFO[k].pinColor} on={filter === k} onPress={() => setFilter(k)} />
+            ))}
+          </ScrollView>
+        </View>
+      )}
 
-      <View style={[styles.controls, { top: insets.top + 164 }]}>
+      <View style={[styles.controls, { top: insets.top + (riding ? 8 : 164) }]}>
         <Pressable onPress={() => setLayersOpen(true)} accessibilityRole="button" accessibilityLabel="Map layers and offline areas" style={styles.control}>
           <Icon name="layers" size={22} color={colors.chromeText} />
         </Pressable>
@@ -352,7 +410,7 @@ export default function MapScreen({ device, onSignOut }: Props) {
           photoUri={selectedPhoto}
           author={who(names, selected.member_id, device.memberId)}
           here={here}
-          bottom={tabBarHeight + 20}
+          bottom={bottomInset + 20}
           onPress={() => openDetail(selected.id)}
         />
       )}
@@ -360,7 +418,7 @@ export default function MapScreen({ device, onSignOut }: Props) {
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
-          style={[styles.alsoHere, { bottom: tabBarHeight + 20 + PEEK_HEIGHT + space.sm }]}
+          style={[styles.alsoHere, { bottom: bottomInset + 20 + PEEK_HEIGHT + space.sm }]}
           contentContainerStyle={styles.chips}
         >
           <Text style={styles.alsoHereLabel}>Also here</Text>
@@ -382,15 +440,15 @@ export default function MapScreen({ device, onSignOut }: Props) {
           photoUri={selectedPhoto}
           author={latestAt[selectedPlace.id] ? who(names, latestAt[selectedPlace.id].member_id, device.memberId) : ''}
           here={here}
-          bottom={tabBarHeight + 20}
+          bottom={bottomInset + 20}
           onPress={() => openDetail(selectedPlace.id)}
         />
       )}
 
-      {shownRide && tab === 'map' && !selected && !selectedPlace && (
+      {shownRide && tab === 'map' && !riding && !selected && !selectedPlace && (
         <View style={[styles.rideCard, { bottom: tabBarHeight + 20 }]}>
           <View style={styles.rideCardText}>
-            <Text style={styles.peekTitle}>{who(names, shownRide.member_id, device.memberId)}'s ride</Text>
+            <Text style={styles.peekTitle}>{shownRide.member_id === device.memberId ? 'Your' : `${who(names, shownRide.member_id, device.memberId)}'s`} ride</Text>
             <Text style={styles.peekSmall}>
               {dayAndTime(shownRide.started_at)} · {formatDistance(shownRide.distance_meters)} · {formatDuration(shownRide.ended_at - shownRide.started_at)}
             </Text>
@@ -402,27 +460,35 @@ export default function MapScreen({ device, onSignOut }: Props) {
       )}
 
       {tab === 'rides' && (
-        <RidesScreen
-          memberId={device.memberId}
-          onRideSaved={syncState.syncNow}
-          onShowRide={showRide}
-        />
+        <RidesScreen memberId={device.memberId} riding={!!ride} onStart={beginRide} onBackToRide={() => setTab('map')} onShowRide={showRide} />
       )}
       {tab === 'new' && (
         <NewsScreen memberId={device.memberId} sync={syncState} onOpenObservation={openDetail} onShowRide={showRide} />
       )}
       {tab === 'crew' && <CrewScreen device={device} />}
 
-      <TabBar
-        active={tab}
-        onChange={(next) => {
-          setTab(next);
-          // Opening New marks it read, so the badge clears
-          if (next === 'new') setNewsCount(0);
-        }}
-        onCapture={() => setCapturing(true)}
-        badges={{ new: tab === 'new' ? 0 : newsCount }}
-      />
+      {riding && ride && (
+        <RideSheet
+          ride={ride}
+          track={liveTrack}
+          pinsDropped={pinsDropped}
+          onLog={() => setCapturing(true)}
+          onStop={endRide}
+          onLayout={(e) => setRideSheetHeight(e.nativeEvent.layout.height)}
+        />
+      )}
+      {!riding && (
+        <TabBar
+          active={tab}
+          onChange={(next) => {
+            setTab(next);
+            // Opening New marks it read, so the badge clears
+            if (next === 'new') setNewsCount(0);
+          }}
+          onCapture={() => setCapturing(true)}
+          badges={{ new: tab === 'new' ? 0 : newsCount }}
+        />
+      )}
 
       <Modal visible={capturing} animationType="slide" statusBarTranslucent navigationBarTranslucent onRequestClose={() => setCapturing(false)}>
         <SafeAreaProvider>
