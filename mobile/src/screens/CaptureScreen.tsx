@@ -87,7 +87,7 @@ export default function CaptureScreen({ memberId, onDone }: Props) {
   }
 
   return (
-    <SafeAreaView style={{ flex: 1 }}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: 'white' }}>
       <ScrollView contentContainerStyle={styles.form} keyboardShouldPersistTaps="handled">
         {photo.uri ? <Image source={{ uri: photo.uri }} style={styles.preview} /> : null}
         <View style={styles.kinds}>
@@ -107,7 +107,7 @@ export default function CaptureScreen({ memberId, onDone }: Props) {
 }
 
 const styles = StyleSheet.create({
-  centered: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12 },
+  centered: { flex: 1, backgroundColor: 'white', justifyContent: 'center', alignItems: 'center', gap: 12 },
   shutterBar: { position: 'absolute', bottom: 0, left: 0, right: 0, flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center', paddingBottom: 24 },
   shutter: { width: 72, height: 72, borderRadius: 36, backgroundColor: 'white', borderWidth: 4, borderColor: '#ccc' },
   form: { padding: 16, gap: 10 },

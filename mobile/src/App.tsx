@@ -27,7 +27,10 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <StatusBar style="dark" />
-      {device ? <MapScreen device={device} onSignOut={() => setDevice(null)} /> : <SetupScreen onJoined={setDevice} />}
+      {/* Android dark mode otherwise paints the window dark under our dark text */}
+      <View style={{ flex: 1, backgroundColor: 'white' }}>
+        {device ? <MapScreen device={device} onSignOut={() => setDevice(null)} /> : <SetupScreen onJoined={setDevice} />}
+      </View>
     </SafeAreaProvider>
   );
 }
