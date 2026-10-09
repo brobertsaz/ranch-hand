@@ -24,14 +24,14 @@ import FollowSheet from '../components/FollowSheet';
 import NameRideSheet from '../components/NameRideSheet';
 import RideSheet, { ModePill } from '../components/RideSheet';
 import TabBar, { useTabBarHeight, type Tab } from '../components/TabBar';
-import { KINDS, liveObservations, liveRides, liveWaypoints, observationsAt, photosFor, renameRide, type Kind, type Observation, type Ride, type Waypoint } from '../db';
+import { clearRanchData, getState, KINDS, liveObservations, liveRides, liveWaypoints, observationsAt, photosFor, renameRide, setState, type Kind, type Observation, type Ride, type Waypoint } from '../db';
 import { dayAndTime, distanceMeters, formatDistance, formatDuration, relativeTo, timeAgo, type LngLat } from '../format';
 import { useMemberNames, who } from '../members';
 import { crewNews, isNew, newsSeenAt } from '../news';
 import { activeRide, resumeRideIfNeeded, ridePoints, startRide, stopRide, type ActiveRide } from '../rides';
 import { KIND_INFO, WAYPOINT_INFO } from '../kinds';
 import { estimateTiles, expandBounds, MIN_PACK_SPAN_KM, PACK_MAX_ZOOM, PACK_MIN_ZOOM, TILE_LIMIT } from '../offline';
-import { photoFile } from '../photoFiles';
+import { deleteAllPhotos, photoFile } from '../photoFiles';
 import { cumulative, placesOnTrail } from '../trail';
 import { forgetDevice, mapStyleUrl, type Device } from '../settings';
 import { colors, fonts, palette, radius, space, sync } from '../theme';
@@ -43,6 +43,7 @@ import NewsScreen from './NewsScreen';
 import RidesScreen from './RidesScreen';
 import WaypointScreen from './WaypointScreen';
 
+const BASE_KEY = 'map_base';
 // Pins closer than this overlap on screen at field zoom levels
 const ALSO_HERE_METERS = 30;
 // 72 photo + 2 × 10 padding
@@ -85,6 +86,8 @@ export default function MapScreen({ device, onSignOut }: Props) {
   const [tab, setTab] = useState<Tab>('map');
   const [capturing, setCapturing] = useState(false);
   const [layersOpen, setLayersOpen] = useState(false);
+  // Aerial photos, or USGS Topo (contours, creeks, section lines). Both are in every offline download.
+  const [base, setBase] = useState<'aerial' | 'topo'>('aerial');
   const [pack, setPack] = useState<string>('No offline area yet');
   // Where the map opens: the phone's last fix, or START for a phone that has never had one
   const [start, setStart] = useState<[number, number] | null>(null);
@@ -127,6 +130,7 @@ export default function MapScreen({ device, onSignOut }: Props) {
         const [newest] = await liveObservations();
         setStart(newest ? [newest.longitude, newest.latitude] : START);
       });
+    getState(BASE_KEY).then((saved) => saved === 'topo' && setBase('topo'));
     OfflineManager.getPacks().then(async (packs) => {
       const last = packs.at(-1);
       if (last) setPack(describePack(await last.status()));
@@ -342,8 +346,19 @@ export default function MapScreen({ device, onSignOut }: Props) {
     }
   }
 
+  function chooseBase(next: 'aerial' | 'topo') {
+    setBase(next);
+    setState(BASE_KEY, next);
+  }
+
   function confirmSignOut() {
-    Alert.alert('Leave this ranch?', 'This phone stops syncing with the crew until it joins again.', [
+    if (ride) {
+      Alert.alert('Stop your ride first', 'Hold Stop on the map, then leave the ranch.');
+      return;
+    }
+    const waiting = syncState.pending.records + syncState.pending.uploads;
+    const warning = waiting > 0 ? ` ${waiting} of your changes haven't synced yet and will be lost.` : '';
+    Alert.alert('Leave this ranch?', `This clears the ranch's pins, places and rides from this phone. Join again to get them back.${warning}`, [
       { text: 'Stay', style: 'cancel' },
       {
         text: 'Leave',
@@ -351,6 +366,8 @@ export default function MapScreen({ device, onSignOut }: Props) {
         onPress: async () => {
           setLayersOpen(false);
           await forgetDevice();
+          await clearRanchData();
+          deleteAllPhotos();
           onSignOut();
         },
       },
@@ -362,6 +379,7 @@ export default function MapScreen({ device, onSignOut }: Props) {
       <StatusBar style="light" />
       <Map ref={map} style={StyleSheet.absoluteFill} mapStyle={mapStyleUrl(device)} logo={false} onPress={() => Date.now() - pinPressedAt.current > 500 && setSelectedId(null)}>
         {start && <Camera ref={camera} initialViewState={{ center: start, zoom: 14 }} trackUserLocation={following ? 'default' : undefined} />}
+        {base === 'topo' && <Layer type="raster" id="topo" source="topo" afterId="imagery" />}
         <UserLocation accuracy />
         {shownRide && (
           <GeoJSONSource id="shown-ride" data={lineString(JSON.parse(shownRide.track) as LngLat[])}>
@@ -622,7 +640,27 @@ export default function MapScreen({ device, onSignOut }: Props) {
       <Modal visible={layersOpen} transparent animationType="fade" statusBarTranslucent onRequestClose={() => setLayersOpen(false)}>
         <Pressable style={styles.backdrop} onPress={() => setLayersOpen(false)} accessibilityLabel="Close">
           <Pressable style={[styles.sheet, { paddingBottom: insets.bottom + space.xl }]} onPress={() => {}}>
-            <Text style={styles.sheetTitle} accessibilityRole="header">Offline map</Text>
+            <Text style={styles.sheetTitle} accessibilityRole="header">Map</Text>
+            <View style={styles.baseRow}>
+              {(['aerial', 'topo'] as const).map((b) => (
+                <Pressable
+                  key={b}
+                  onPress={() => chooseBase(b)}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected: base === b }}
+                  style={[styles.baseChoice, base === b && styles.baseChoiceOn]}
+                >
+                  <Icon name={b === 'aerial' ? 'map' : 'layers'} size={22} color={base === b ? palette.white : colors.text} />
+                  <Text style={[styles.baseText, base === b && styles.baseTextOn]}>{b === 'aerial' ? 'Aerial' : 'Topo'}</Text>
+                </Pressable>
+              ))}
+            </View>
+            <Text style={styles.sheetHint}>
+              {base === 'topo' ? 'Contour lines, creeks, draws and section lines.' : 'Aerial photos of the ground.'} Offline areas saved before today need saving again to have Topo.
+            </Text>
+
+            <View style={styles.sheetDivider} />
+            <Text style={styles.sheetTitle}>Offline map</Text>
             <Text style={styles.sheetText}>{pack}</Text>
             <AppButton
               title={downloading === null ? 'Download this area' : `Downloading ${Math.round(downloading)}%`}
@@ -630,7 +668,7 @@ export default function MapScreen({ device, onSignOut }: Props) {
               disabled={downloading !== null}
               icon={<Icon name="download" size={20} color={palette.white} strokeWidth={2.4} />}
             />
-            <Text style={styles.sheetHint}>Saves imagery at least {MIN_PACK_SPAN_KM} km across around the current view.</Text>
+            <Text style={styles.sheetHint}>Saves aerial and topo maps at least {MIN_PACK_SPAN_KM} km across around the current view.</Text>
 
             <View style={styles.sheetDivider} />
             <Text style={styles.sheetTitle}>Sync</Text>
@@ -831,5 +869,13 @@ const styles = StyleSheet.create({
   sheetTitle: { fontFamily: fonts.display, fontSize: 26, color: colors.text },
   sheetText: { fontSize: 15, color: colors.text },
   sheetHint: { fontSize: 13, color: colors.textMuted },
+  baseRow: { flexDirection: 'row', gap: 10 },
+  baseChoice: {
+    flex: 1, minHeight: 56, borderRadius: radius.md, borderWidth: 2, borderColor: colors.border,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+  },
+  baseChoiceOn: { backgroundColor: palette.sky, borderColor: palette.sky },
+  baseText: { fontSize: 17, fontWeight: '800', color: colors.text },
+  baseTextOn: { color: palette.white },
   sheetDivider: { height: 1, backgroundColor: colors.border, marginVertical: 6 },
 });

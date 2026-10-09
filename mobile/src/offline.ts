@@ -5,6 +5,8 @@ export const PACK_MIN_ZOOM = 10;
 export const PACK_MAX_ZOOM = 16;
 // MapLibre's default per-pack ceiling
 export const TILE_LIMIT = 6000;
+// The style has two tile sources (aerial and topo) and a pack downloads both
+const PACK_SOURCES = 2;
 
 // Zoomed in, the screen covers a few hundred metres, so a download always grabs at least this much
 export const MIN_PACK_SPAN_KM = 5;
@@ -31,5 +33,5 @@ export function estimateTiles([west, south, east, north]: LngLatBounds, minZoom 
   for (let z = minZoom; z <= maxZoom; z++) {
     total += (tileX(east, z) - tileX(west, z) + 1) * (tileY(south, z) - tileY(north, z) + 1);
   }
-  return total;
+  return total * PACK_SOURCES;
 }

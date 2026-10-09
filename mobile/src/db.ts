@@ -231,6 +231,16 @@ export async function renameRide(id: string, name: string): Promise<void> {
   );
 }
 
+// Leaving a ranch: its records and sync position go, so joining another ranch (or server) starts clean.
+// The map choice stays; it belongs to the phone, not the ranch.
+export async function clearRanchData(): Promise<void> {
+  await db().execAsync(`
+    DELETE FROM observations; DELETE FROM photos; DELETE FROM waypoints; DELETE FROM members;
+    DELETE FROM rides; DELETE FROM ride_points;
+    DELETE FROM sync_state WHERE key != 'map_base';
+  `);
+}
+
 export function liveWaypoints() {
   return db().getAllAsync<Waypoint>(`SELECT * FROM waypoints WHERE _status != 'deleted' ORDER BY name`);
 }

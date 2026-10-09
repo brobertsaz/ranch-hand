@@ -6,6 +6,7 @@ RSpec.describe "Map style", type: :request do
 
     expect(response).to have_http_status(:ok)
     expect(json.dig("sources", "imagery", "tiles")).to eq([ Api::V1::MapStylesController::DEFAULT_TILE_URL ])
+    expect(json.dig("sources", "topo", "tiles")).to eq([ Api::V1::MapStylesController::DEFAULT_TOPO_TILE_URL ])
     expect(json["layers"].pluck("id")).to eq(%w[background imagery])
   end
 

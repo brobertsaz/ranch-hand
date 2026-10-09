@@ -9,7 +9,8 @@ export type Device = {
 
 const KEY = 'device';
 
-export const DEFAULT_API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://192.168.1.10:3000';
+// The test server on Bob (behind a Cloudflare tunnel). .env.local can point a dev build at a laptop instead.
+export const DEFAULT_API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'https://ranch.thebob.dev';
 
 export async function loadDevice(): Promise<Device | null> {
   const json = await SecureStore.getItemAsync(KEY);

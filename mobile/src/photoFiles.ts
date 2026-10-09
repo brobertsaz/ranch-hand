@@ -11,6 +11,11 @@ export function photoFile(photoId: string): File {
   return new File(photosDir(), `${photoId}.jpg`);
 }
 
+export function deleteAllPhotos(): void {
+  const dir = new Directory(Paths.document, 'photos');
+  if (dir.exists) dir.delete();
+}
+
 export async function keepPhoto(cameraUri: string, photoId: string): Promise<File> {
   const destination = photoFile(photoId);
   await new File(cameraUri).move(destination);
