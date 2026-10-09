@@ -4,8 +4,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { joinRanch } from '../api';
 import AppButton from '../components/AppButton';
+import Logo from '../components/Logo';
 import { DEFAULT_API_URL, saveDevice, type Device } from '../settings';
-import { colors, radius } from '../theme';
+import { colors, fonts, palette, radius } from '../theme';
 
 export default function SetupScreen({ onJoined }: { onJoined: (device: Device) => void }) {
   const [apiUrl, setApiUrl] = useState(DEFAULT_API_URL);
@@ -32,6 +33,10 @@ export default function SetupScreen({ onJoined }: { onJoined: (device: Device) =
 
   return (
     <SafeAreaView style={styles.container}>
+      <View style={styles.lockup}>
+        <Logo size={52} />
+        <Text style={styles.wordmark}>RANCH HAND</Text>
+      </View>
       <Text style={styles.title}>Join a ranch</Text>
       <Text style={styles.label}>Server</Text>
       <TextInput style={styles.input} value={apiUrl} onChangeText={setApiUrl} autoCapitalize="none" autoCorrect={false} keyboardType="url" />
@@ -48,6 +53,12 @@ export default function SetupScreen({ onJoined }: { onJoined: (device: Device) =
 }
 
 const styles = StyleSheet.create({
+  // The canvas's lockup: the tag on a Pine bar with the name in the display face
+  lockup: {
+    flexDirection: 'row', alignItems: 'center', gap: 14, alignSelf: 'stretch', backgroundColor: palette.pine,
+    borderRadius: 12, paddingVertical: 14, paddingHorizontal: 18, marginBottom: 20,
+  },
+  wordmark: { fontFamily: fonts.displayBlack, fontSize: 36, lineHeight: 38, letterSpacing: 0.4, color: palette.canvas },
   container: { flex: 1, padding: 20, gap: 6, backgroundColor: colors.background },
   title: { fontSize: 28, fontWeight: '800', color: colors.text, marginBottom: 12 },
   label: { fontSize: 14, fontWeight: '700', color: colors.text },
