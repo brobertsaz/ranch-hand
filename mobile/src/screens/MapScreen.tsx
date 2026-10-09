@@ -15,7 +15,7 @@ import { Alert, Button, Image, Modal, Pressable, StyleSheet, Text, View } from '
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { liveObservations, photosFor, type Observation } from '../db';
-import { estimateTiles, PACK_MAX_ZOOM, PACK_MIN_ZOOM, TILE_LIMIT } from '../offline';
+import { estimateTiles, expandBounds, MIN_PACK_SPAN_KM, PACK_MAX_ZOOM, PACK_MIN_ZOOM, TILE_LIMIT } from '../offline';
 import { photoFile } from '../photoFiles';
 import { forgetDevice, mapStyleUrl, type Device } from '../settings';
 import { useSync } from '../useSync';
@@ -41,6 +41,7 @@ export default function MapScreen({ device, onSignOut }: Props) {
   const [selected, setSelected] = useState<{ observation: Observation; photoUris: string[] } | null>(null);
   const [capturing, setCapturing] = useState(false);
   const [pack, setPack] = useState<string>('No offline area yet');
+  const [downloading, setDownloading] = useState<number | null>(null);
 
   const reload = useCallback(() => {
     liveObservations().then(setObservations);
@@ -69,24 +70,48 @@ export default function MapScreen({ device, onSignOut }: Props) {
   }
 
   async function downloadArea() {
-    const bounds = await map.current?.getBounds();
-    if (!bounds) return;
+    const visible = await map.current?.getBounds();
+    if (!visible) return;
+    const bounds = expandBounds(visible);
     const tiles = estimateTiles(bounds);
     if (tiles > TILE_LIMIT) {
       Alert.alert('Area too big', `About ${tiles} tiles. Zoom in until it's under ${TILE_LIMIT}.`);
       return;
     }
-    await OfflineManager.createPack(
-      {
-        mapStyle: mapStyleUrl(device),
-        bounds,
-        minZoom: PACK_MIN_ZOOM,
-        maxZoom: PACK_MAX_ZOOM,
-        metadata: { name: `Area ${new Date().toISOString()}`, estimatedTiles: tiles },
-      },
-      (_pack, status) => setPack(describePack(status)),
-      (_pack, error) => setPack(`Download failed: ${error.message}`),
-    );
+
+    setDownloading(0);
+    let finished = false;
+    const finish = (title: string, message: string) => {
+      if (finished) return;
+      finished = true;
+      setDownloading(null);
+      Alert.alert(title, message);
+    };
+
+    try {
+      await OfflineManager.createPack(
+        {
+          mapStyle: mapStyleUrl(device),
+          bounds,
+          minZoom: PACK_MIN_ZOOM,
+          maxZoom: PACK_MAX_ZOOM,
+          metadata: { name: `Area ${new Date().toISOString()}`, estimatedTiles: tiles },
+        },
+        (_pack, status) => {
+          setPack(describePack(status));
+          setDownloading(status.percentage);
+          if (status.state === 'complete') {
+            finish('Saved for offline', `At least ${MIN_PACK_SPAN_KM} km across around this view. ${describePack(status)}`);
+          }
+        },
+        (_pack, error) => {
+          setPack(`Download failed: ${error.message}`);
+          finish('Download failed', error.message);
+        },
+      );
+    } catch (error) {
+      finish('Download failed', (error as Error).message);
+    }
   }
 
   async function signOut() {
@@ -121,7 +146,11 @@ export default function MapScreen({ device, onSignOut }: Props) {
       </SafeAreaView>
 
       <SafeAreaView edges={['bottom']} style={styles.toolbar}>
-        <Button title="Download area" onPress={downloadArea} />
+        <Button
+          title={downloading === null ? 'Download area' : `Downloading ${Math.round(downloading)}%`}
+          onPress={downloadArea}
+          disabled={downloading !== null}
+        />
         <Button title="Me" onPress={centerOnMe} />
         <Button title="Sync" onPress={syncState.syncNow} disabled={syncState.syncing} />
         <Pressable style={styles.addButton} onPress={() => setCapturing(true)} accessibilityLabel="New observation">
