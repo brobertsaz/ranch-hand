@@ -23,8 +23,12 @@ export function who(names: Record<string, string>, memberId: string | null, myId
   return (memberId && names[memberId]) || 'Another hand';
 }
 
-// "Jess Rowe" -> "JR"
+// "Jess Rowe" -> "JR"; "Sam (test)" -> "S", ignoring asides and punctuation
 export function initials(name: string): string {
-  const parts = name.trim().split(/\s+/);
+  const parts = name
+    .replace(/\(.*?\)/g, ' ')
+    .split(/\s+/)
+    .map((part) => part.replace(/[^\p{L}]/gu, ''))
+    .filter(Boolean);
   return ((parts[0]?.[0] ?? '') + (parts.length > 1 ? (parts.at(-1)?.[0] ?? '') : '')).toUpperCase() || '?';
 }

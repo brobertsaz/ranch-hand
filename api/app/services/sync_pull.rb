@@ -27,10 +27,10 @@ class SyncPull
 
   private
 
-  # Members aren't soft-deleted (nobody leaves a ranch in the app yet), so only additions and renames
+  # The whole crew every time: it's a short list, and a phone that synced before names existed
+  # would otherwise never hear about members who haven't changed since
   def member_changes
-    members = @since ? @ranch.members.where(updated_at: @since..) : @ranch.members
-    { created: [], updated: members.map(&:to_raw), deleted: [] }
+    { created: [], updated: @ranch.members.map(&:to_raw), deleted: [] }
   end
 
   def changes_for(scope)

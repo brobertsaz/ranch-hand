@@ -5,6 +5,7 @@ Rails.application.routes.draw do
     namespace :v1 do
       resources :devices, only: :create
       resource :sync, only: %i[show create]
+      resource :ranch, only: :show
       resources :photos, only: [] do
         resource :file, only: %i[show update], controller: :photo_files
       end

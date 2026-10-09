@@ -54,15 +54,17 @@ async function runSync(device: Device): Promise<SyncResult> {
 async function pull(device: Device): Promise<number> {
   const lastPulledAt = await getState('last_pulled_at');
   const { changes, timestamp } = await pullChanges(device, lastPulledAt ? Number(lastPulledAt) : null);
+  // A phone's first pull is the ranch's whole history; none of that is news to the person who just joined
+  const arrivedAt = lastPulledAt ? Date.now() : null;
   const conn = db();
   let count = 0;
 
   await conn.withTransactionAsync(async () => {
-    count += await applyRemote('members', MEMBER_COLUMNS, changes.members ?? NO_CHANGES);
-    count += await applyRemote('waypoints', WAYPOINT_COLUMNS, changes.waypoints ?? NO_CHANGES);
-    count += await applyRemote('observations', OBSERVATION_COLUMNS, changes.observations);
-    count += await applyRemote('photos', PHOTO_COLUMNS, changes.photos);
-    count += await applyRemote('rides', RIDE_COLUMNS, changes.rides ?? NO_CHANGES);
+    count += await applyRemote('members', MEMBER_COLUMNS, changes.members ?? NO_CHANGES, arrivedAt);
+    count += await applyRemote('waypoints', WAYPOINT_COLUMNS, changes.waypoints ?? NO_CHANGES, arrivedAt);
+    count += await applyRemote('observations', OBSERVATION_COLUMNS, changes.observations, arrivedAt);
+    count += await applyRemote('photos', PHOTO_COLUMNS, changes.photos, arrivedAt);
+    count += await applyRemote('rides', RIDE_COLUMNS, changes.rides ?? NO_CHANGES, arrivedAt);
     await setState('last_pulled_at', String(timestamp));
   });
 
@@ -73,21 +75,33 @@ async function pull(device: Device): Promise<number> {
   return count;
 }
 
+// Tables whose rows feed "What's new": they note when a change from the crew reached this phone
+const TRACKS_ARRIVAL = new Set(['waypoints', 'observations', 'rides']);
+
 async function applyRemote<T extends Record<string, unknown>>(
   table: string,
   columns: readonly (keyof T & string)[],
   changes: TableChanges<T>,
+  arrivedAt: number | null,
 ): Promise<number> {
   const conn = db();
-  const placeholders = columns.map(() => '?').join(', ');
-  const updates = columns.filter((c) => c !== 'id').map((c) => `${c} = excluded.${c}`).join(', ');
-
+  const tracked = TRACKS_ARRIVAL.has(table);
+  const insertColumns = tracked ? [...columns, 'pulled_at'] : [...columns];
+  const placeholders = insertColumns.map(() => '?').join(', ');
+  const assignments = columns.filter((c) => c !== 'id').map((c) => `${c} = excluded.${c}`);
+  if (tracked) {
+    // Only a real change counts as news; pulls re-send a few unchanged rows on purpose
+    const changed = columns.map((c) => `${table}.${c} IS NOT excluded.${c}`).join(' OR ');
+    assignments.push(`pulled_at = CASE WHEN ${changed} THEN excluded.pulled_at ELSE ${table}.pulled_at END`);
+  }
   for (const raw of [...changes.created, ...changes.updated]) {
+    const values = columns.map((c) => (raw[c] ?? null) as string | number | null);
+    if (tracked) values.push(arrivedAt);
     // A record with unpushed local edits keeps them; the push that follows makes them the last write
     await conn.runAsync(
-      `INSERT INTO ${table} (${columns.join(', ')}, _status) VALUES (${placeholders}, 'synced')
-       ON CONFLICT(id) DO UPDATE SET ${updates} WHERE ${table}._status = 'synced'`,
-      columns.map((c) => (raw[c] ?? null) as string | number | null),
+      `INSERT INTO ${table} (${insertColumns.join(', ')}, _status) VALUES (${placeholders}, 'synced')
+       ON CONFLICT(id) DO UPDATE SET ${assignments.join(', ')} WHERE ${table}._status = 'synced'`,
+      values,
     );
   }
   for (const id of changes.deleted) {

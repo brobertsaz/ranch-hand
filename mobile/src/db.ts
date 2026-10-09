@@ -124,6 +124,10 @@ const MIGRATIONS = [
     recorded_at INTEGER NOT NULL
   );
   CREATE INDEX ride_points_ride_id ON ride_points (ride_id);`,
+  // When a crew change reached this phone (not when it happened), for "What's new"
+  `ALTER TABLE waypoints ADD COLUMN pulled_at INTEGER;
+  ALTER TABLE observations ADD COLUMN pulled_at INTEGER;
+  ALTER TABLE rides ADD COLUMN pulled_at INTEGER;`,
 ];
 
 let database: SQLite.SQLiteDatabase | null = null;

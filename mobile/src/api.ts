@@ -37,6 +37,10 @@ export function pushChanges(device: Device, changes: Changes) {
   return request<void>(device, '/api/v1/sync', { method: 'POST', body: JSON.stringify({ changes }) });
 }
 
+export function fetchRanch(device: Device) {
+  return request<{ id: string; name: string; invite_code: string }>(device, '/api/v1/ranch');
+}
+
 export function photoFileUrl(device: Device, photoId: string) {
   return `${device.apiUrl}/api/v1/photos/${photoId}/file`;
 }

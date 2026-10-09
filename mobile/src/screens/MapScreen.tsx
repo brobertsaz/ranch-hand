@@ -24,6 +24,7 @@ import TabBar, { useTabBarHeight, type Tab } from '../components/TabBar';
 import { KINDS, liveObservations, liveRides, liveWaypoints, observationsAt, photosFor, type Kind, type Observation, type Ride, type Waypoint } from '../db';
 import { dayAndTime, distanceMeters, formatDistance, formatDuration, relativeTo, timeAgo, type LngLat } from '../format';
 import { useMemberNames, who } from '../members';
+import { crewNews, isNew, newsSeenAt } from '../news';
 import { activeRide, ridePoints } from '../rides';
 import { KIND_INFO, WAYPOINT_INFO } from '../kinds';
 import { estimateTiles, expandBounds, MIN_PACK_SPAN_KM, PACK_MAX_ZOOM, PACK_MIN_ZOOM, TILE_LIMIT } from '../offline';
@@ -33,9 +34,10 @@ import { colors, fonts, palette, radius, space, sync } from '../theme';
 import { useSync, type SyncState } from '../useSync';
 import CaptureScreen from './CaptureScreen';
 import ObservationScreen from './ObservationScreen';
+import CrewScreen from './CrewScreen';
+import NewsScreen from './NewsScreen';
 import RidesScreen from './RidesScreen';
 import WaypointScreen from './WaypointScreen';
-import StubScreen from './StubScreen';
 
 // Pins closer than this overlap on screen at field zoom levels
 const ALSO_HERE_METERS = 30;
@@ -62,6 +64,8 @@ export default function MapScreen({ device, onSignOut }: Props) {
   // The track of a ride in progress, re-read every few seconds
   const [liveTrack, setLiveTrack] = useState<LngLat[]>([]);
   const names = useMemberNames();
+  // Unread count for the New tab
+  const [newsCount, setNewsCount] = useState(0);
   const [filter, setFilter] = useState<Kind | 'all'>('all');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedPhoto, setSelectedPhoto] = useState<string | null>(null);
@@ -82,7 +86,8 @@ export default function MapScreen({ device, onSignOut }: Props) {
     liveObservations().then(setObservations);
     liveWaypoints().then(setWaypoints);
     liveRides().then(setRides);
-  }, []);
+    Promise.all([crewNews(device.memberId), newsSeenAt()]).then(([items, seenAt]) => setNewsCount(items.filter((i) => isNew(i, seenAt)).length));
+  }, [device.memberId]);
 
   useEffect(() => {
     const refresh = async () => {
@@ -180,6 +185,14 @@ export default function MapScreen({ device, onSignOut }: Props) {
   const selectSighting = (o: Observation) => select(o.id, [o.id]);
   // A place shows the newest photo taken there
   const selectPlace = async (w: Waypoint) => select(w.id, (await observationsAt(w.id)).map((o) => o.id));
+
+  function showRide(rideId: string) {
+    const ride = rides.find((r) => r.id === rideId);
+    setShownRideId(rideId);
+    setSelectedId(null);
+    setTab('map');
+    if (ride) fitTrack(JSON.parse(ride.track) as LngLat[]);
+  }
 
   function fitTrack(track: LngLat[]) {
     if (track.length === 0) return;
@@ -392,19 +405,24 @@ export default function MapScreen({ device, onSignOut }: Props) {
         <RidesScreen
           memberId={device.memberId}
           onRideSaved={syncState.syncNow}
-          onShowRide={(rideId) => {
-            const ride = rides.find((r) => r.id === rideId);
-            setShownRideId(rideId);
-            setSelectedId(null);
-            setTab('map');
-            if (ride) fitTrack(JSON.parse(ride.track) as LngLat[]);
-          }}
+          onShowRide={showRide}
         />
       )}
-      {tab === 'new' && <StubScreen title="What's new" icon="bell" body="Everything the crew logged since your last sync comes in Phase 3." />}
-      {tab === 'crew' && <StubScreen title="Crew" icon="crew" body="Ranch members and invite codes come in Phase 3." />}
+      {tab === 'new' && (
+        <NewsScreen memberId={device.memberId} sync={syncState} onOpenObservation={openDetail} onShowRide={showRide} />
+      )}
+      {tab === 'crew' && <CrewScreen device={device} />}
 
-      <TabBar active={tab} onChange={setTab} onCapture={() => setCapturing(true)} />
+      <TabBar
+        active={tab}
+        onChange={(next) => {
+          setTab(next);
+          // Opening New marks it read, so the badge clears
+          if (next === 'new') setNewsCount(0);
+        }}
+        onCapture={() => setCapturing(true)}
+        badges={{ new: tab === 'new' ? 0 : newsCount }}
+      />
 
       <Modal visible={capturing} animationType="slide" statusBarTranslucent navigationBarTranslucent onRequestClose={() => setCapturing(false)}>
         <SafeAreaProvider>

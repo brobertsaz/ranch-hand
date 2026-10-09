@@ -20,23 +20,31 @@ export function useTabBarHeight() {
   return BAR_HEIGHT + useSafeAreaInsets().bottom;
 }
 
-type Props = { active: Tab; onChange: (tab: Tab) => void; onCapture: () => void };
+// badges: unread counts by tab, drawn as the red bubble from the design canvas
+type Props = { active: Tab; onChange: (tab: Tab) => void; onCapture: () => void; badges?: Partial<Record<Tab, number>> };
 
-export default function TabBar({ active, onChange, onCapture }: Props) {
+export default function TabBar({ active, onChange, onCapture, badges = {} }: Props) {
   const height = useTabBarHeight();
   const [left, right] = [TABS.slice(0, 2), TABS.slice(2)];
 
   const renderTab = ({ key, label, icon }: (typeof TABS)[number]) => {
     const on = key === active;
+    const count = badges[key] ?? 0;
     return (
       <Pressable
         key={key}
         onPress={() => onChange(key)}
         accessibilityRole="tab"
         accessibilityState={{ selected: on }}
+        accessibilityLabel={count > 0 ? `${label}, ${count} new` : label}
         style={styles.tab}
       >
         <Icon name={icon} color={on ? palette.focus : colors.chromeTextMuted} />
+        {count > 0 && (
+          <View style={styles.badge}>
+            <Text style={styles.badgeText}>{count > 99 ? '99+' : count}</Text>
+          </View>
+        )}
         <Text style={[styles.label, on && styles.labelOn]}>{label}</Text>
       </Pressable>
     );
@@ -70,6 +78,11 @@ const styles = StyleSheet.create({
   tab: { flex: 1, height: 52, alignItems: 'center', justifyContent: 'center', gap: 4 },
   label: { fontSize: 12, fontWeight: '600', color: colors.chromeTextMuted },
   labelOn: { fontWeight: '700', color: colors.chromeText },
+  badge: {
+    position: 'absolute', top: 2, right: '22%', minWidth: 18, height: 18, borderRadius: 9, paddingHorizontal: 4,
+    backgroundColor: palette.trail, alignItems: 'center', justifyContent: 'center',
+  },
+  badgeText: { color: palette.white, fontSize: 11, fontWeight: '800' },
   cameraSlot: { width: 96, alignItems: 'center' },
   camera: {
     width: CAMERA_SIZE,

@@ -192,6 +192,14 @@ RSpec.describe "Sync", type: :request do
 
       expect(json.dig("changes", "members", "updated").pluck("name")).to contain_exactly(member.name, "Sam")
     end
+
+    it "sends the whole crew even on later pulls, for phones that synced before names existed" do
+      create(:member, ranch: ranch, name: "Sam", updated_at: 1.day.ago)
+
+      pull(to_ms(1.minute.ago))
+
+      expect(json.dig("changes", "members", "updated").pluck("name")).to include("Sam")
+    end
   end
 
   describe "resolving" do
