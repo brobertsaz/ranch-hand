@@ -33,3 +33,4 @@ Notes:
 - In step 2, force-quit also kills the Metro connection on a debug build. To test a truly cold start offline, use a release build: `npx expo run:android --variant release` / `npx expo run:ios --configuration Release`.
 - Offline packs use zoom levels 10 to 16 (USGS imagery stops at 16). Packs are capped at 6,000 tiles.
 - The iOS build allows plain HTTP (`NSAllowsArbitraryLoads`), and so does Android (`usesCleartextTraffic`). That's for talking to the Mac over LAN; it is spike-only and comes out before TestFlight.
+- Test ride tracking on a release build (`./gradlew assembleRelease` in `mobile/android`). In a dev build, the ride's background location task starts React before the dev launcher does, and the launcher crashes on open ("App react context shouldn't be created before").
