@@ -19,13 +19,16 @@ Rails.application.configure do
   # config.asset_host = "http://assets.example.com"
 
   # Store uploaded files on the local file system (see config/storage.yml for options).
-  config.active_storage.service = :local
+  # Photos go to the S3-compatible bucket; a Railway service's own disk is wiped on every deploy
+  config.active_storage.service = ENV.fetch("ACTIVE_STORAGE_SERVICE", "railway").to_sym
 
   # Assume all access to the app is happening through a SSL-terminating reverse proxy.
   config.assume_ssl = true
 
   # Force all access to the app over SSL, use Strict-Transport-Security, and use secure cookies.
   config.force_ssl = true
+  # Railway's health check calls /up over plain HTTP inside its network; a redirect would fail it
+  config.ssl_options = { redirect: { exclude: ->(request) { request.path == "/up" } } }
 
   # Skip http-to-https redirect for the default health check endpoint.
   # config.ssl_options = { redirect: { exclude: ->(request) { request.path == "/up" } } }

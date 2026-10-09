@@ -15,7 +15,9 @@ test:
   <<: *default
   database: ranch_hand_test
 
+# Not merged with default: its localhost fallbacks would override parts of DATABASE_URL
 production:
-  <<: *default
-  database: ranch_hand_production
+  adapter: postgresql
+  encoding: unicode
+  max_connections: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 } %>
   url: <%= ENV["DATABASE_URL"] %>
