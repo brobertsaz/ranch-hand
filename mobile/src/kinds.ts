@@ -1,5 +1,5 @@
 import type { IconName } from './components/Icon';
-import type { Kind, Waypoint, WaypointKind } from './db';
+import type { Kind, ObservationStatus, Waypoint, WaypointKind } from './db';
 import { distanceMeters, type LngLat } from './format';
 import { kindColors, palette, waypointColors } from './theme';
 
@@ -60,6 +60,18 @@ export const CONDITIONS: Record<Kind, { prompt: string; options: string[] }> = {
   gate_issue: { prompt: "How's the gate?", options: ['Closed', 'Left open', 'Broken', 'Latch broken', "Won't close"] },
   other: { prompt: 'What is it?', options: ['Predator sign', 'Tree down', 'Road washed out', 'Dead animal'] },
 };
+
+// Picks that mean everything's fine. Anything else on a check is a problem someone needs to deal with.
+const ALL_CLEAR = new Set(['Full', 'Closed']);
+
+// Sick animals, fences and "other" always need someone. A feed, water or gate check only does if it found
+// a problem; one with nothing ticked was just a ride-by.
+export function initialStatus(kind: Kind, picks: string[]): ObservationStatus {
+  if (!PLACE_KIND[kind]) return 'open';
+  return picks.some((pick) => !ALL_CLEAR.has(pick)) ? 'open' : 'ok';
+}
+
+export const STATUS_LABEL: Record<ObservationStatus, string> = { open: 'OPEN', resolved: 'RESOLVED', ok: 'ALL CLEAR' };
 
 export function composeNote(picks: string[], extra: string): string | null {
   const text = [picks.join(', '), extra.trim()].filter(Boolean).join(' — ');

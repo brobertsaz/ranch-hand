@@ -10,7 +10,7 @@ import AppButton from '../components/AppButton';
 import Icon from '../components/Icon';
 import { createObservation, liveWaypoints, newId, type Kind, type PlaceChoice, type Waypoint } from '../db';
 import { clockParts, formatDistance } from '../format';
-import { composeNote, nearestPlace, nextPlaceName, PLACE_KIND, WAYPOINT_INFO } from '../kinds';
+import { composeNote, initialStatus, nearestPlace, nextPlaceName, PLACE_KIND, WAYPOINT_INFO } from '../kinds';
 import { keepPhoto, photoFile } from '../photoFiles';
 import { colors, fonts, palette, sync, touch } from '../theme';
 import TagScreen, { type Fix, type PlaceMode } from './TagScreen';
@@ -107,6 +107,7 @@ export default function CaptureScreen({ memberId, onDone }: Props) {
         // Tag numbers only mean something on an animal
         tag_number: kind === 'sick_animal' ? tagNumber.trim() || null : null,
         note: composeNote(picks, note),
+        status: initialStatus(kind, picks),
       },
       photo?.id ?? null,
       memberId,

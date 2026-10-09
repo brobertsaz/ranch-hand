@@ -23,6 +23,8 @@ export type Waypoint = {
   _status: SyncStatus;
 };
 
+export type ObservationStatus = 'open' | 'resolved' | 'ok';
+
 export type Observation = {
   id: string;
   member_id: string | null;
@@ -33,7 +35,8 @@ export type Observation = {
   observed_at: number;
   tag_number: string | null;
   note: string | null;
-  status: 'open' | 'resolved';
+  // open: needs doing; resolved: was a problem, now handled; ok: a routine check that found nothing wrong
+  status: ObservationStatus;
   waypoint_id: string | null;
   _status: SyncStatus;
 };
@@ -112,7 +115,7 @@ export function newId(): string {
 export type PlaceChoice = { waypointId: string } | { create: { kind: WaypointKind; name: string } } | null;
 
 export async function createObservation(
-  observation: Omit<Observation, 'id' | '_status' | 'status' | 'member_id' | 'waypoint_id'>,
+  observation: Omit<Observation, 'id' | '_status' | 'member_id' | 'waypoint_id'>,
   photoId: string | null,
   memberId: string,
   place: PlaceChoice = null,
@@ -131,15 +134,31 @@ export async function createObservation(
     }
     await conn.runAsync(
       `INSERT INTO observations (id, member_id, kind, latitude, longitude, accuracy, observed_at, tag_number, note, status, waypoint_id, _status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, 'created')`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'created')`,
       id, memberId, observation.kind, observation.latitude, observation.longitude, observation.accuracy,
-      observation.observed_at, observation.tag_number, observation.note, waypointId,
+      observation.observed_at, observation.tag_number, observation.note, observation.status, waypointId,
     );
     if (photoId) {
       await conn.runAsync(`INSERT INTO photos (id, observation_id, _status) VALUES (?, ?, 'created')`, photoId, id);
     }
+    // Someone just found this place fine ("Water: Full" after "Low"), so its open problems are handled
+    if (waypointId && observation.status === 'ok') {
+      await conn.runAsync(
+        `UPDATE observations SET status = 'resolved', _status = CASE _status WHEN 'created' THEN 'created' ELSE 'updated' END
+         WHERE waypoint_id = ? AND status = 'open'`,
+        waypointId,
+      );
+    }
   });
   return id;
+}
+
+// Resolving (or reopening) is an edit like any other: it syncs up, and the last write wins
+export async function setObservationStatus(id: string, status: ObservationStatus): Promise<void> {
+  await db().runAsync(
+    `UPDATE observations SET status = ?, _status = CASE _status WHEN 'created' THEN 'created' ELSE 'updated' END WHERE id = ?`,
+    status, id,
+  );
 }
 
 export function liveWaypoints() {

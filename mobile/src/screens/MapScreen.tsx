@@ -97,7 +97,11 @@ export default function MapScreen({ device, onSignOut }: Props) {
   const placeIds = useMemo(() => new Set(waypoints.map((w) => w.id)), [waypoints]);
   // A check made at a place shows through the place's pin, not a pin of its own
   const sightings = useMemo(
-    () => observations.filter((o) => !(o.waypoint_id && placeIds.has(o.waypoint_id)) && (filter === 'all' || o.kind === filter)),
+    // Resolved sightings leave the map so it doesn't fill up with old news; they stay in place histories
+    () =>
+      observations.filter(
+        (o) => o.status !== 'resolved' && !(o.waypoint_id && placeIds.has(o.waypoint_id)) && (filter === 'all' || o.kind === filter),
+      ),
     [observations, placeIds, filter],
   );
   const places = useMemo(() => (filter === 'all' ? waypoints : waypoints.filter((w) => WAYPOINT_INFO[w.kind].kind === filter)), [waypoints, filter]);
@@ -132,7 +136,7 @@ export default function MapScreen({ device, onSignOut }: Props) {
   const openDetail = (id: string) => setDetails((stack) => [...stack, id]);
   const closeDetail = () => setDetails((stack) => stack.slice(0, -1));
   const openCount = observations.filter((o) => o.status === 'open').length;
-  const resolvedCount = observations.length - openCount;
+  const resolvedCount = observations.filter((o) => o.status === 'resolved').length;
   const unsynced = observations.filter((o) => o._status !== 'synced').length;
 
   async function select(id: string, photoFrom: string[]) {
@@ -233,8 +237,16 @@ export default function MapScreen({ device, onSignOut }: Props) {
           const on = w.id === selectedId;
           return (
             // Keyed on sync status and selection too: the native marker doesn't redraw when only its children change
-            <Marker key={`${w.id}:${w._status}:${on}`} id={w.id} lngLat={[w.longitude, w.latitude]} anchor={on ? 'bottom' : 'center'} onPress={() => selectPlace(w)}>
-              <Pin color={info.color} onColor={info.onColor} icon={info.icon} synced={w._status === 'synced'} selected={on} square />
+            <Marker key={`${w.id}:${w._status}:${on}:${latestAt[w.id]?.status}`} id={w.id} lngLat={[w.longitude, w.latitude]} anchor={on ? 'bottom' : 'center'} onPress={() => selectPlace(w)}>
+              <Pin
+                color={info.color}
+                onColor={info.onColor}
+                icon={info.icon}
+                synced={w._status === 'synced'}
+                selected={on}
+                square
+                alert={latestAt[w.id]?.status === 'open'}
+              />
             </Marker>
           );
         })}
@@ -349,6 +361,7 @@ export default function MapScreen({ device, onSignOut }: Props) {
               mapStyle={mapStyleUrl(device)}
               here={here}
               onBack={closeDetail}
+              onChanged={syncState.syncNow}
             />
           )}
           {detailPlace && (
@@ -479,7 +492,9 @@ function PlacePeekCard({ waypoint, latest, photoUri, memberId, here, bottom, onP
   const info = WAYPOINT_INFO[waypoint.kind];
   const where = here ? relativeTo(here, [waypoint.longitude, waypoint.latitude]) : 'Fixed place';
   const status = latest
-    ? `${latest.note ?? 'Checked'} · ${timeAgo(latest.observed_at)} · ${latest.member_id === memberId ? 'You' : 'Crew'}`
+    ? [latest.note ?? 'Checked', latest.status === 'resolved' && 'resolved', timeAgo(latest.observed_at), latest.member_id === memberId ? 'You' : 'Crew']
+        .filter(Boolean)
+        .join(' · ')
     : 'No checks yet';
 
   return (

@@ -8,7 +8,8 @@ class Observation < ApplicationRecord
   belongs_to :waypoint, optional: true
   has_many :photos, dependent: :destroy
 
-  enum :status, { open: "open", resolved: "resolved" }, validate: true
+  # open: needs doing; resolved: was a problem, now handled; ok: a routine check that found nothing wrong
+  enum :status, { open: "open", resolved: "resolved", ok: "ok" }, validate: true
 
   validates :id, presence: true
   validates :kind, inclusion: { in: KINDS }

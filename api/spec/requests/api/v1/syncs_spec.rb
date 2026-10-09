@@ -82,6 +82,18 @@ RSpec.describe "Sync", type: :request do
       expect(observation.reload).to have_attributes(status: "resolved", member: member)
     end
 
+    it "keeps an all-clear check out of the open count" do
+      push({ observations: { created: [ raw_observation("full1", kind: "water_check", note: "Full", status: "ok") ], updated: [], deleted: [] } })
+
+      expect(Observation.find("full1")).to be_ok
+    end
+
+    it "rejects a status it doesn't know" do
+      push({ observations: { created: [ raw_observation("odd1", status: "maybe") ], updated: [], deleted: [] } })
+
+      expect(response).to have_http_status(:unprocessable_content)
+    end
+
     it "soft-deletes so other phones hear about it" do
       observation = create(:observation, member: member)
 

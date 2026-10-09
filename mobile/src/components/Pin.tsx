@@ -11,11 +11,13 @@ type Props = {
   selected: boolean;
   // Square for a place that stays put, round for a one-off sighting (as on the design canvas)
   square?: boolean;
+  // A place whose latest check found a problem nobody has resolved yet
+  alert?: boolean;
 };
 
 // Map pin: a color plus an icon, so color is never the only cue.
 // A dashed ring means it's still only on this phone.
-export default function Pin({ color, onColor, icon, synced, selected, square = false }: Props) {
+export default function Pin({ color, onColor, icon, synced, selected, square = false, alert = false }: Props) {
   const size = selected ? 56 : 40;
   const corner = square ? (selected ? 12 : 8) : size / 2;
 
@@ -30,6 +32,7 @@ export default function Pin({ color, onColor, icon, synced, selected, square = f
         ]}
       >
         <Icon name={icon} size={selected ? 26 : 20} color={onColor} strokeWidth={icon === 'plus' ? 2.8 : 2.4} />
+        {alert && <View style={styles.alert} />}
       </View>
       {selected && <View style={styles.pointer} />}
     </View>
@@ -50,6 +53,10 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 3 },
   },
   unsynced: { borderStyle: 'dashed' },
+  alert: {
+    position: 'absolute', top: -8, right: -8, width: 16, height: 16, borderRadius: 8,
+    backgroundColor: palette.trail, borderWidth: 2, borderColor: palette.white,
+  },
   halo: { shadowColor: palette.trail, shadowOpacity: 0.6, shadowRadius: 8 },
   pointer: {
     width: 0,

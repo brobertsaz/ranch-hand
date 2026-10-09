@@ -1,14 +1,14 @@
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
-import { Alert, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import AppButton from '../components/AppButton';
 import Icon from '../components/Icon';
 import MiniMap from '../components/MiniMap';
-import { photosFor, type Observation } from '../db';
+import { photosFor, setObservationStatus, type Observation, type ObservationStatus } from '../db';
 import { dayAndTime, relativeTo, timeAgo, type LngLat } from '../format';
-import { KIND_INFO } from '../kinds';
+import { KIND_INFO, STATUS_LABEL } from '../kinds';
 import { photoFile } from '../photoFiles';
 import { colors, fonts, palette, space, sync } from '../theme';
 import GuideScreen, { guideToObservation } from './GuideScreen';
@@ -21,10 +21,12 @@ type Props = {
   mapStyle: string;
   here: LngLat | null;
   onBack: () => void;
+  // After a local edit, so it can sync straight away when there's signal
+  onChanged: () => void;
 };
 
 // Mockup 4 · Observation
-export default function ObservationScreen({ observation, placeName = null, memberId, mapStyle, here, onBack }: Props) {
+export default function ObservationScreen({ observation, placeName = null, memberId, mapStyle, here, onBack, onChanged }: Props) {
   const insets = useSafeAreaInsets();
   // undefined: no photo was taken; null: there is one, but it hasn't downloaded to this phone yet
   const [photoUri, setPhotoUri] = useState<string | null | undefined>(undefined);
@@ -42,6 +44,11 @@ export default function ObservationScreen({ observation, placeName = null, membe
       setPhotoUri(file?.uri ?? null);
     });
   }, [observation.id]);
+
+  async function changeStatus(status: ObservationStatus) {
+    await setObservationStatus(observation.id, status);
+    onChanged();
+  }
 
   if (guiding) return <GuideScreen target={guideToObservation(observation)} onBack={() => setGuiding(false)} />;
 
@@ -70,7 +77,7 @@ export default function ObservationScreen({ observation, placeName = null, membe
           <View style={styles.heroText}>
             <View style={styles.badges}>
               <Text style={[styles.badge, { backgroundColor: info.badgeColor, color: info.onColor }]}>{info.badge}</Text>
-              <Text style={[styles.badge, styles.statusBadge]}>{observation.status === 'resolved' ? 'RESOLVED' : 'OPEN'}</Text>
+              <Text style={[styles.badge, styles.statusBadge]}>{STATUS_LABEL[observation.status]}</Text>
             </View>
             <Text style={styles.title} accessibilityRole="header">
               {observation.tag_number ? `Tag ${observation.tag_number}` : info.label}
@@ -123,12 +130,16 @@ export default function ObservationScreen({ observation, placeName = null, membe
           icon={<Icon name="navigate" size={22} color={palette.white} strokeWidth={2.2} />}
           onPress={() => setGuiding(true)}
         />
-        <AppButton
-          title="Mark resolved"
-          style={styles.resolve}
-          icon={<Icon name="check" size={22} color={palette.white} strokeWidth={2.8} />}
-          onPress={() => Alert.alert('Not built yet', 'Resolving observations is the next Phase 2 item.')}
-        />
+        {observation.status === 'open' && (
+          // One tap, no dialog: with gloves on a confirm is just another target to miss. Reopen undoes it.
+          <AppButton
+            title="Mark resolved"
+            style={styles.resolve}
+            icon={<Icon name="check" size={22} color={palette.white} strokeWidth={2.8} />}
+            onPress={() => changeStatus('resolved')}
+          />
+        )}
+        {observation.status === 'resolved' && <AppButton variant="ghost" title="Reopen" style={styles.resolve} onPress={() => changeStatus('open')} />}
       </View>
     </View>
   );

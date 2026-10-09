@@ -9,7 +9,7 @@ import Icon from '../components/Icon';
 import MiniMap from '../components/MiniMap';
 import { observationsAt, photosFor, type Observation, type Waypoint } from '../db';
 import { relativeTo, timeAgo, type LngLat } from '../format';
-import { KIND_INFO, WAYPOINT_INFO } from '../kinds';
+import { KIND_INFO, STATUS_LABEL, WAYPOINT_INFO } from '../kinds';
 import { photoFile } from '../photoFiles';
 import { colors, fonts, palette, space } from '../theme';
 import GuideScreen, { guideToWaypoint } from './GuideScreen';
@@ -82,7 +82,10 @@ export default function WaypointScreen({ waypoint, memberId, mapStyle, here, onB
             <View style={[styles.cardRow, styles.cardDivider]}>
               <View style={[styles.statusDot, { backgroundColor: latest ? KIND_INFO[latest.kind].pinColor : colors.textMuted }]} />
               <View style={styles.flex}>
-                <Text style={styles.cardTitle}>{latest ? (latest.note ?? 'Checked') : 'No checks yet'}</Text>
+                <View style={styles.titleRow}>
+                  <Text style={styles.cardTitle}>{latest ? (latest.note ?? 'Checked') : 'No checks yet'}</Text>
+                  {latest && <StatusTag status={latest.status} />}
+                </View>
                 <Text style={styles.cardMeta}>
                   {latest ? `Latest check · ${timeAgo(latest.observed_at)} · ${latest.member_id === memberId ? 'You' : 'Another hand'}` : 'Log one from here next time you ride by'}
                 </Text>
@@ -103,7 +106,10 @@ export default function WaypointScreen({ waypoint, memberId, mapStyle, here, onB
             <Pressable key={check.id} onPress={() => onOpenObservation(check)} accessibilityRole="button" style={styles.historyRow}>
               <View style={[styles.statusDot, { backgroundColor: KIND_INFO[check.kind].pinColor }]} />
               <View style={styles.flex}>
-                <Text style={styles.historyTitle} numberOfLines={2}>{check.note ?? KIND_INFO[check.kind].label}</Text>
+                <View style={styles.titleRow}>
+                  <Text style={styles.historyTitle} numberOfLines={2}>{check.note ?? KIND_INFO[check.kind].label}</Text>
+                  <StatusTag status={check.status} />
+                </View>
                 <Text style={styles.cardMeta}>
                   {timeAgo(check.observed_at)} · {check.member_id === memberId ? 'You' : 'Another hand'}
                   {check._status === 'synced' ? '' : ' · on this phone'}
@@ -126,6 +132,10 @@ export default function WaypointScreen({ waypoint, memberId, mapStyle, here, onB
       </View>
     </View>
   );
+}
+
+function StatusTag({ status }: { status: Observation['status'] }) {
+  return <Text style={[styles.tag, status === 'open' && styles.tagOpen]}>{STATUS_LABEL[status]}</Text>;
 }
 
 const styles = StyleSheet.create({
@@ -155,6 +165,12 @@ const styles = StyleSheet.create({
     minHeight: 60, flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 14, paddingVertical: 10,
     backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: 12,
   },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm, flexWrap: 'wrap' },
+  tag: {
+    fontSize: 11, fontWeight: '800', letterSpacing: 0.5, color: colors.textMuted, borderWidth: 1, borderColor: colors.border,
+    borderRadius: 4, overflow: 'hidden', paddingVertical: 1, paddingHorizontal: 6,
+  },
+  tagOpen: { color: palette.white, backgroundColor: palette.trailDark, borderColor: palette.trailDark },
   historyTitle: { fontSize: 16, fontWeight: '600', color: colors.text },
   actions: {
     paddingTop: 12, paddingHorizontal: space.lg, backgroundColor: colors.background,
