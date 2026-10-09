@@ -62,6 +62,11 @@ This is a throwaway prototype that answers one question: does offline really wor
 
 If all five pass, the architecture works.
 
+**Result (2026-10-09): all five pass on Android.** Steps 1–4 ran on a Pixel 10 Pro in airplane mode; step 5's second phone was an Android emulator. Still open:
+- [ ] Repeat step 5 on a second real phone
+- [ ] Run the same test on iOS (needs Xcode and an iPhone)
+- Lessons: the map style must be served without `must-revalidate`, or MapLibre won't load it from an offline pack on a cold start. WatermelonDB was swapped for expo-sqlite (see Stack).
+
 ### Phase 2: Core loop (Jan–Feb 2027)
 - [ ] Observation flow: camera opens immediately, then kind, optional tag number and note, then save. Aim for under 10 seconds.
 - [ ] Map showing waypoints and observations, filtered by kind and by open/resolved
