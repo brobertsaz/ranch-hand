@@ -20,7 +20,7 @@ import Icon from '../components/Icon';
 import Pin from '../components/Pin';
 import TabBar, { useTabBarHeight, type Tab } from '../components/TabBar';
 import { KINDS, liveObservations, liveWaypoints, observationsAt, photosFor, type Kind, type Observation, type Waypoint } from '../db';
-import { relativeTo, timeAgo, type LngLat } from '../format';
+import { distanceMeters, relativeTo, timeAgo, type LngLat } from '../format';
 import { KIND_INFO, WAYPOINT_INFO } from '../kinds';
 import { estimateTiles, expandBounds, MIN_PACK_SPAN_KM, PACK_MAX_ZOOM, PACK_MIN_ZOOM, TILE_LIMIT } from '../offline';
 import { photoFile } from '../photoFiles';
@@ -31,6 +31,11 @@ import CaptureScreen from './CaptureScreen';
 import ObservationScreen from './ObservationScreen';
 import WaypointScreen from './WaypointScreen';
 import StubScreen from './StubScreen';
+
+// Pins closer than this overlap on screen at field zoom levels
+const ALSO_HERE_METERS = 30;
+// 72 photo + 2 × 10 padding
+const PEEK_HEIGHT = 92;
 
 // Roughly Sundance, WY, until the phone has a fix
 const START: [number, number] = [-104.376, 44.406];
@@ -107,6 +112,23 @@ export default function MapScreen({ device, onSignOut }: Props) {
   const detailId = details.at(-1) ?? null;
   const detail = observations.find((o) => o.id === detailId) ?? null;
   const detailPlace = waypoints.find((w) => w.id === detailId) ?? null;
+  // Pins on the same spot cover each other, so the card offers the others as buttons
+  const alsoHere = useMemo((): { id: string; label: string; color: string; select: () => void }[] => {
+    const at: LngLat | null = selected ? [selected.longitude, selected.latitude] : selectedPlace ? [selectedPlace.longitude, selectedPlace.latitude] : null;
+    if (!at) return [];
+    const near = (lng: number, lat: number) => distanceMeters(at, [lng, lat]) <= ALSO_HERE_METERS;
+    return [
+      ...places.filter((w) => w.id !== selectedId && near(w.longitude, w.latitude)).map((w) => ({ id: w.id, label: w.name, color: WAYPOINT_INFO[w.kind].color, select: () => selectPlace(w) })),
+      ...sightings
+        .filter((o) => o.id !== selectedId && near(o.longitude, o.latitude))
+        .map((o) => ({
+          id: o.id,
+          label: o.tag_number ? `Tag ${o.tag_number}` : (o.note ?? KIND_INFO[o.kind].label),
+          color: KIND_INFO[o.kind].pinColor,
+          select: () => selectSighting(o),
+        })),
+    ];
+  }, [selected, selectedPlace, selectedId, places, sightings]);
   const openDetail = (id: string) => setDetails((stack) => [...stack, id]);
   const closeDetail = () => setDetails((stack) => stack.slice(0, -1));
   const openCount = observations.filter((o) => o.status === 'open').length;
@@ -263,6 +285,25 @@ export default function MapScreen({ device, onSignOut }: Props) {
           bottom={tabBarHeight + 20}
           onPress={() => openDetail(selected.id)}
         />
+      )}
+      {(selected || selectedPlace) && tab === 'map' && alsoHere.length > 0 && (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={[styles.alsoHere, { bottom: tabBarHeight + 20 + PEEK_HEIGHT + space.sm }]}
+          contentContainerStyle={styles.chips}
+        >
+          <Text style={styles.alsoHereLabel}>Also here</Text>
+          {alsoHere.map((item) => (
+            <Chip
+              key={item.id}
+              label={item.label}
+              color={item.color}
+              on={false}
+              onPress={item.select}
+            />
+          ))}
+        </ScrollView>
       )}
       {selectedPlace && tab === 'map' && (
         <PlacePeekCard
@@ -501,6 +542,8 @@ const styles = StyleSheet.create({
     width: 72, height: 72, borderRadius: 10, overflow: 'hidden', backgroundColor: colors.chromeRaised,
     alignItems: 'center', justifyContent: 'center',
   },
+  alsoHere: { position: 'absolute', left: 12, right: 12 },
+  alsoHereLabel: { alignSelf: 'center', color: palette.white, fontSize: 13, fontWeight: '800', textShadowColor: 'rgba(0, 0, 0, 0.7)', textShadowRadius: 4 },
   // Square, like the place's pin
   peekPlace: { borderRadius: 6 },
   peekText: { flex: 1, gap: 3, minWidth: 0 },
