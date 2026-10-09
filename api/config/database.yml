@@ -1,0 +1,21 @@
+default: &default
+  adapter: postgresql
+  encoding: unicode
+  max_connections: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 } %>
+  host: <%= ENV.fetch("DATABASE_HOST", "localhost") %>
+  port: <%= ENV.fetch("DATABASE_PORT", 5433) %>
+  username: <%= ENV.fetch("DATABASE_USERNAME", "ranch_hand") %>
+  password: <%= ENV.fetch("DATABASE_PASSWORD", "ranch_hand") %>
+
+development:
+  <<: *default
+  database: ranch_hand_development
+
+test:
+  <<: *default
+  database: ranch_hand_test
+
+production:
+  <<: *default
+  database: ranch_hand_production
+  url: <%= ENV["DATABASE_URL"] %>
