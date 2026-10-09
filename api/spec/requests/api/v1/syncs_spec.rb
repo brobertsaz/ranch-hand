@@ -241,6 +241,15 @@ RSpec.describe "Sync", type: :request do
       expect(json.dig("changes", "rides", "created").sole).to include("id" => "ride1", "member_id" => member.id.to_s, "track" => "[[-104.38,44.43],[-104.37,44.44]]")
     end
 
+    it "carries a ride's name, including one given after it synced" do
+      push({ rides: { created: [ raw_ride("ride3", name: "North pasture") ], updated: [], deleted: [] } })
+      push({ rides: { created: [], updated: [ raw_ride("ride3", name: " North pasture via the creek gate ") ], deleted: [] } })
+
+      expect(Ride.find("ride3").name).to eq("North pasture via the creek gate")
+      pull(nil, as: create(:member, ranch: ranch))
+      expect(json.dig("changes", "rides", "created").sole).to include("name" => "North pasture via the creek gate")
+    end
+
     it "rejects a track that isn't a list of points" do
       push({ rides: { created: [ raw_ride("ride2", track: '{"oops":true}') ], updated: [], deleted: [] } })
 

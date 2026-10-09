@@ -76,10 +76,11 @@ export default function RidesScreen({ memberId, riding, onStart, onBackToRide, o
               <Icon name="rides" size={22} color={palette.white} />
             </View>
             <View style={styles.rideText}>
-              <Text style={styles.rideTitle}>
-                {who(names, ride.member_id, memberId)} · {formatDistance(ride.distance_meters)}
+              <Text style={styles.rideTitle} numberOfLines={2}>
+                {ride.name ?? `${who(names, ride.member_id, memberId)} · ${formatDistance(ride.distance_meters)}`}
               </Text>
               <Text style={styles.rideMeta}>
+                {ride.name ? `${who(names, ride.member_id, memberId)} · ${formatDistance(ride.distance_meters)} · ` : ''}
                 {dayAndTime(ride.started_at)} · {formatDuration(ride.ended_at - ride.started_at)}
                 {ride._status === 'synced' ? '' : ' · on this phone'}
               </Text>

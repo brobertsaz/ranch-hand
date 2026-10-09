@@ -28,7 +28,7 @@ const OBSERVATION_COLUMNS = [
   'id', 'member_id', 'kind', 'latitude', 'longitude', 'accuracy', 'observed_at', 'tag_number', 'note', 'status', 'waypoint_id',
   'resolved_at', 'resolved_by_id',
 ] as const;
-const RIDE_COLUMNS = ['id', 'member_id', 'started_at', 'ended_at', 'distance_meters', 'track'] as const;
+const RIDE_COLUMNS = ['id', 'member_id', 'started_at', 'ended_at', 'distance_meters', 'track', 'name'] as const;
 const PHOTO_COLUMNS = ['id', 'observation_id', 'uploaded_at'] as const;
 
 export type SyncResult = { pulled: number; pushed: number; uploaded: number; downloaded: number };

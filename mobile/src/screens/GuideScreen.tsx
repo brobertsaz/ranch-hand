@@ -1,7 +1,5 @@
-import * as Location from 'expo-location';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect, useRef, useState } from 'react';
-import { Animated, Easing, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
 
@@ -10,6 +8,7 @@ import type { Observation, Waypoint } from '../db';
 import { bearingDegrees, compassPoint, distanceMeters, formatDistance, timeAgo, type LngLat } from '../format';
 import { KIND_INFO, WAYPOINT_INFO } from '../kinds';
 import { colors, fonts, palette, space, sync } from '../theme';
+import { turnHint, useArrowRotation, useHeading } from '../useHeading';
 
 // What the arrow points at, and how to talk about it
 export type GuideTarget = {
@@ -65,71 +64,20 @@ type Props = { target: GuideTarget; onBack: () => void };
 // Close enough to stop following the arrow and start looking around
 const ARRIVED_MIN_METERS = 15;
 const ARRIVED_MAX_METERS = 50;
-// Below this, GPS course jumps around too much to steer by
-const MOVING_METERS_PER_SECOND = 1;
 
 // "Take me there": a straight-line arrow to the pin, video-game style.
 // No roads or routes (there aren't any out there), just GPS plus the compass, so it works with no signal.
 export default function GuideScreen({ target: guide, onBack }: Props) {
   const insets = useSafeAreaInsets();
   const target = guide.lngLat;
-  const [fix, setFix] = useState<Location.LocationObject | null>(null);
-  const [compass, setCompass] = useState<Location.LocationHeadingObject | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let position: Location.LocationSubscription | null = null;
-    let heading: Location.LocationSubscription | null = null;
-    let cancelled = false;
-
-    (async () => {
-      const { granted } = await Location.requestForegroundPermissionsAsync();
-      if (!granted) return setError('Ranch Hand needs Location to point the way.');
-      const last = await Location.getLastKnownPositionAsync().catch(() => null);
-      if (last && !cancelled) setFix(last);
-      position = await Location.watchPositionAsync(
-        { accuracy: Location.Accuracy.BestForNavigation, timeInterval: 1000, distanceInterval: 1 },
-        (next) => setFix(next),
-        () => setError('Lost the GPS fix. Step into the open.'),
-      );
-      heading = await Location.watchHeadingAsync((next) => setCompass(next)).catch(() => null);
-      if (cancelled) {
-        position?.remove();
-        heading?.remove();
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-      position?.remove();
-      heading?.remove();
-    };
-  }, []);
-
-  const here: LngLat | null = fix ? [fix.coords.longitude, fix.coords.latitude] : null;
+  const { here, accuracy, facing, hasCompass, calibrate, error } = useHeading();
   const meters = here ? distanceMeters(here, target) : null;
   const bearing = here ? bearingDegrees(here, target) : null;
-  const accuracy = fix?.coords.accuracy ?? null;
   const arrived = meters !== null && meters <= Math.min(ARRIVED_MAX_METERS, Math.max(ARRIVED_MIN_METERS, accuracy ?? 0));
 
-  // Which way the phone points: compass first, then GPS course when riding, else unknown
-  const compassHeading = compass ? (compass.trueHeading >= 0 ? compass.trueHeading : compass.magHeading) : null;
-  const course = fix && (fix.coords.speed ?? 0) > MOVING_METERS_PER_SECOND && (fix.coords.heading ?? -1) >= 0 ? fix.coords.heading : null;
-  const facing = compassHeading ?? course;
   // Without a heading the arrow is north-up, like a paper map
   const arrowAngle = bearing === null ? null : bearing - (facing ?? 0);
-  const calibrate = compass !== null && compass.accuracy <= 1;
-
-  const rotation = useRef(new Animated.Value(0)).current;
-  const shownAngle = useRef(0);
-  useEffect(() => {
-    if (arrowAngle === null) return;
-    // Turn the short way round, so crossing north doesn't spin the arrow a full circle
-    const delta = ((((arrowAngle - shownAngle.current) % 360) + 540) % 360) - 180;
-    shownAngle.current += delta;
-    Animated.timing(rotation, { toValue: shownAngle.current, duration: 250, easing: Easing.out(Easing.quad), useNativeDriver: true }).start();
-  }, [arrowAngle, rotation]);
-  const rotate = rotation.interpolate({ inputRange: [-3600, 3600], outputRange: ['-3600deg', '3600deg'] });
+  const rotate = useArrowRotation(arrowAngle);
 
   return (
     <View style={[styles.screen, { paddingTop: insets.top + 8, paddingBottom: insets.bottom + space.lg }]}>
@@ -182,24 +130,12 @@ export default function GuideScreen({ target: guide, onBack }: Props) {
           <View style={[styles.dot, { backgroundColor: accuracy === null ? sync.pending : accuracy <= 20 ? sync.synced : sync.pending }]} />
           <Text style={styles.status}>{accuracy === null ? 'Waiting for GPS' : `GPS ±${Math.round(accuracy)} m`}</Text>
           <View style={[styles.dot, { backgroundColor: facing === null || calibrate ? sync.pending : sync.synced }]} />
-          <Text style={styles.status}>{facing === null ? 'No compass, arrow is north-up' : compassHeading === null ? 'Steering by your direction of travel' : 'Compass on'}</Text>
+          <Text style={styles.status}>{facing === null ? 'No compass, arrow is north-up' : !hasCompass ? 'Steering by your direction of travel' : 'Compass on'}</Text>
         </View>
         {calibrate && <Text style={styles.status}>Compass is unsure. Move the phone in a figure 8 to calibrate it.</Text>}
       </View>
     </View>
   );
-}
-
-// Plain words for the arrow, for a quick glance and for screen readers
-function turnHint(angle: number | null, hasHeading: boolean): string {
-  if (angle === null || !hasHeading) return 'Follow the arrow';
-  const a = ((((angle % 360) + 540) % 360) - 180); // -180..180, negative is left
-  const side = a < 0 ? 'left' : 'right';
-  const abs = Math.abs(a);
-  if (abs <= 15) return 'Straight ahead';
-  if (abs <= 60) return `Bear ${side}`;
-  if (abs <= 135) return `Turn ${side}`;
-  return 'Turn around';
 }
 
 const styles = StyleSheet.create({

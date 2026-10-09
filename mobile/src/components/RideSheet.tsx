@@ -113,14 +113,14 @@ function Stat({ value, label }: { value: string; label: string }) {
   );
 }
 
-// The little pill that replaces the map header while recording
-export function RecordingPill() {
+// The little pill that replaces the map header while recording or following a ride
+export function ModePill({ label, color = palette.trail }: { label: string; color?: string }) {
   return (
-    <View style={styles.pill} accessibilityRole="text" accessibilityLabel="Recording ride">
-      <View style={styles.pillHalo}>
-        <View style={styles.pillDot} />
+    <View style={styles.pill} accessibilityRole="text" accessibilityLabel={label.toLowerCase()}>
+      <View style={[styles.pillHalo, { backgroundColor: `${color}4D` }]}>
+        <View style={[styles.pillDot, { backgroundColor: color }]} />
       </View>
-      <Text style={styles.pillText}>RECORDING RIDE</Text>
+      <Text style={styles.pillText}>{label}</Text>
     </View>
   );
 }
@@ -155,7 +155,7 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: colors.chrome,
     borderRadius: radius.pill, paddingVertical: 10, paddingLeft: 12, paddingRight: 16,
   },
-  pillHalo: { width: 20, height: 20, borderRadius: 10, backgroundColor: 'rgba(207, 74, 46, 0.3)', alignItems: 'center', justifyContent: 'center' },
-  pillDot: { width: 12, height: 12, borderRadius: 6, backgroundColor: palette.trail },
+  pillHalo: { width: 20, height: 20, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  pillDot: { width: 12, height: 12, borderRadius: 6 },
   pillText: { fontSize: 14, fontWeight: '800', letterSpacing: 0.6, color: colors.chromeText },
 });

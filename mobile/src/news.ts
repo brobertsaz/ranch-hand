@@ -1,4 +1,4 @@
-import { db, getState, setState, type Observation, type Ride, type Waypoint } from './db';
+import { db, getState, setState, type Observation, type ObservationStatus, type Ride, type Waypoint } from './db';
 import { formatDistance, formatDuration } from './format';
 import { KIND_INFO, STATUS_LABEL } from './kinds';
 import { palette } from './theme';
@@ -14,6 +14,8 @@ export type NewsItem = {
   color: string;
   icon: (typeof KIND_INFO)[keyof typeof KIND_INFO]['icon'] | 'rides';
   observationId?: string;
+  // Where a logged problem stands now, so a row you already handled says so
+  status?: ObservationStatus;
   rideId?: string;
 };
 
@@ -50,7 +52,7 @@ export async function crewNews(myId: string, limit = 100): Promise<NewsItem[]> {
     const base = { color: info.pinColor, icon: info.icon, observationId: o.id, arrivedAt: o.pulled_at };
 
     if (o.member_id !== myId) {
-      items.push({ ...base, key: `${o.id}:logged`, at: o.observed_at, memberId: o.member_id, title: subject, detail });
+      items.push({ ...base, key: `${o.id}:logged`, at: o.observed_at, memberId: o.member_id, title: subject, detail, status: o.status });
     }
     if (o.status === 'resolved' && o.resolved_by_id && o.resolved_by_id !== myId && o.resolved_at) {
       items.push({ ...base, key: `${o.id}:resolved`, at: o.resolved_at, memberId: o.resolved_by_id, title: `${subject} · ${STATUS_LABEL.resolved.toLowerCase()}`, detail });
@@ -59,7 +61,8 @@ export async function crewNews(myId: string, limit = 100): Promise<NewsItem[]> {
   for (const r of rides) {
     items.push({
       key: `${r.id}:ride`, at: r.ended_at, arrivedAt: r.pulled_at, memberId: r.member_id, rideId: r.id, icon: 'rides', color: palette.sky,
-      title: `Rode ${formatDistance(r.distance_meters)}`, detail: formatDuration(r.ended_at - r.started_at),
+      title: r.name ?? `Rode ${formatDistance(r.distance_meters)}`,
+      detail: r.name ? `${formatDistance(r.distance_meters)} · ${formatDuration(r.ended_at - r.started_at)}` : formatDuration(r.ended_at - r.started_at),
     });
   }
 

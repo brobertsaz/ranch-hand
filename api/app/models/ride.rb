@@ -6,6 +6,7 @@ class Ride < ApplicationRecord
 
   validates :id, :started_at, :ended_at, presence: true
   validates :distance_meters, numericality: { greater_than_or_equal_to: 0 }
+  validates :name, length: { maximum: 80 }
   validate :track_is_coordinates
   validate :ends_after_it_starts
 
@@ -14,6 +15,8 @@ class Ride < ApplicationRecord
       started_at: Syncable.from_ms(raw["started_at"]),
       ended_at: Syncable.from_ms(raw["ended_at"]),
       distance_meters: raw["distance_meters"],
+      # Optional, e.g. "North pasture via the creek gate"; the crew follows rides by name
+      name: raw["name"].presence&.strip,
       # The phone stores the track as JSON text in SQLite
       track: raw["track"].is_a?(String) ? JSON.parse(raw["track"]) : raw["track"]
     }
@@ -26,6 +29,7 @@ class Ride < ApplicationRecord
       started_at: Syncable.to_ms(started_at),
       ended_at: Syncable.to_ms(ended_at),
       distance_meters: distance_meters,
+      name: name,
       track: track.to_json
     }
   end

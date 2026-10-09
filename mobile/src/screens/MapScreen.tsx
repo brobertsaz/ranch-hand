@@ -20,9 +20,11 @@ import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-cont
 import AppButton from '../components/AppButton';
 import Icon from '../components/Icon';
 import Pin from '../components/Pin';
-import RideSheet, { RecordingPill } from '../components/RideSheet';
+import FollowSheet from '../components/FollowSheet';
+import NameRideSheet from '../components/NameRideSheet';
+import RideSheet, { ModePill } from '../components/RideSheet';
 import TabBar, { useTabBarHeight, type Tab } from '../components/TabBar';
-import { KINDS, liveObservations, liveRides, liveWaypoints, observationsAt, photosFor, type Kind, type Observation, type Ride, type Waypoint } from '../db';
+import { KINDS, liveObservations, liveRides, liveWaypoints, observationsAt, photosFor, renameRide, type Kind, type Observation, type Ride, type Waypoint } from '../db';
 import { dayAndTime, distanceMeters, formatDistance, formatDuration, relativeTo, timeAgo, type LngLat } from '../format';
 import { useMemberNames, who } from '../members';
 import { crewNews, isNew, newsSeenAt } from '../news';
@@ -30,6 +32,7 @@ import { activeRide, resumeRideIfNeeded, ridePoints, startRide, stopRide, type A
 import { KIND_INFO, WAYPOINT_INFO } from '../kinds';
 import { estimateTiles, expandBounds, MIN_PACK_SPAN_KM, PACK_MAX_ZOOM, PACK_MIN_ZOOM, TILE_LIMIT } from '../offline';
 import { photoFile } from '../photoFiles';
+import { cumulative, placesOnTrail } from '../trail';
 import { forgetDevice, mapStyleUrl, type Device } from '../settings';
 import { colors, fonts, palette, radius, space, sync } from '../theme';
 import { useSync, type SyncState } from '../useSync';
@@ -65,7 +68,12 @@ export default function MapScreen({ device, onSignOut }: Props) {
   // The ride in progress and its track, re-read every few seconds
   const [ride, setRide] = useState<ActiveRide | null>(null);
   const [liveTrack, setLiveTrack] = useState<LngLat[]>([]);
-  const [rideSheetHeight, setRideSheetHeight] = useState(0);
+  // The ride sheet or follow sheet, whichever is up, sits where the tab bar was
+  const [sheetHeight, setSheetHeight] = useState(0);
+  // A saved ride someone is following, track and all
+  const [followRideId, setFollowRideId] = useState<string | null>(null);
+  // The ride being named: right after it stops, or from its card
+  const [naming, setNaming] = useState<{ id: string; track: LngLat[]; name: string } | null>(null);
   const names = useMemberNames();
   // Unread count for the New tab
   const [newsCount, setNewsCount] = useState(0);
@@ -172,11 +180,22 @@ export default function MapScreen({ device, onSignOut }: Props) {
   const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
   const resolvedCount = observations.filter((o) => o.status === 'resolved' && (o.resolved_at ?? 0) >= weekAgo).length;
   const shownRide = rides.find((r) => r.id === shownRideId) ?? null;
-  // While riding, the ride sheet takes the tab bar's place on the map
+  const followRide = rides.find((r) => r.id === followRideId) ?? null;
+  const followTrack = useMemo(() => (followRide ? (JSON.parse(followRide.track) as LngLat[]) : []), [followRide]);
+  // While riding or following, a sheet takes the tab bar's place on the map
   const riding = !!ride && tab === 'map';
-  const bottomInset = riding ? rideSheetHeight : tabBarHeight;
+  const following = !riding && !!followRide && tab === 'map';
+  const bottomInset = riding || following ? sheetHeight : tabBarHeight;
   const pinsDropped = ride ? observations.filter((o) => o.member_id === device.memberId && o.observed_at >= ride.startedAt).length : 0;
   const unsynced = observations.filter((o) => o._status !== 'synced').length;
+  // "To Creek gate", "Water 1 to Creek gate": the places the ride went past, first and last
+  const nameSuggestions = useMemo(() => {
+    if (!naming) return [];
+    const passed = placesOnTrail(naming.track, cumulative(naming.track), waypoints).map((p) => p.waypoint.name);
+    const first = passed[0];
+    const last = passed.at(-1);
+    return [last && `To ${last}`, first && last && first !== last && `${first} to ${last}`].filter((x): x is string => !!x);
+  }, [naming, waypoints]);
 
   async function select(id: string, photoFrom: string[]) {
     pinPressedAt.current = Date.now();
@@ -220,6 +239,10 @@ export default function MapScreen({ device, onSignOut }: Props) {
     });
   }
 
+  function rideTitle(r: Ride): string {
+    return r.name ?? (r.member_id === device.memberId ? 'Your ride' : `${who(names, r.member_id, device.memberId)}'s ride`);
+  }
+
   async function beginRide() {
     try {
       const started = await startRide();
@@ -244,9 +267,24 @@ export default function MapScreen({ device, onSignOut }: Props) {
       return;
     }
     syncState.syncNow();
-    // Leave the finished ride on the map, with its card
+    // Leave the finished ride on the map, with its card, and offer to name it
     setShownRideId(saved.id);
     fitTrack(track);
+    setNaming({ id: saved.id, track, name: '' });
+  }
+
+  function startFollowing(rideId: string) {
+    setFollowRideId(rideId);
+    setShownRideId(null);
+    setSelectedId(null);
+    setTab('map');
+    centerOnMe();
+  }
+
+  async function saveRideName(name: string) {
+    if (naming) await renameRide(naming.id, name);
+    setNaming(null);
+    syncState.syncNow();
   }
 
   async function centerOnMe() {
@@ -323,11 +361,27 @@ export default function MapScreen({ device, onSignOut }: Props) {
     <View style={styles.screen}>
       <StatusBar style="light" />
       <Map ref={map} style={StyleSheet.absoluteFill} mapStyle={mapStyleUrl(device)} logo={false} onPress={() => Date.now() - pinPressedAt.current > 500 && setSelectedId(null)}>
-        {start && <Camera ref={camera} initialViewState={{ center: start, zoom: 14 }} />}
+        {start && <Camera ref={camera} initialViewState={{ center: start, zoom: 14 }} trackUserLocation={following ? 'default' : undefined} />}
         <UserLocation accuracy />
         {shownRide && (
           <GeoJSONSource id="shown-ride" data={lineString(JSON.parse(shownRide.track) as LngLat[])}>
             <Layer type="line" id="shown-ride-line" paint={{ 'line-color': palette.sky, 'line-width': 5, 'line-opacity': 0.9 }} layout={{ 'line-cap': 'round', 'line-join': 'round' }} />
+          </GeoJSONSource>
+        )}
+        {following && followTrack.length >= 2 && (
+          <GeoJSONSource id="follow-ride" data={lineString(followTrack)}>
+            <Layer type="line" id="follow-ride-casing" paint={{ 'line-color': palette.white, 'line-width': 10, 'line-opacity': 0.85 }} layout={{ 'line-cap': 'round', 'line-join': 'round' }} />
+            <Layer type="line" id="follow-ride-line" paint={{ 'line-color': palette.sky, 'line-width': 6 }} layout={{ 'line-cap': 'round', 'line-join': 'round' }} />
+          </GeoJSONSource>
+        )}
+        {following && followTrack.length >= 2 && (
+          // Start in canvas, end in sky, so the direction is plain
+          <GeoJSONSource id="follow-ride-ends" data={{ type: 'FeatureCollection', features: [endPoint(followTrack[0], 'start'), endPoint(followTrack[followTrack.length - 1], 'end')] }}>
+            <Layer
+              type="circle"
+              id="follow-ride-end-dots"
+              paint={{ 'circle-radius': 8, 'circle-color': ['match', ['get', 'end'], 'start', palette.canvas, palette.sky], 'circle-stroke-color': palette.pine, 'circle-stroke-width': 3 }}
+            />
           </GeoJSONSource>
         )}
         {liveTrack.length >= 2 && (
@@ -371,9 +425,9 @@ export default function MapScreen({ device, onSignOut }: Props) {
         })}
       </Map>
 
-      {riding ? (
+      {riding || following ? (
         <View style={[styles.top, { top: insets.top + 8 }]} pointerEvents="none">
-          <RecordingPill />
+          {riding ? <ModePill label="RECORDING RIDE" /> : <ModePill label="FOLLOWING A RIDE" color={palette.creek} />}
         </View>
       ) : (
         <View style={[styles.top, { top: insets.top + 8 }]} pointerEvents="box-none">
@@ -395,7 +449,7 @@ export default function MapScreen({ device, onSignOut }: Props) {
         </View>
       )}
 
-      <View style={[styles.controls, { top: insets.top + (riding ? 8 : 164) }]}>
+      <View style={[styles.controls, { top: insets.top + (riding || following ? 8 : 164) }]}>
         <Pressable onPress={() => setLayersOpen(true)} accessibilityRole="button" accessibilityLabel="Map layers and offline areas" style={styles.control}>
           <Icon name="layers" size={22} color={colors.chromeText} />
         </Pressable>
@@ -445,13 +499,28 @@ export default function MapScreen({ device, onSignOut }: Props) {
         />
       )}
 
-      {shownRide && tab === 'map' && !riding && !selected && !selectedPlace && (
-        <View style={[styles.rideCard, { bottom: tabBarHeight + 20 }]}>
+      {shownRide && tab === 'map' && !riding && !following && !selected && !selectedPlace && (
+        <View style={[styles.rideCard, { bottom: bottomInset + 20 }]}>
           <View style={styles.rideCardText}>
-            <Text style={styles.peekTitle}>{shownRide.member_id === device.memberId ? 'Your' : `${who(names, shownRide.member_id, device.memberId)}'s`} ride</Text>
+            <Text style={styles.peekTitle} numberOfLines={2}>{rideTitle(shownRide)}</Text>
             <Text style={styles.peekSmall}>
+              {shownRide.name ? `${who(names, shownRide.member_id, device.memberId)} · ` : ''}
               {dayAndTime(shownRide.started_at)} · {formatDistance(shownRide.distance_meters)} · {formatDuration(shownRide.ended_at - shownRide.started_at)}
             </Text>
+            <View style={styles.rideCardActions}>
+              <AppButton
+                title="Follow this ride"
+                onPress={() => startFollowing(shownRide.id)}
+                icon={<Icon name="navigate" size={20} color={palette.white} strokeWidth={2.4} />}
+              />
+              {shownRide.member_id === device.memberId && (
+                <AppButton
+                  variant="ghost"
+                  title={shownRide.name ? 'Rename' : 'Name it'}
+                  onPress={() => setNaming({ id: shownRide.id, track: JSON.parse(shownRide.track) as LngLat[], name: shownRide.name ?? '' })}
+                />
+              )}
+            </View>
           </View>
           <Pressable onPress={() => setShownRideId(null)} accessibilityRole="button" accessibilityLabel="Hide this ride" style={styles.rideCardClose}>
             <Icon name="close" size={20} color={colors.text} strokeWidth={2.4} />
@@ -474,10 +543,20 @@ export default function MapScreen({ device, onSignOut }: Props) {
           pinsDropped={pinsDropped}
           onLog={() => setCapturing(true)}
           onStop={endRide}
-          onLayout={(e) => setRideSheetHeight(e.nativeEvent.layout.height)}
+          onLayout={(e) => setSheetHeight(e.nativeEvent.layout.height)}
         />
       )}
-      {!riding && (
+      {following && followRide && (
+        <FollowSheet
+          title={rideTitle(followRide)}
+          track={followTrack}
+          waypoints={waypoints}
+          onStop={() => setFollowRideId(null)}
+          onLog={() => setCapturing(true)}
+          onLayout={(e) => setSheetHeight(e.nativeEvent.layout.height)}
+        />
+      )}
+      {!riding && !following && (
         <TabBar
           active={tab}
           onChange={(next) => {
@@ -531,6 +610,14 @@ export default function MapScreen({ device, onSignOut }: Props) {
           )}
         </SafeAreaProvider>
       </Modal>
+
+      <NameRideSheet
+        visible={!!naming}
+        initialName={naming?.name ?? ''}
+        suggestions={nameSuggestions}
+        onSave={saveRideName}
+        onSkip={() => setNaming(null)}
+      />
 
       <Modal visible={layersOpen} transparent animationType="fade" statusBarTranslucent onRequestClose={() => setLayersOpen(false)}>
         <Pressable style={styles.backdrop} onPress={() => setLayersOpen(false)} accessibilityLabel="Close">
@@ -674,6 +761,10 @@ function lineString(coordinates: LngLat[]): GeoJSON.Feature<GeoJSON.LineString> 
   return { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates } };
 }
 
+function endPoint(coordinates: LngLat, end: 'start' | 'end'): GeoJSON.Feature<GeoJSON.Point> {
+  return { type: 'Feature', properties: { end }, geometry: { type: 'Point', coordinates } };
+}
+
 function describePack(status: OfflinePackStatus): string {
   const mb = (status.completedTileSize / 1_000_000).toFixed(1);
   return `${status.state} ${Math.round(status.percentage)}% · ${status.completedTileCount} tiles · ${mb} MB`;
@@ -727,9 +818,10 @@ const styles = StyleSheet.create({
   peekSmall: { fontSize: 13, color: colors.textMuted },
   rideCard: {
     ...shadow, position: 'absolute', left: 12, right: 12, backgroundColor: colors.surface, borderRadius: 16,
-    paddingVertical: 12, paddingLeft: 16, paddingRight: 8, flexDirection: 'row', alignItems: 'center', gap: 8,
+    paddingVertical: 12, paddingLeft: 16, paddingRight: 8, flexDirection: 'row', alignItems: 'flex-start', gap: 8,
   },
   rideCardText: { flex: 1, gap: 2 },
+  rideCardActions: { flexDirection: 'row', alignItems: 'center', gap: space.sm, marginTop: 6 },
   rideCardClose: { width: 48, height: 48, alignItems: 'center', justifyContent: 'center' },
   backdrop: { flex: 1, backgroundColor: colors.scrim, justifyContent: 'flex-end' },
   sheet: {

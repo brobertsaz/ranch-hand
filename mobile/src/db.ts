@@ -54,6 +54,8 @@ export type Ride = {
   ended_at: number;
   distance_meters: number;
   track: string;
+  // Optional, so the crew can pick a route to follow: "North pasture via the creek gate"
+  name: string | null;
   _status: SyncStatus;
 };
 
@@ -128,6 +130,7 @@ const MIGRATIONS = [
   `ALTER TABLE waypoints ADD COLUMN pulled_at INTEGER;
   ALTER TABLE observations ADD COLUMN pulled_at INTEGER;
   ALTER TABLE rides ADD COLUMN pulled_at INTEGER;`,
+  `ALTER TABLE rides ADD COLUMN name TEXT;`,
 ];
 
 let database: SQLite.SQLiteDatabase | null = null;
@@ -219,6 +222,13 @@ export async function memberNames(): Promise<Record<string, string>> {
 
 export function liveRides() {
   return db().getAllAsync<Ride>(`SELECT * FROM rides WHERE _status != 'deleted' ORDER BY started_at DESC`);
+}
+
+export async function renameRide(id: string, name: string): Promise<void> {
+  await db().runAsync(
+    `UPDATE rides SET name = ?, _status = CASE _status WHEN 'created' THEN 'created' ELSE 'updated' END WHERE id = ?`,
+    name.trim() || null, id,
+  );
 }
 
 export function liveWaypoints() {

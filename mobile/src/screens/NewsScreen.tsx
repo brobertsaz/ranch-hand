@@ -95,7 +95,11 @@ export default function NewsScreen({ memberId, sync, onOpenObservation, onShowRi
                   <Icon name={item.icon} size={22} color={palette.white} strokeWidth={2.4} />
                 </View>
                 <View style={styles.flex}>
-                  <Text style={styles.rowTitle} numberOfLines={2}>{item.title}</Text>
+                  <View style={styles.titleRow}>
+                    <Text style={[styles.rowTitle, item.status === 'resolved' && styles.rowTitleDone]} numberOfLines={2}>{item.title}</Text>
+                    {item.status === 'open' && <Text style={[styles.tag, styles.tagOpen]}>OPEN</Text>}
+                    {item.status === 'resolved' && <Text style={[styles.tag, styles.tagDone]}>RESOLVED</Text>}
+                  </View>
                   <Text style={styles.rowMeta} numberOfLines={1}>
                     {[who(names, item.memberId, memberId), item.detail, new Date(item.at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })]
                       .filter(Boolean)
@@ -136,7 +140,13 @@ const styles = StyleSheet.create({
   },
   rowNew: { borderColor: palette.trailDark, borderWidth: 2 },
   badge: { width: 44, height: 44, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
-  rowTitle: { fontFamily: fonts.display, fontSize: 21, lineHeight: 22, color: colors.text },
+  rowTitle: { flexShrink: 1, fontFamily: fonts.display, fontSize: 21, lineHeight: 22, color: colors.text },
+  rowTitleDone: { color: colors.textMuted },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
+  tag: { fontSize: 11, fontWeight: '800', letterSpacing: 0.5, borderRadius: 4, overflow: 'hidden', paddingVertical: 2, paddingHorizontal: 6 },
+  tagOpen: { color: palette.white, backgroundColor: palette.trailDark },
+  // Darker than the synced green so small white text clears 4.5:1
+  tagDone: { color: palette.white, backgroundColor: '#3B6E4A' },
   rowMeta: { fontSize: 13, color: colors.textMuted },
   newDot: { width: 12, height: 12, borderRadius: 6, backgroundColor: palette.trail },
 });
