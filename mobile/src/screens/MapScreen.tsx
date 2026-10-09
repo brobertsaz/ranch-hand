@@ -48,10 +48,15 @@ export default function MapScreen({ device, onSignOut }: Props) {
   useEffect(() => {
     reload();
     const sub = addDatabaseChangeListener(reload);
+    // No fix (location off, or a phone that never had one): open on the newest pin so the crew's work is in view
     Location.requestForegroundPermissionsAsync()
       .then(({ granted }) => (granted ? Location.getLastKnownPositionAsync() : null))
       .catch(() => null)
-      .then((fix) => setStart(fix ? [fix.coords.longitude, fix.coords.latitude] : START));
+      .then(async (fix) => {
+        if (fix) return setStart([fix.coords.longitude, fix.coords.latitude]);
+        const [newest] = await liveObservations();
+        setStart(newest ? [newest.longitude, newest.latitude] : START);
+      });
     OfflineManager.getPacks().then(async (packs) => {
       const last = packs.at(-1);
       if (last) setPack(describePack(await last.status()));
@@ -66,8 +71,12 @@ export default function MapScreen({ device, onSignOut }: Props) {
   }
 
   async function centerOnMe() {
-    const fix = (await Location.getLastKnownPositionAsync()) ?? (await Location.getCurrentPositionAsync());
-    camera.current?.flyTo({ center: [fix.coords.longitude, fix.coords.latitude], zoom: 15 });
+    try {
+      const fix = (await Location.getLastKnownPositionAsync()) ?? (await Location.getCurrentPositionAsync());
+      camera.current?.flyTo({ center: [fix.coords.longitude, fix.coords.latitude], zoom: 15 });
+    } catch {
+      Alert.alert('No location yet', 'Turn on Location for Ranch Hand, or step into the open for a GPS fix.');
+    }
   }
 
   async function downloadArea() {
