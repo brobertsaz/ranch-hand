@@ -21,7 +21,7 @@
 | App | React Native via **Expo** (dev builds, not Expo Go) | Builds on existing React skills; dev builds allow native modules |
 | Maps | **MapLibre React Native** | Open source, supports offline region packs, no Mapbox lock-in |
 | Map imagery | **USDA NAIP** aerial imagery (public domain, US) served as self-hosted tiles; a vector basemap for roads and labels | Ranchers want to see their land, and a public-domain source avoids offline-caching license problems (*verify NAIP terms and resolution for target areas*) |
-| Local DB | **WatermelonDB** (SQLite) | Built for offline-first apps. Its pull/push sync protocol is implemented on our own backend |
+| Local DB | **expo-sqlite**, with a small sync client that speaks WatermelonDB's pull/push protocol | WatermelonDB's native module needs the old React Native architecture, which Expo SDK 57 / RN 0.86 dropped (found in the Phase 1 spike). The protocol is kept, so the Rails endpoints match WatermelonDB's docs |
 | Photos | expo-camera, saved to app storage, with an upload queue | The photo is saved locally the moment it's taken. Upload happens later |
 | Location | expo-location + expo-task-manager (background) | Needed for ride tracking. Watch battery use |
 | Backend | **Rails 8 API**, Postgres, Active Storage | Familiar territory. PostGIS can come later; plain lat/lng decimals are enough to start |

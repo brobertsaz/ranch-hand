@@ -8,9 +8,9 @@ Read README.md and PLAN.md first. They hold the product concept and the phased p
 - Keep the observation flow fast: camera first, then save. Aim for under 10 seconds.
 
 ## Stack
-- `mobile/`: Expo (dev builds) + React Native + TypeScript, MapLibre RN, WatermelonDB, expo-camera, expo-location
+- `mobile/`: Expo (dev builds) + React Native + TypeScript, MapLibre RN, expo-sqlite, expo-camera, expo-location
 - `api/`: Rails 8 API-only, Postgres, Active Storage, RSpec
-- Sync uses WatermelonDB's pull/push protocol, implemented as Rails endpoints
+- Sync uses WatermelonDB's pull/push protocol (`mobile/src/sync.ts` client, `api/app/services/sync_*.rb` server). WatermelonDB itself is out: its native module needs the old RN architecture
 
 ## Conventions
 - The owner is a senior Rails developer, so Rails code should be idiomatic and tested with RSpec
