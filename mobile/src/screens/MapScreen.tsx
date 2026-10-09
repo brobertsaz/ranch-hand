@@ -50,7 +50,11 @@ export default function MapScreen({ device, onSignOut }: Props) {
   useEffect(() => {
     reload();
     const sub = addDatabaseChangeListener(reload);
-    Location.requestForegroundPermissionsAsync();
+    // Open where the phone is; START is only for a phone that has never had a fix
+    Location.requestForegroundPermissionsAsync().then(async ({ granted }) => {
+      const fix = granted ? await Location.getLastKnownPositionAsync() : null;
+      if (fix) camera.current?.jumpTo({ center: [fix.coords.longitude, fix.coords.latitude], zoom: 14 });
+    });
     OfflineManager.getPacks().then(async (packs) => {
       const last = packs.at(-1);
       if (last) setPack(describePack(await last.status()));
@@ -163,7 +167,10 @@ export default function MapScreen({ device, onSignOut }: Props) {
           memberId={device.memberId}
           onDone={(saved) => {
             setCapturing(false);
-            if (saved) syncState.syncNow();
+            if (saved) {
+              centerOnMe();
+              syncState.syncNow();
+            }
           }}
         />
       </Modal>
