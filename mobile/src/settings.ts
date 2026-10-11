@@ -1,3 +1,4 @@
+import { TransformRequestManager } from '@maplibre/maplibre-react-native';
 import * as SecureStore from 'expo-secure-store';
 
 export type Device = {
@@ -27,4 +28,18 @@ export async function forgetDevice(): Promise<void> {
 
 export function mapStyleUrl(device: Device): string {
   return `${device.apiUrl}/api/v1/map/style`;
+}
+
+const MAP_AUTH = 'ranch-auth';
+
+// MapLibre makes its own requests, so it needs the token separately to get the ranch's sharp areas
+// in the style. Set it before the map mounts, or the first style load comes back without them.
+export function authorizeMapRequests(device: Device | null): void {
+  if (!device) return TransformRequestManager.removeHeader(MAP_AUTH);
+  TransformRequestManager.addHeader({
+    id: MAP_AUTH,
+    name: 'Authorization',
+    value: `Bearer ${device.token}`,
+    match: `^${device.apiUrl.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')}/`,
+  });
 }

@@ -30,7 +30,8 @@ import { useMemberNames, who } from '../members';
 import { crewNews, isNew, newsSeenAt } from '../news';
 import { activeRide, resumeRideIfNeeded, ridePoints, startRide, stopRide, type ActiveRide } from '../rides';
 import { KIND_INFO, WAYPOINT_INFO } from '../kinds';
-import { estimateTiles, expandBounds, MIN_PACK_SPAN_KM, PACK_MAX_ZOOM, PACK_MIN_ZOOM, TILE_LIMIT } from '../offline';
+import { estimateTiles, expandBounds, MIN_PACK_SPAN_KM, PACK_MAX_ZOOM, PACK_MIN_ZOOM, TILE_LIMIT, VIEW_USGS_LIMIT } from '../offline';
+import { fetchMapAreas, sharpenArea, type MapArea } from '../api';
 import { deleteAllPhotos, photoFile } from '../photoFiles';
 import { cumulative, placesOnTrail } from '../trail';
 import { forgetDevice, mapStyleUrl, type Device } from '../settings';
@@ -44,6 +45,8 @@ import RidesScreen from './RidesScreen';
 import WaypointScreen from './WaypointScreen';
 
 const BASE_KEY = 'map_base';
+// The ranch's sharp areas as last fetched, so area downloads and estimates work with no signal
+const AREAS_KEY = 'map_areas';
 // Pins closer than this overlap on screen at field zoom levels
 const ALSO_HERE_METERS = 30;
 // 72 photo + 2 × 10 padding
@@ -93,6 +96,8 @@ export default function MapScreen({ device, onSignOut }: Props) {
   const [start, setStart] = useState<[number, number] | null>(null);
   const [here, setHere] = useState<LngLat | null>(null);
   const [downloading, setDownloading] = useState<number | null>(null);
+  const [areas, setAreas] = useState<MapArea[]>([]);
+  const [sharpening, setSharpening] = useState(false);
   // A tap on a pin also reaches the map underneath; without this the map's tap clears the pin just selected
   const pinPressedAt = useRef(0);
 
@@ -131,6 +136,8 @@ export default function MapScreen({ device, onSignOut }: Props) {
         setStart(newest ? [newest.longitude, newest.latitude] : START);
       });
     getState(BASE_KEY).then((saved) => saved === 'topo' && setBase('topo'));
+    getState(AREAS_KEY).then((saved) => saved && setAreas(JSON.parse(saved) as MapArea[]));
+    OfflineManager.setTileCountLimit(TILE_LIMIT);
     OfflineManager.getPacks().then(async (packs) => {
       const last = packs.at(-1);
       if (last) setPack(describePack(await last.status()));
@@ -301,16 +308,54 @@ export default function MapScreen({ device, onSignOut }: Props) {
     }
   }
 
+  // The sheet shows each area's render progress, so refetch whenever it opens
+  useEffect(() => {
+    if (!layersOpen) return;
+    fetchMapAreas(device)
+      .then((list) => {
+        setAreas(list);
+        setState(AREAS_KEY, JSON.stringify(list));
+      })
+      .catch(() => {});
+  }, [layersOpen, device]);
+
+  const sharpBounds = areas.filter((a) => a.status === 'ready').map((a): [number, number, number, number] => [a.west, a.south, a.east, a.north]);
+
   async function downloadArea() {
     const visibleBounds = await map.current?.getBounds();
     if (!visibleBounds) return;
     const bounds = expandBounds(visibleBounds);
-    const tiles = estimateTiles(bounds);
-    if (tiles > TILE_LIMIT) {
-      Alert.alert('Area too big', `About ${tiles} tiles. Zoom in until it's under ${TILE_LIMIT}.`);
+    const tiles = estimateTiles(bounds, sharpBounds);
+    if (tiles.usgs > VIEW_USGS_LIMIT) {
+      Alert.alert('Area too big', `About ${tiles.usgs} tiles. Zoom in until it's under ${VIEW_USGS_LIMIT}.`);
       return;
     }
+    savePack(bounds, tiles.total, `At least ${MIN_PACK_SPAN_KM} km across around this view.`);
+  }
 
+  function downloadSharpArea(area: MapArea) {
+    const bounds: [number, number, number, number] = [area.west, area.south, area.east, area.north];
+    savePack(bounds, estimateTiles(bounds, [bounds]).total, `${area.name}, sharp to zoom 18.`);
+  }
+
+  async function sharpenView() {
+    const visibleBounds = await map.current?.getBounds();
+    if (!visibleBounds) return;
+    setSharpening(true);
+    try {
+      const area = await sharpenArea(device, visibleBounds);
+      setAreas((list) => [...list, area]);
+      // About 10 s a tile, 8 at a time
+      const minutes = Math.max(1, Math.round((area.estimated_tiles * 10) / 8 / 60));
+      Alert.alert('Sharpening this area', `${area.name} will take about ${minutes} min. When it says Ready here, download it to have it with no signal.`);
+    } catch (error) {
+      Alert.alert("Couldn't sharpen", syncState.online ? (error as Error).message : 'This needs a signal. Try again at the house.');
+    } finally {
+      setSharpening(false);
+    }
+  }
+
+  async function savePack(bounds: [number, number, number, number], tiles: number, saved: string) {
     setDownloading(0);
     let finished = false;
     const finish = (title: string, message: string) => {
@@ -333,7 +378,7 @@ export default function MapScreen({ device, onSignOut }: Props) {
           setPack(describePack(status));
           setDownloading(status.percentage);
           if (status.state === 'complete') {
-            finish('Saved for offline', `At least ${MIN_PACK_SPAN_KM} km across around this view. ${describePack(status)}`);
+            finish('Saved for offline', `${saved} ${describePack(status)}`);
           }
         },
         (_pack, error) => {
@@ -379,7 +424,8 @@ export default function MapScreen({ device, onSignOut }: Props) {
       <StatusBar style="light" />
       <Map ref={map} style={StyleSheet.absoluteFill} mapStyle={mapStyleUrl(device)} logo={false} onPress={() => Date.now() - pinPressedAt.current > 500 && setSelectedId(null)}>
         {start && <Camera ref={camera} initialViewState={{ center: start, zoom: 14 }} trackUserLocation={following ? 'default' : undefined} />}
-        {base === 'topo' && <Layer type="raster" id="topo" source="topo" afterId="imagery" />}
+        {/* Above the sharp areas too, which the style ends with aerial-top */}
+        {base === 'topo' && <Layer type="raster" id="topo" source="topo" afterId="aerial-top" />}
         <UserLocation accuracy />
         {shownRide && (
           <GeoJSONSource id="shown-ride" data={lineString(JSON.parse(shownRide.track) as LngLat[])}>
@@ -680,6 +726,34 @@ export default function MapScreen({ device, onSignOut }: Props) {
             <Text style={styles.sheetHint}>Saves aerial and topo maps at least {MIN_PACK_SPAN_KM} km across around the current view.</Text>
 
             <View style={styles.sheetDivider} />
+            <Text style={styles.sheetTitle}>Sharp areas</Text>
+            {areas.map((area) => (
+              <View key={area.id} style={styles.areaRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.sheetText}>{area.name}</Text>
+                  <Text style={styles.sheetHint}>{describeArea(area)}</Text>
+                </View>
+                {area.status === 'ready' && (
+                  <AppButton
+                    variant="secondary"
+                    title="Download"
+                    onPress={() => downloadSharpArea(area)}
+                    disabled={downloading !== null}
+                    icon={<Icon name="download" size={20} color={palette.white} strokeWidth={2.4} />}
+                  />
+                )}
+              </View>
+            ))}
+            <AppButton
+              variant="secondary"
+              title={sharpening ? 'Sending…' : 'Sharpen this area'}
+              onPress={sharpenView}
+              disabled={sharpening}
+              icon={<Icon name="plus" size={20} color={palette.white} strokeWidth={2.4} />}
+            />
+            <Text style={styles.sheetHint}>Gets close-up aerial photos (zoom 18) for the current view plus a quarter mile. Do it once per pasture, with signal.</Text>
+
+            <View style={styles.sheetDivider} />
             <Text style={styles.sheetTitle}>Sync</Text>
             <Text style={styles.sheetText}>
               {syncState.online ? 'Online' : 'No signal'} · {syncState.pending.records} records and {syncState.pending.uploads} photos waiting
@@ -823,6 +897,12 @@ function endPoint(coordinates: LngLat, end: 'start' | 'end'): GeoJSON.Feature<Ge
   return { type: 'Feature', properties: { end }, geometry: { type: 'Point', coordinates } };
 }
 
+function describeArea(area: MapArea): string {
+  if (area.status === 'ready') return `Ready · ${area.tile_count} tiles`;
+  if (area.status === 'failed') return 'Failed. Tap Sharpen this area to try again.';
+  return `Preparing · about ${area.estimated_tiles} tiles`;
+}
+
 function describePack(status: OfflinePackStatus): string {
   const mb = (status.completedTileSize / 1_000_000).toFixed(1);
   return `${status.state} ${Math.round(status.percentage)}% · ${status.completedTileCount} tiles · ${mb} MB`;
@@ -908,4 +988,5 @@ const styles = StyleSheet.create({
   baseText: { fontSize: 17, fontWeight: '800', color: colors.text },
   baseTextOn: { color: palette.white },
   sheetDivider: { height: 1, backgroundColor: colors.border, marginVertical: 6 },
+  areaRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
 });

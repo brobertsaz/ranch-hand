@@ -4,6 +4,7 @@ class Ranch < ApplicationRecord
   has_many :photos, dependent: :destroy
   has_many :waypoints, dependent: :destroy
   has_many :rides, dependent: :destroy
+  has_many :map_areas, dependent: :destroy
 
   validates :name, :invite_code, presence: true
   validates :invite_code, uniqueness: true
