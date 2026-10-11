@@ -41,6 +41,27 @@ export function fetchRanch(device: Device) {
   return request<{ id: string; name: string; invite_code: string }>(device, '/api/v1/ranch');
 }
 
+export type MapArea = {
+  id: string;
+  name: string;
+  west: number;
+  south: number;
+  east: number;
+  north: number;
+  status: 'pending' | 'rendering' | 'ready' | 'failed';
+  tile_count: number;
+  estimated_tiles: number;
+  rendered_at: string | null;
+};
+
+export function fetchMapAreas(device: Device) {
+  return request<MapArea[]>(device, '/api/v1/map_areas');
+}
+
+export function sharpenArea(device: Device, [west, south, east, north]: [number, number, number, number]) {
+  return request<MapArea>(device, '/api/v1/map_areas', { method: 'POST', body: JSON.stringify({ map_area: { west, south, east, north } }) });
+}
+
 export function photoFileUrl(device: Device, photoId: string) {
   return `${device.apiUrl}/api/v1/photos/${photoId}/file`;
 }

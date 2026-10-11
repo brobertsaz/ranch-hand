@@ -24,17 +24,18 @@ Offline-first rules them out. NAIP is public domain and goes to 0.3–0.6 m/px. 
    For the test, one area is created by hand.
 2. **Render job.** `RenderMapAreaJob` walks every zoom 17–18 tile in an area and fetches it from
    `USGSNAIPImagery/ImageServer/exportImage` with the tile's EPSG:3857 bbox, 256×256 JPEG.
-   It writes the tiles to the bucket under `tiles/ranch-<id>/<z>/<x>/<y>.jpg`. These are plain S3 keys,
-   not Active Storage blobs, because a big ranch is 45k tiles. Areas share one tile tree, so overlap
+   It writes the tiles to the Active Storage service under `naip/<z>/<x>/<y>.jpg`. These are plain keys,
+   not blobs, because a big ranch is 45k tiles. All ranches share one tile tree, so overlap
    is fetched once. It runs 8 requests at a time, retries, and skips tiles that already exist,
    so a rerun resumes.
-3. **Tile route.** `GET /api/v1/ranches/:id/tiles/:z/:x/:y` streams the object with a long public cache.
-4. **Style.** `map/style` takes the ranch. Each rendered area gets its own `naip` raster source with
+3. **Tile route.** `GET /api/v1/map/tiles/:z/:x/:y.jpg` is public (the imagery is public domain) and cached for a year.
+4. **Style.** `map/style` reads the app's token when it's sent and adds that ranch's areas.
+   Old apps send no token and get today's plain style. Each rendered area gets its own `naip` raster source with
    `bounds` set to that area and `minzoom 17` / `maxzoom 18`, drawn above the USGS layer.
    `bounds` keeps MapLibre from asking for tiles between pastures. Outside the areas, the map behaves
    as it does today. Topo stays at 16.
 5. **App.** This part needs an app build:
-   - pass the ranch in `mapStyleUrl`
+   - send the device token on MapLibre's requests to our API (`TransformRequestManager`)
    - add the Sharpen button
    - offer one offline download per area, so the empty miles between pastures aren't fetched
    - raise `PACK_MAX_ZOOM` to 18

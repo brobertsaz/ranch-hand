@@ -10,6 +10,8 @@ Rails.application.routes.draw do
         resource :file, only: %i[show update], controller: :photo_files
       end
       get "map/style", to: "map_styles#show", defaults: { format: :json }
+      get "map/tiles/:z/:x/:y.jpg", to: "map_tiles#show", format: false, constraints: { z: /\d+/, x: /\d+/, y: /\d+/ }
+      resources :map_areas, only: %i[index create]
     end
   end
 end

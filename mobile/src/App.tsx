@@ -9,13 +9,18 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { db } from './db';
 import MapScreen from './screens/MapScreen';
 import SetupScreen from './screens/SetupScreen';
-import { loadDevice, type Device } from './settings';
+import { authorizeMapRequests, loadDevice, type Device } from './settings';
 import { colors } from './theme';
 
 export default function App() {
-  const [device, setDevice] = useState<Device | null | undefined>(undefined);
+  const [device, setDeviceState] = useState<Device | null | undefined>(undefined);
   // Only the two weights theme.ts names, so the rest of the family stays out of the bundle
   const [fontsLoaded, fontError] = useFonts({ BarlowCondensed_800ExtraBold, BarlowCondensed_900Black });
+
+  const setDevice = (next: Device | null) => {
+    authorizeMapRequests(next);
+    setDeviceState(next);
+  };
 
   useEffect(() => {
     db();

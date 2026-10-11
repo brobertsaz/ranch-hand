@@ -11,9 +11,19 @@ module Api
       DEFAULT_TOPO_TILE_URL = "https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/tile/{z}/{y}/{x}".freeze
 
       def show
+        # The app sends its token on map requests so the style can add the ranch's sharp areas.
+        # Older apps don't, and get the plain style.
+        @current_member = authenticate_with_http_token { |token| Member.find_by(device_token: token) }
+        areas = current_member ? current_ranch.map_areas.ready.order(:id) : MapArea.none
+
         # Rails' default must-revalidate makes MapLibre refuse the copy stored in an offline pack
-        # when there's no network, so a cold start offline shows no map
-        expires_in 1.hour, public: true
+        # when there's no network, so a cold start offline shows no map.
+        # A ranch's style is kept short so a download started once an area turns Ready includes it.
+        if current_member
+          expires_in 5.minutes, public: false
+        else
+          expires_in 1.hour, public: true
+        end
         render json: {
           version: 8,
           name: "Ranch Hand imagery",
@@ -33,12 +43,31 @@ module Api
               tileSize: 256,
               maxzoom: 16,
               attribution: "USGS The National Map"
-            }
+            },
+            **areas.to_h { |area| [ "naip-#{area.id}", naip_source(area) ] }
           },
           layers: [
             { id: "background", type: "background", paint: { "background-color": "#d9d3c3" } },
-            { id: "imagery", type: "raster", source: "imagery" }
+            { id: "imagery", type: "raster", source: "imagery" },
+            *areas.map { |area| { id: "naip-#{area.id}", type: "raster", source: "naip-#{area.id}" } },
+            # The app puts Topo after this, so Topo covers the sharp areas too
+            { id: "aerial-top", type: "background", paint: { "background-opacity": 0 } }
           ]
+        }
+      end
+
+      private
+
+      # bounds keeps MapLibre from asking for tiles between pastures, live or in a download
+      def naip_source(area)
+        {
+          type: "raster",
+          tiles: [ "#{request.base_url}/api/v1/map/tiles/{z}/{x}/{y}.jpg" ],
+          tileSize: 256,
+          minzoom: NaipTiles::ZOOMS.first,
+          maxzoom: NaipTiles::ZOOMS.last,
+          bounds: area.bounds.values_at(:west, :south, :east, :north),
+          attribution: "USDA NAIP via USGS"
         }
       end
     end
