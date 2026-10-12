@@ -37,6 +37,10 @@ class SyncPush
       next if record.nil? || record.deleted_at?
 
       authorize!(record)
+      # Raising would fail the whole push and wedge that phone's sync. Touching it
+      # instead sends the record back down on the phone's next pull.
+      next record.touch unless deletable?(record)
+
       record.soft_delete!
     end
   end
@@ -49,6 +53,11 @@ class SyncPush
 
   def authorize!(record)
     raise Forbidden, "#{record.class.name} #{record.id} belongs to another ranch" unless record.ranch_id == @ranch.id
+  end
+
+  # Only an owner can remove a place, so the crew's gate list can't vanish by accident
+  def deletable?(record)
+    !record.is_a?(Waypoint) || @member.owner?
   end
 
   def assign_observation(observation, raw)

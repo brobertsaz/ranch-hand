@@ -181,6 +181,39 @@ RSpec.describe "Sync", type: :request do
       expect(response).to have_http_status(:forbidden)
       expect(outsider.reload.name).not_to eq("Mine")
     end
+
+    it "lets any hand rename or move a place" do
+      waypoint = create(:waypoint, member: member)
+      hand = create(:member, ranch: ranch, role: "hand")
+
+      push({ waypoints: { created: [], updated: [ raw_waypoint(waypoint.id, name: "Creek tank", latitude: 44.4402) ], deleted: [] } }, as: hand)
+
+      expect(waypoint.reload).to have_attributes(name: "Creek tank", latitude: BigDecimal("44.4402"), member: member)
+    end
+
+    it "lets an owner delete a place and keeps the checks made there" do
+      waypoint = create(:waypoint, member: member)
+      check = create(:observation, member: member, kind: "water_check", waypoint: waypoint)
+      owner = create(:member, ranch: ranch, role: "owner")
+
+      push({ waypoints: { created: [], updated: [], deleted: [ waypoint.id ] } }, as: owner)
+
+      expect(waypoint.reload.deleted_at).to be_present
+      expect(check.reload.deleted_at).to be_nil
+    end
+
+    it "ignores a hand's delete and sends the place back on the next pull" do
+      waypoint = create(:waypoint, member: member, updated_at: 1.hour.ago)
+      hand = create(:member, ranch: ranch, role: "hand")
+      last_pulled_at = to_ms(10.minutes.ago)
+
+      push({ waypoints: { created: [], updated: [], deleted: [ waypoint.id ] } }, as: hand)
+
+      expect(response).to have_http_status(:no_content)
+      expect(waypoint.reload.deleted_at).to be_nil
+      pull(last_pulled_at, as: hand)
+      expect(json.dig("changes", "waypoints", "updated").pluck("id")).to eq([ waypoint.id ])
+    end
   end
 
   describe "members" do

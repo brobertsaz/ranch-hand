@@ -22,14 +22,16 @@ import Icon, { type IconName } from '../components/Icon';
 import Pin from '../components/Pin';
 import FollowSheet from '../components/FollowSheet';
 import NameRideSheet from '../components/NameRideSheet';
+import PlaceSheet, { type PlaceFields } from '../components/PlaceSheet';
 import RideSheet, { ModePill } from '../components/RideSheet';
 import TabBar, { useTabBarHeight, type Tab } from '../components/TabBar';
-import { clearRanchData, getState, KINDS, liveObservations, liveRides, liveWaypoints, observationsAt, photosFor, renameRide, setState, type Kind, type Observation, type Ride, type Waypoint } from '../db';
+import { clearRanchData, createWaypoint, getState, KINDS, updateWaypoint, liveObservations, liveRides, liveWaypoints, observationsAt, photosFor, renameRide, setState, type Kind, type Observation, type Ride, type Waypoint } from '../db';
 import { dayAndTime, distanceMeters, formatDistance, formatDuration, relativeTo, timeAgo, type LngLat } from '../format';
 import { useMemberNames, who } from '../members';
 import { crewNews, isNew, newsSeenAt } from '../news';
 import { activeRide, resumeRideIfNeeded, ridePoints, startRide, stopRide, type ActiveRide } from '../rides';
-import { KIND_INFO, WAYPOINT_INFO } from '../kinds';
+import { KIND_INFO, nextPlaceName, WAYPOINT_INFO } from '../kinds';
+import { locate } from '../locate';
 import { estimateTiles, expandBounds, MIN_PACK_SPAN_KM, PACK_MAX_ZOOM, PACK_MIN_ZOOM, TILE_LIMIT, VIEW_USGS_LIMIT } from '../offline';
 import { fetchMapAreas, sharpenArea, type MapArea } from '../api';
 import { deleteAllPhotos, photoFile } from '../photoFiles';
@@ -98,6 +100,12 @@ export default function MapScreen({ device, onSignOut }: Props) {
   const [downloading, setDownloading] = useState<number | null>(null);
   const [areas, setAreas] = useState<MapArea[]>([]);
   const [sharpening, setSharpening] = useState(false);
+  // Putting a place under the crosshair: a new one, or an existing one being moved
+  const [placing, setPlacing] = useState<{ move: Waypoint | null } | null>(null);
+  // The add-a-place sheet. A place from GPS waits for its fix; one set on the map already has its spot.
+  const [adding, setAdding] = useState<{ at: LngLat | null; accuracy: number | null; fromMap: boolean; noFix?: boolean } | null>(null);
+  // Kind, name and note picked before switching to the map, restored when the sheet comes back
+  const [draft, setDraft] = useState<PlaceFields | null>(null);
   // A tap on a pin also reaches the map underneath; without this the map's tap clears the pin just selected
   const pinPressedAt = useRef(0);
 
@@ -308,6 +316,62 @@ export default function MapScreen({ device, onSignOut }: Props) {
     }
   }
 
+  // Standing at the gate: drop it right here, no camera, no check
+  function addPlaceHere() {
+    setSelectedId(null);
+    setDraft(null);
+    setAdding({ at: null, accuracy: null, fromMap: false });
+    locate()
+      .catch(() => null)
+      .then((fix) =>
+        setAdding((current) => {
+          if (!current || current.fromMap) return current;
+          if (!fix) return { ...current, noFix: true };
+          return { ...current, at: [fix.coords.longitude, fix.coords.latitude], accuracy: fix.coords.accuracy };
+        }),
+      );
+  }
+
+  function startPlacing(at: LngLat | null, move: Waypoint | null) {
+    if (!move && !adding) setDraft(null);
+    setSelectedId(null);
+    setDetails([]);
+    setAdding(null);
+    setTab('map');
+    // Close enough to put a gate on the right side of the fence
+    if (at) camera.current?.flyTo({ center: at, zoom: 17 });
+    setPlacing({ move });
+  }
+
+  async function confirmPlacing() {
+    const center = await map.current?.getCenter();
+    if (!center || !placing) return;
+    const at: LngLat = [center[0], center[1]];
+    setPlacing(null);
+    if (!placing.move) return setAdding({ at, accuracy: null, fromMap: true });
+    await updateWaypoint(placing.move.id, { longitude: at[0], latitude: at[1] });
+    syncState.syncNow();
+    selectPlace(placing.move);
+  }
+
+  async function savePlace(fields: PlaceFields) {
+    if (!adding?.at) return;
+    const id = await createWaypoint({ ...fields, longitude: adding.at[0], latitude: adding.at[1] }, device.memberId);
+    setAdding(null);
+    setDraft(null);
+    // So the new pin isn't hidden behind a filter
+    setFilter('all');
+    syncState.syncNow();
+    select(id, []);
+  }
+
+  function describeAdding(): string {
+    if (!adding) return '';
+    if (adding.fromMap) return 'Where you set it on the map.';
+    if (adding.at) return `Where you're standing · ±${Math.round(adding.accuracy ?? 0)} m`;
+    return adding.noFix ? 'No GPS fix. Set it on the map instead.' : 'Getting a GPS fix…';
+  }
+
   // The sheet shows each area's render progress, so refetch whenever it opens
   useEffect(() => {
     if (!layersOpen) return;
@@ -422,7 +486,10 @@ export default function MapScreen({ device, onSignOut }: Props) {
   return (
     <View style={styles.screen}>
       <StatusBar style="light" />
-      <Map ref={map} style={StyleSheet.absoluteFill} mapStyle={mapStyleUrl(device)} logo={false} onPress={() => Date.now() - pinPressedAt.current > 500 && setSelectedId(null)}>
+      <Map ref={map} style={StyleSheet.absoluteFill} mapStyle={mapStyleUrl(device)} logo={false}
+        onPress={() => Date.now() - pinPressedAt.current > 500 && setSelectedId(null)}
+        onLongPress={(e) => !placing && startPlacing([e.nativeEvent.lngLat[0], e.nativeEvent.lngLat[1]], null)}
+      >
         {start && <Camera ref={camera} initialViewState={{ center: start, zoom: 14 }} trackUserLocation={following ? 'default' : undefined} />}
         {/* Above the sharp areas too, which the style ends with aerial-top */}
         {base === 'topo' && <Layer type="raster" id="topo" source="topo" afterId="aerial-top" />}
@@ -529,9 +596,40 @@ export default function MapScreen({ device, onSignOut }: Props) {
         <Pressable onPress={centerOnMe} accessibilityRole="button" accessibilityLabel="Center on me" style={styles.control}>
           <Icon name="locate" size={22} color={colors.chromeText} />
         </Pressable>
+        {!placing && (
+          <Pressable onPress={addPlaceHere} accessibilityRole="button" accessibilityLabel="Add a place where you're standing" style={styles.control}>
+            <Icon name="pin" size={22} color={colors.chromeText} />
+            <View style={styles.controlBadge}>
+              <Icon name="plus" size={12} color={palette.white} strokeWidth={3} />
+            </View>
+          </Pressable>
+        )}
       </View>
 
-      {selected && tab === 'map' && (
+      {placing && (
+        <>
+          {/* The map's center is the screen's center; the place goes under the cross */}
+          <View style={styles.crosshair} pointerEvents="none">
+            {/* White on a dark outline, so it shows on pale grass and dark timber alike */}
+            <View>
+              <Icon name="plus" size={56} color={palette.pine} strokeWidth={5} />
+              <View style={StyleSheet.absoluteFill}>
+                <Icon name="plus" size={56} color={palette.white} strokeWidth={2.5} />
+              </View>
+            </View>
+          </View>
+          <View style={[styles.placingBar, { paddingBottom: insets.bottom + space.lg }]}>
+            <Text style={styles.placingTitle}>{placing.move ? `Move ${placing.move.name}` : 'Add a place'}</Text>
+            <Text style={styles.placingHint}>Drag the map until the cross sits on it.</Text>
+            <View style={styles.placingActions}>
+              <AppButton variant="chrome" title="Cancel" onPress={() => setPlacing(null)} style={styles.flex} />
+              <AppButton title={placing.move ? 'Move it here' : 'Put it here'} onPress={confirmPlacing} style={styles.flex} />
+            </View>
+          </View>
+        </>
+      )}
+
+      {selected && tab === 'map' && !placing && (
         <PeekCard
           observation={selected}
           photoUri={selectedPhoto}
@@ -541,7 +639,7 @@ export default function MapScreen({ device, onSignOut }: Props) {
           onPress={() => openDetail(selected.id)}
         />
       )}
-      {(selected || selectedPlace) && tab === 'map' && alsoHere.length > 0 && (
+      {(selected || selectedPlace) && tab === 'map' && !placing && alsoHere.length > 0 && (
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -560,7 +658,7 @@ export default function MapScreen({ device, onSignOut }: Props) {
           ))}
         </ScrollView>
       )}
-      {selectedPlace && tab === 'map' && (
+      {selectedPlace && tab === 'map' && !placing && (
         <PlacePeekCard
           waypoint={selectedPlace}
           latest={latestAt[selectedPlace.id] ?? null}
@@ -572,7 +670,7 @@ export default function MapScreen({ device, onSignOut }: Props) {
         />
       )}
 
-      {shownRide && tab === 'map' && !riding && !following && !selected && !selectedPlace && (
+      {shownRide && tab === 'map' && !placing && !riding && !following && !selected && !selectedPlace && (
         <View style={[styles.rideCard, { bottom: bottomInset + 20 }]}>
           <View style={styles.rideCardText}>
             <Text style={styles.peekTitle} numberOfLines={2}>{rideTitle(shownRide)}</Text>
@@ -609,7 +707,7 @@ export default function MapScreen({ device, onSignOut }: Props) {
       )}
       {tab === 'crew' && <CrewScreen device={device} />}
 
-      {riding && ride && (
+      {riding && ride && !placing && (
         <RideSheet
           ride={ride}
           track={liveTrack}
@@ -619,7 +717,7 @@ export default function MapScreen({ device, onSignOut }: Props) {
           onLayout={(e) => setSheetHeight(e.nativeEvent.layout.height)}
         />
       )}
-      {following && followRide && (
+      {following && followRide && !placing && (
         <FollowSheet
           title={rideTitle(followRide)}
           track={followTrack}
@@ -629,7 +727,7 @@ export default function MapScreen({ device, onSignOut }: Props) {
           onLayout={(e) => setSheetHeight(e.nativeEvent.layout.height)}
         />
       )}
-      {!riding && !following && (
+      {!riding && !following && !placing && (
         <TabBar
           active={tab}
           onChange={(next) => {
@@ -679,10 +777,34 @@ export default function MapScreen({ device, onSignOut }: Props) {
               here={here}
               onBack={closeDetail}
               onOpenObservation={(o) => openDetail(o.id)}
+              onMoveOnMap={(w) => startPlacing([w.longitude, w.latitude], w)}
+              onChanged={syncState.syncNow}
             />
           )}
         </SafeAreaProvider>
       </Modal>
+
+      <PlaceSheet
+        visible={!!adding}
+        title="Add a place"
+        initial={draft ?? { kind: 'gate', name: nextPlaceName(waypoints, 'gate'), note: null }}
+        autoName={(kind) => nextPlaceName(waypoints, kind)}
+        where={describeAdding()}
+        canSave={!!adding?.at}
+        extra={
+          adding && !adding.fromMap
+            ? {
+                title: 'Set it on the map instead',
+                onPress: (fields) => {
+                  setDraft(fields);
+                  startPlacing(adding.at ?? here, null);
+                },
+              }
+            : undefined
+        }
+        onSave={savePlace}
+        onCancel={() => setAdding(null)}
+      />
 
       <NameRideSheet
         visible={!!naming}
@@ -946,6 +1068,19 @@ const styles = StyleSheet.create({
   filterLabel: { color: colors.chromeText, fontSize: 12, fontWeight: '700' },
   filterLabelOn: { color: palette.pine, fontWeight: '800' },
   controls: { position: 'absolute', right: 12, gap: space.sm },
+  controlBadge: {
+    position: 'absolute', right: 8, bottom: 8, width: 18, height: 18, borderRadius: 9, backgroundColor: colors.primary,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  crosshair: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, alignItems: 'center', justifyContent: 'center' },
+  placingBar: {
+    ...shadow, position: 'absolute', left: 0, right: 0, bottom: 0, backgroundColor: colors.chrome,
+    borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingTop: space.lg, paddingHorizontal: space.lg, gap: 6,
+  },
+  placingTitle: { fontFamily: fonts.display, fontSize: 28, color: colors.chromeText },
+  placingHint: { fontSize: 15, color: colors.chromeTextMuted },
+  placingActions: { flexDirection: 'row', gap: 10, marginTop: 6 },
+  flex: { flex: 1 },
   control: { width: touch.min, height: touch.min, borderRadius: 14, backgroundColor: colors.chrome, alignItems: 'center', justifyContent: 'center' },
   peek: {
     ...shadow, position: 'absolute', left: 12, right: 12, backgroundColor: colors.surface, borderRadius: 16, padding: 10,

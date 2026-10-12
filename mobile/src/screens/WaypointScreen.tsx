@@ -1,16 +1,18 @@
 import { addDatabaseChangeListener } from 'expo-sqlite';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useState } from 'react';
-import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import AppButton from '../components/AppButton';
 import Icon from '../components/Icon';
 import MiniMap from '../components/MiniMap';
-import { observationsAt, photosFor, type Observation, type Waypoint } from '../db';
+import PlaceSheet from '../components/PlaceSheet';
+import { deleteWaypoint, observationsAt, photosFor, updateWaypoint, type Observation, type Waypoint } from '../db';
 import { relativeTo, timeAgo, type LngLat } from '../format';
 import { KIND_INFO, STATUS_LABEL, WAYPOINT_INFO } from '../kinds';
-import { useMemberNames, who } from '../members';
+import { locate } from '../locate';
+import { useIsOwner, useMemberNames, who } from '../members';
 import { photoFile } from '../photoFiles';
 import { colors, fonts, palette, space, touch } from '../theme';
 import GuideScreen, { guideToWaypoint } from './GuideScreen';
@@ -22,17 +24,23 @@ type Props = {
   here: LngLat | null;
   onBack: () => void;
   onOpenObservation: (observation: Observation) => void;
+  // Closes this screen so the hand can put the place under the map's crosshair
+  onMoveOnMap: (waypoint: Waypoint) => void;
+  onChanged: () => void;
 };
 
 // A place that stays put (feed station, tank, gate): its latest status and every check made there
-export default function WaypointScreen({ waypoint, memberId, mapStyle, here, onBack, onOpenObservation }: Props) {
+export default function WaypointScreen({ waypoint, memberId, mapStyle, here, onBack, onOpenObservation, onMoveOnMap, onChanged }: Props) {
   const insets = useSafeAreaInsets();
   const info = WAYPOINT_INFO[waypoint.kind];
   const lngLat: LngLat = [waypoint.longitude, waypoint.latitude];
   const [history, setHistory] = useState<Observation[]>([]);
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [guiding, setGuiding] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [moving, setMoving] = useState(false);
   const names = useMemberNames();
+  const isOwner = useIsOwner(memberId);
   const latest = history[0] ?? null;
 
   const reload = useCallback(async () => {
@@ -51,6 +59,40 @@ export default function WaypointScreen({ waypoint, memberId, mapStyle, here, onB
     const sub = addDatabaseChangeListener(reload);
     return () => sub.remove();
   }, [reload]);
+
+  async function moveHere() {
+    setMoving(true);
+    const fix = await locate().catch(() => null);
+    setMoving(false);
+    if (!fix) return Alert.alert('No GPS fix', 'Step into the open and try again, or move it on the map.');
+    await updateWaypoint(waypoint.id, { latitude: fix.coords.latitude, longitude: fix.coords.longitude });
+    onChanged();
+    Alert.alert('Moved', `${waypoint.name} is now where you're standing (±${Math.round(fix.coords.accuracy ?? 0)} m).`);
+  }
+
+  function chooseMove() {
+    Alert.alert(`Move ${waypoint.name}`, 'Put it where it really is.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'On the map', onPress: () => onMoveOnMap(waypoint) },
+      { text: "Where I'm standing", onPress: moveHere },
+    ]);
+  }
+
+  function confirmDelete() {
+    const checks = history.length > 0 ? ` The ${history.length} check${history.length === 1 ? '' : 's'} made here stay on the map.` : '';
+    Alert.alert(`Delete ${waypoint.name}?`, `It goes for the whole crew.${checks}`, [
+      { text: 'Keep it', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          await deleteWaypoint(waypoint.id);
+          onChanged();
+          onBack();
+        },
+      },
+    ]);
+  }
 
   if (guiding) return <GuideScreen target={guideToWaypoint(waypoint)} onBack={() => setGuiding(false)} />;
 
@@ -76,6 +118,7 @@ export default function WaypointScreen({ waypoint, memberId, mapStyle, here, onB
               <Text style={[styles.badge, styles.fixedBadge]}>STAYS PUT</Text>
             </View>
             <Text style={styles.title} accessibilityRole="header">{waypoint.name}</Text>
+            {waypoint.note && <Text style={styles.note}>{waypoint.note}</Text>}
           </View>
         </View>
 
@@ -100,6 +143,12 @@ export default function WaypointScreen({ waypoint, memberId, mapStyle, here, onB
                 <Text style={styles.cardMeta}>{waypoint._status === 'synced' ? 'The whole crew can see it' : 'On this phone, sends with the next sync'}</Text>
               </View>
             </View>
+          </View>
+
+          <View style={styles.manage}>
+            <AppButton variant="ghost" title="Edit" onPress={() => setEditing(true)} style={styles.flex} />
+            <AppButton variant="ghost" title={moving ? 'Getting a fix…' : 'Move'} onPress={chooseMove} disabled={moving} style={styles.flex} />
+            {isOwner && <AppButton variant="ghost" title="Delete" onPress={confirmDelete} style={styles.flex} />}
           </View>
 
           <Text style={styles.subheading} accessibilityRole="header">History</Text>
@@ -132,6 +181,18 @@ export default function WaypointScreen({ waypoint, memberId, mapStyle, here, onB
           icon={<Icon name="navigate" size={24} color={palette.white} strokeWidth={2.2} />}
         />
       </View>
+
+      <PlaceSheet
+        visible={editing}
+        title="Edit place"
+        initial={{ kind: waypoint.kind, name: waypoint.name, note: waypoint.note }}
+        onSave={async (fields) => {
+          await updateWaypoint(waypoint.id, fields);
+          setEditing(false);
+          onChanged();
+        }}
+        onCancel={() => setEditing(false)}
+      />
     </View>
   );
 }
@@ -155,6 +216,8 @@ const styles = StyleSheet.create({
   badge: { fontSize: 12, fontWeight: '800', letterSpacing: 0.5, borderRadius: 4, overflow: 'hidden', paddingVertical: 3, paddingHorizontal: 8 },
   fixedBadge: { backgroundColor: palette.canvas, color: palette.pine },
   title: { fontFamily: fonts.displayBlack, fontSize: 44, lineHeight: 44, color: palette.white },
+  note: { fontSize: 15, color: palette.canvas },
+  manage: { flexDirection: 'row', gap: space.sm },
   body: { padding: space.lg, gap: 12 },
   card: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: 12 },
   cardRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10, paddingHorizontal: 14 },
