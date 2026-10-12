@@ -1,6 +1,6 @@
 # Ranch Hand — Plan
 
-**Goal:** have a build reliable enough to field-test at Kara Creek Ranch in June 2027, with real cows, real feed stations, and no signal.
+**Goal:** have a build reliable enough to field-test on a working Wyoming ranch in June 2027, with real cows, real feed stations, and no signal.
 **Pace:** side project. About 8 months of runway.
 
 ---
@@ -84,10 +84,10 @@ If all five pass, the architecture works.
 - [ ] TestFlight and an Android internal test build
 - [ ] Battery test: a 4-hour ride with tracking on
 - [ ] Test on a rural drive somewhere with dead zones
-- [ ] Pre-download the Kara Creek area map pack
-- [ ] **Ask Kara Creek for permission** to test with their hands and cattle, and agree on what we'll record
+- [ ] Pre-download the test ranch area map pack
+- [ ] **Ask the test ranch for permission** to test with their hands and cattle, and agree on what we'll record
 
-### June 2027: Kara Creek field test
+### June 2027: Wyoming field test
 - Hand it to the people who do the feed runs. Watch them use it, without coaching.
 - Record what confused them, what they skipped, and what they wished it did
 

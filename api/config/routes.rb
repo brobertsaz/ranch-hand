@@ -4,6 +4,7 @@ Rails.application.routes.draw do
   namespace :api do
     namespace :v1 do
       resources :devices, only: :create
+      resources :signups, only: :create
       resource :sync, only: %i[show create]
       resource :ranch, only: :show
       resources :photos, only: [] do
