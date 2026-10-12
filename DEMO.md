@@ -14,7 +14,7 @@ A short video of Ranch Hand doing its job: log what you see with no signal, the 
 
 | # | Shot | What to show | Where |
 |---|---|---|---|
-| 1 | **Opening** | Launch: the 1147 tag logo, then the join screen. Type KARACREEK and a name, then **Join the crew**. | Anywhere |
+| 1 | **Opening** | Launch: the 1147 tag logo, then the join screen. Type BOBSRANCH and a name, then **Join the crew**. | Anywhere |
 | 2 | **Log it with no signal** | Airplane mode on. Camera → snap an ear tag → **Sick animal** → tap *Limping* and *Off feed* → **Drop the pin**. The pin lands with a dashed border ("on this phone"). | Out in a pasture |
 | 3 | **The crew gets it** | Back in range: the dashed pin turns solid. Cut to the second phone: the **New** tab badge, then the item in What's new with OPEN. | Then at home |
 | 4 | **Take me there** | On the second phone: open the pin → **Take me there** → the arrow swings as you turn, and the distance counts down. | Walking toward the pin |

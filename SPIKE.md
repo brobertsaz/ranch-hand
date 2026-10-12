@@ -17,7 +17,7 @@ The app uses native modules (MapLibre, SQLite, camera), so it needs a dev build.
 - **Pixel:** enable USB debugging, plug it in, run `cd mobile && npx expo run:android --device`. This needs a JDK 17.
 - **iPhone:** plug it in, run `cd mobile && npx expo run:ios --device`. This needs Xcode and a signing team. A free Apple ID works, but the build expires after 7 days.
 
-After installing, `npx expo start` serves the JavaScript. On first launch, enter `http://<lan-ip>:3000`, the invite code `KARACREEK`, and a name.
+After installing, `npx expo start` serves the JavaScript. On first launch, enter `http://<lan-ip>:3000`, the invite code `BOBSRANCH`, and a name.
 
 ## 3. The acceptance test (from PLAN.md)
 
