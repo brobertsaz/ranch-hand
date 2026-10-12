@@ -215,6 +215,43 @@ export async function setObservationStatus(id: string, status: ObservationStatus
   );
 }
 
+// A place marked on its own, not as part of a check: a gate or tank mapped from the saddle or the house
+export async function createWaypoint(
+  waypoint: Pick<Waypoint, 'kind' | 'name' | 'latitude' | 'longitude' | 'note'>,
+  memberId: string,
+): Promise<string> {
+  const id = newId();
+  await db().runAsync(
+    `INSERT INTO waypoints (id, member_id, kind, name, latitude, longitude, note, _status) VALUES (?, ?, ?, ?, ?, ?, ?, 'created')`,
+    id, memberId, waypoint.kind, waypoint.name.trim(), waypoint.latitude, waypoint.longitude, waypoint.note?.trim() || null,
+  );
+  return id;
+}
+
+// Any hand can rename, re-kind or move a place; the last write wins like everything else
+export async function updateWaypoint(id: string, changes: Partial<Pick<Waypoint, 'kind' | 'name' | 'latitude' | 'longitude' | 'note'>>): Promise<void> {
+  const columns = Object.keys(changes) as (keyof typeof changes)[];
+  if (columns.length === 0) return;
+  await db().runAsync(
+    `UPDATE waypoints SET ${columns.map((c) => `${c} = ?`).join(', ')}, _status = CASE _status WHEN 'created' THEN 'created' ELSE 'updated' END WHERE id = ?`,
+    ...columns.map((c) => changes[c] ?? null), id,
+  );
+}
+
+// Checks made there stay, as standalone pins. A place the server never saw just goes.
+export async function deleteWaypoint(id: string): Promise<void> {
+  const conn = db();
+  await conn.withTransactionAsync(async () => {
+    await conn.runAsync(`DELETE FROM waypoints WHERE id = ? AND _status = 'created'`, id);
+    await conn.runAsync(`UPDATE waypoints SET _status = 'deleted' WHERE id = ?`, id);
+  });
+}
+
+export async function memberRole(id: string): Promise<string | null> {
+  const row = await db().getFirstAsync<{ role: string | null }>('SELECT role FROM members WHERE id = ?', id);
+  return row?.role ?? null;
+}
+
 export async function memberNames(): Promise<Record<string, string>> {
   const rows = await db().getAllAsync<Member>('SELECT id, name, role FROM members');
   return Object.fromEntries(rows.map((m) => [m.id, m.name]));

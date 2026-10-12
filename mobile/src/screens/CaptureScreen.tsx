@@ -11,16 +11,10 @@ import Icon from '../components/Icon';
 import { createObservation, liveWaypoints, newId, type Kind, type PlaceChoice, type Waypoint } from '../db';
 import { clockParts, formatDistance } from '../format';
 import { composeNote, initialStatus, nearestPlace, nextPlaceName, PLACE_KIND, WAYPOINT_INFO } from '../kinds';
+import { locate } from '../locate';
 import { keepPhoto, photoFile } from '../photoFiles';
 import { colors, fonts, palette, sync, touch } from '../theme';
 import TagScreen, { type Fix, type PlaceMode } from './TagScreen';
-
-// Ask for a fix as soon as the camera opens, so it's ready by the time the form is filled in
-async function locate(): Promise<Location.LocationObject | null> {
-  const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), 20_000));
-  const fix = Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High }).catch(() => null);
-  return (await Promise.race([fix, timeout])) ?? (await Location.getLastKnownPositionAsync());
-}
 
 type Props = { memberId: string; onDone: (saved: boolean) => void };
 
@@ -58,6 +52,7 @@ export default function CaptureScreen({ memberId, onDone }: Props) {
 
   useEffect(() => {
     if (permission && !permission.granted && permission.canAskAgain) requestPermission();
+    // Ask for a fix as soon as the camera opens, so it's ready by the time the form is filled in
     const request = Location.requestForegroundPermissionsAsync().then(({ granted }) => (granted ? locate() : null));
     location.current = request;
     request.then((result) => location.current === request && setFix(result));
