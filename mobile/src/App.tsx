@@ -9,7 +9,8 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { db } from './db';
 import MapScreen from './screens/MapScreen';
 import SetupScreen from './screens/SetupScreen';
-import { authorizeMapRequests, loadDevice, type Device } from './settings';
+import { fetchRanch } from './api';
+import { authorizeMapRequests, loadDevice, saveDevice, type Device } from './settings';
 import { colors } from './theme';
 
 export default function App() {
@@ -26,6 +27,19 @@ export default function App() {
     db();
     loadDevice().then(setDevice);
   }, []);
+
+  // The ranch name is saved at join; pick up a rename once there's signal
+  useEffect(() => {
+    if (!device) return;
+    fetchRanch(device)
+      .then((ranch) => {
+        if (ranch.name === device.ranchName) return;
+        const next = { ...device, ranchName: ranch.name };
+        saveDevice(next);
+        setDeviceState(next);
+      })
+      .catch(() => {}); // offline: keep the saved name
+  }, [device]);
 
   // A font that fails to load falls back to the system face rather than blocking the app
   if (device === undefined || (!fontsLoaded && !fontError)) {
