@@ -15,3 +15,7 @@ Read README.md and PLAN.md first. They hold the product concept and the phased p
 ## Conventions
 - The owner is a senior Rails developer, so Rails code should be idiomatic and tested with RSpec
 - No vendor lock-in where an open option exists (MapLibre over Mapbox, our own sync over hosted sync services)
+
+## Hosting
+- The API (and the landing page in `api/public/`) runs on Bob, the home Mac mini (`ssh thebob`), at https://ranch.thebob.dev through a Cloudflare tunnel. Deploy steps are in SPIKE.md. It is not on Railway
+- `api/railway.json` and the `railway` storage service are leftovers from an earlier Railway plan. If the app goes to real hosting, it goes to Render
