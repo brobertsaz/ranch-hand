@@ -22,4 +22,4 @@ Ranch work happens in places with no signal, and today most observations end up 
 
 ## Status
 
-Planning stage. See [PLAN.md](PLAN.md). Target: a working field test at Kara Creek Ranch (Sundance, WY) in June 2027.
+Planning stage. See [PLAN.md](PLAN.md). Target: a working field test on a Wyoming ranch in June 2027.

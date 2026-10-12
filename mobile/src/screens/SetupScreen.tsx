@@ -63,7 +63,7 @@ export default function SetupScreen({ onJoined }: { onJoined: (device: Device) =
             onChangeText={(text) => setInviteCode(text.toUpperCase())}
             autoCapitalize="characters"
             autoCorrect={false}
-            placeholder="KARACREEK"
+            placeholder="BOBSRANCH"
             placeholderTextColor="rgba(23, 27, 24, 0.3)"
             accessibilityLabelledBy="code-label"
           />

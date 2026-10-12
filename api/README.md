@@ -15,7 +15,7 @@ Rails 8 API for Ranch Hand. Phones join a ranch with an invite code, then sync o
 
 ```bash
 docker compose up -d      # Postgres 17 on port 5433
-bin/rails db:prepare      # creates the dev DB and seeds invite code KARACREEK
+bin/rails db:prepare      # creates the dev DB and seeds invite code BOBSRANCH
 bin/rails s -b 0.0.0.0    # reachable from phones on the same Wi-Fi
 bundle exec rspec
 ```
