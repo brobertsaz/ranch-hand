@@ -110,7 +110,8 @@ export default function MapScreen({ device, onSignOut }: Props) {
   const [downloading, setDownloading] = useState<number | null>(null);
   // What's downloading ('view' or a sharp area's id), so the progress shows on the button that was tapped
   const [downloadTarget, setDownloadTarget] = useState<string | null>(null);
-  // Sharp areas already saved on this phone, read back from the offline packs
+  // Sharp areas already saved on this phone, by savedKey, read back from the offline packs.
+  // The key includes when the area was rendered, so an area redone since (new imagery) shows as not saved.
   const [savedAreas, setSavedAreas] = useState<Set<string>>(new Set());
   const [areas, setAreas] = useState<MapArea[]>([]);
   const [sharpening, setSharpening] = useState(false);
@@ -163,7 +164,7 @@ export default function MapScreen({ device, onSignOut }: Props) {
     OfflineManager.getPacks().then(async (packs) => {
       const last = packs.at(-1);
       if (last) setPack(describePack(await last.status()));
-      setSavedAreas(new Set(packs.map((p) => p.metadata?.areaId).filter((id): id is string => typeof id === 'string')));
+      setSavedAreas(new Set(packs.map((p) => p.metadata?.savedKey).filter((key): key is string => typeof key === 'string')));
     });
     return () => sub.remove();
   }, [reload]);
@@ -421,7 +422,7 @@ export default function MapScreen({ device, onSignOut }: Props) {
   function downloadSharpArea(area: MapArea) {
     const bounds = areaBounds(area);
     const maxZoom = area.max_zoom ?? 18;
-    savePack(bounds, estimateTiles(bounds, [{ box: bounds, maxZoom }]).total, `${area.name}, sharp to zoom ${maxZoom}.`, area.id);
+    savePack(bounds, estimateTiles(bounds, [{ box: bounds, maxZoom }]).total, `${area.name}, sharp to zoom ${maxZoom}.`, area);
   }
 
   // Asks first, since a big view can take a while to render
@@ -476,16 +477,17 @@ export default function MapScreen({ device, onSignOut }: Props) {
     ]);
   }
 
-  async function savePack(bounds: [number, number, number, number], tiles: number, saved: string, areaId?: string) {
+  async function savePack(bounds: [number, number, number, number], tiles: number, saved: string, area?: MapArea) {
+    const key = area ? savedKey(area) : undefined;
     setDownloading(0);
-    setDownloadTarget(areaId ?? 'view');
+    setDownloadTarget(area?.id ?? 'view');
     let finished = false;
     const finish = (title: string, message: string, ok = false) => {
       if (finished) return;
       finished = true;
       setDownloading(null);
       setDownloadTarget(null);
-      if (ok && areaId) setSavedAreas((ids) => new Set(ids).add(areaId));
+      if (ok && key) setSavedAreas((keys) => new Set(keys).add(key));
       Alert.alert(title, message);
     };
 
@@ -496,7 +498,7 @@ export default function MapScreen({ device, onSignOut }: Props) {
           bounds,
           minZoom: PACK_MIN_ZOOM,
           maxZoom: PACK_MAX_ZOOM,
-          metadata: { name: `Area ${new Date().toISOString()}`, estimatedTiles: tiles, ...(areaId ? { areaId } : {}) },
+          metadata: { name: `Area ${new Date().toISOString()}`, estimatedTiles: tiles, ...(key ? { savedKey: key } : {}) },
         },
         (_pack, status) => {
           setPack(describePack(status));
@@ -929,7 +931,7 @@ export default function MapScreen({ device, onSignOut }: Props) {
                   <Text style={styles.sheetText}>{area.name}</Text>
                   <Text style={styles.sheetHint}>
                     {describeArea(area)}
-                    {savedAreas.has(area.id) ? ' · saved on this phone' : ''}
+                    {savedAreas.has(savedKey(area)) ? ' · saved on this phone' : ''}
                   </Text>
                   {area.status === 'rendering' && (
                     <View style={styles.progressTrack}>
@@ -940,7 +942,7 @@ export default function MapScreen({ device, onSignOut }: Props) {
                 {area.status === 'ready' && (
                   <AppButton
                     variant="secondary"
-                    title={downloading !== null && downloadTarget === area.id ? `${Math.round(downloading)}%` : savedAreas.has(area.id) ? 'Update' : 'Download'}
+                    title={downloading !== null && downloadTarget === area.id ? `${Math.round(downloading)}%` : savedAreas.has(savedKey(area)) ? 'Update' : 'Download'}
                     onPress={() => downloadSharpArea(area)}
                     disabled={downloading !== null}
                     icon={<Icon name="download" size={20} color={palette.white} strokeWidth={2.4} />}
@@ -1111,6 +1113,10 @@ function lineString(coordinates: LngLat[]): GeoJSON.Feature<GeoJSON.LineString> 
 
 function endPoint(coordinates: LngLat, end: 'start' | 'end'): GeoJSON.Feature<GeoJSON.Point> {
   return { type: 'Feature', properties: { end }, geometry: { type: 'Point', coordinates } };
+}
+
+function savedKey(area: MapArea): string {
+  return `${area.id}@${area.rendered_at}`;
 }
 
 function areaBounds(area: MapArea): [number, number, number, number] {
