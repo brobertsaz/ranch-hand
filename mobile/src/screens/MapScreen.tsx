@@ -578,7 +578,11 @@ export default function MapScreen({ device, onSignOut }: Props) {
       >
         {start && <Camera ref={camera} initialViewState={view ?? { center: start, zoom: 14 }} trackUserLocation={following ? 'default' : undefined} />}
         {/* Above the sharp areas too, which the style ends with aerial-top */}
-        {base === 'topo' && <Layer type="raster" id="topo" source="topo" afterId="aerial-top" />}
+        {base === 'topo' && <Layer type="raster" id="topo" source="topo" afterId="aerial-top" paint={TOPO_PAINT} />}
+        {/* An earthy wash over the base map, so it reads as ranch ground in the app's palette, not a stock street map */}
+        <GeoJSONSource id="wash" data={WORLD}>
+          <Layer type="fill" id="wash" afterId={base === 'topo' ? 'topo' : 'aerial-top'} paint={base === 'topo' ? TOPO_WASH : AERIAL_WASH} />
+        </GeoJSONSource>
         <UserLocation accuracy />
         {shownRide && (
           <GeoJSONSource id="shown-ride" data={lineString(JSON.parse(shownRide.track) as LngLat[])}>
@@ -657,25 +661,23 @@ export default function MapScreen({ device, onSignOut }: Props) {
             </View>
             <SyncPill state={syncState} unsynced={unsynced} onPress={syncState.syncNow} />
           </View>
-          {/* Seven equal cells, so the row always fits and doubles as the map's legend */}
-          <View style={styles.filterRow} accessibilityRole="radiogroup" accessibilityLabel="Show on the map">
-            <FilterCell label="All" icon="all" color={palette.canvas} onColor={palette.pine} on={filter === 'all'} onPress={() => setFilter('all')} />
+          {/* Slim pills with the pin colors, scrolling sideways, so more of the map shows; the dots double as the legend */}
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.chips}
+            accessibilityRole="radiogroup"
+            accessibilityLabel="Show on the map"
+          >
+            <Chip label="All" on={filter === 'all'} onPress={() => setFilter('all')} />
             {KINDS.map((k) => (
-              <FilterCell
-                key={k}
-                label={KIND_INFO[k].short}
-                icon={KIND_INFO[k].icon}
-                color={KIND_INFO[k].pinColor}
-                onColor={KIND_INFO[k].onColor}
-                on={filter === k}
-                onPress={() => setFilter(k)}
-              />
+              <Chip key={k} label={KIND_INFO[k].short} color={KIND_INFO[k].pinColor} on={filter === k} onPress={() => setFilter(k)} />
             ))}
-          </View>
+          </ScrollView>
         </View>
       )}
 
-      <View style={[styles.controls, { top: insets.top + (riding || following ? 8 : 172) }]}>
+      <View style={[styles.controls, { top: insets.top + (riding || following ? 8 : 150) }]}>
         <Pressable onPress={() => setLayersOpen(true)} accessibilityRole="button" accessibilityLabel="Map layers and offline areas" style={styles.control}>
           <Icon name="layers" size={22} color={colors.chromeText} />
         </Pressable>
@@ -1044,17 +1046,6 @@ function SyncPill({ state, unsynced, onPress }: { state: SyncState; unsynced: nu
   );
 }
 
-function FilterCell({ label, icon, color, onColor, on, onPress }: { label: string; icon: IconName; color: string; onColor: string; on: boolean; onPress: () => void }) {
-  return (
-    <Pressable onPress={onPress} accessibilityRole="radio" accessibilityState={{ selected: on }} accessibilityLabel={label} style={[styles.filterCell, on && styles.filterCellOn]}>
-      <View style={[styles.filterIcon, { backgroundColor: color }]}>
-        <Icon name={icon} size={17} color={onColor} strokeWidth={2.4} />
-      </View>
-      <Text style={[styles.filterLabel, on && styles.filterLabelOn]} numberOfLines={1}>{label}</Text>
-    </Pressable>
-  );
-}
-
 function Chip({ label, color, on, onPress }: { label: string; color?: string; on: boolean; onPress: () => void }) {
   return (
     <Pressable onPress={onPress} accessibilityRole="button" accessibilityState={{ selected: on }} style={[styles.chip, on && styles.chipOn]}>
@@ -1163,6 +1154,14 @@ function describePack(status: OfflinePackStatus): string {
   return `${status.state} ${Math.round(status.percentage)}% · ${status.completedTileCount} tiles · ${mb} MB`;
 }
 
+// Covers the whole map for the wash layer
+const WORLD = { type: 'Feature' as const, properties: {}, geometry: { type: 'Polygon' as const, coordinates: [[[-180, -85], [180, -85], [180, 85], [-180, 85], [-180, -85]]] } };
+// Topo is white and blue out of the box; pull it toward canvas and leather
+const TOPO_PAINT = { 'raster-saturation': -0.35, 'raster-contrast': -0.08, 'raster-brightness-max': 0.93 };
+const TOPO_WASH = { 'fill-color': palette.leather, 'fill-opacity': 0.16 };
+// Aerial just gets warmer and a touch darker, like late-afternoon light, so white pins and labels pop
+const AERIAL_WASH = { 'fill-color': '#4A3418', 'fill-opacity': 0.14 };
+
 const shadow = { elevation: 8, shadowColor: '#0A100C', shadowOpacity: 0.35, shadowRadius: 12, shadowOffset: { width: 0, height: 6 } };
 
 const styles = StyleSheet.create({
@@ -1183,23 +1182,14 @@ const styles = StyleSheet.create({
   syncPillText: { color: colors.chromeText, fontSize: 15, fontWeight: '700' },
   chips: { gap: space.sm },
   chip: {
-    height: 48, paddingHorizontal: 16, borderRadius: radius.pill, backgroundColor: 'rgba(16, 23, 19, 0.82)',
-    flexDirection: 'row', alignItems: 'center', gap: 7,
+    ...shadow, height: 48, paddingHorizontal: 16, borderRadius: radius.pill, backgroundColor: 'rgba(16, 23, 19, 0.88)',
+    flexDirection: 'row', alignItems: 'center', gap: 8,
   },
   // Same size on and off, so picking a filter doesn't nudge the row
   chipOn: { backgroundColor: palette.canvas },
-  chipDot: { width: 10, height: 10, borderRadius: 5 },
+  chipDot: { width: 12, height: 12, borderRadius: 6, borderWidth: 1.5, borderColor: palette.white },
   chipText: { color: colors.chromeText, fontSize: 15, fontWeight: '700' },
   chipTextOn: { color: palette.pine },
-  filterRow: { flexDirection: 'row', gap: 5 },
-  filterCell: {
-    flex: 1, minHeight: 60, borderRadius: 12, backgroundColor: 'rgba(16, 23, 19, 0.85)',
-    alignItems: 'center', justifyContent: 'center', gap: 3, paddingVertical: 5,
-  },
-  filterCellOn: { backgroundColor: palette.canvas },
-  filterIcon: { width: 28, height: 28, borderRadius: 14, borderWidth: 2, borderColor: palette.white, alignItems: 'center', justifyContent: 'center' },
-  filterLabel: { color: colors.chromeText, fontSize: 12, fontWeight: '700' },
-  filterLabelOn: { color: palette.pine, fontWeight: '800' },
   controls: { position: 'absolute', right: 12, gap: space.sm },
   controlBadge: {
     position: 'absolute', right: 8, bottom: 8, width: 18, height: 18, borderRadius: 9, backgroundColor: colors.primary,
