@@ -860,8 +860,10 @@ export default function MapScreen({ device, onSignOut }: Props) {
       </Modal>
 
       <Modal visible={layersOpen} transparent animationType="fade" statusBarTranslucent onRequestClose={() => setLayersOpen(false)}>
-        <Pressable style={[styles.backdrop, { paddingTop: insets.top + space.xl }]} onPress={() => setLayersOpen(false)} accessibilityLabel="Close">
-          <Pressable style={[styles.sheet, styles.sheetShrink]} onPress={() => {}}>
+        {/* The tap-off area sits behind the sheet, not around it, so it can't swallow the sheet's scrolling */}
+        <View style={[styles.backdrop, { paddingTop: insets.top + space.xl }]}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setLayersOpen(false)} accessibilityLabel="Close" />
+          <View style={[styles.sheet, styles.sheetShrink]}>
             <View style={styles.sheetHeader} {...closeOnSwipeDown.panHandlers}>
               <View style={styles.grabber} />
               <Text style={styles.sheetTitle} accessibilityRole="header">Map</Text>
@@ -870,7 +872,7 @@ export default function MapScreen({ device, onSignOut }: Props) {
               </Pressable>
             </View>
             {/* Once a ranch has a few sharp areas the sheet outgrows the screen, so the header stays put and the rest scrolls */}
-            <ScrollView contentContainerStyle={[styles.sheetBody, { paddingBottom: insets.bottom + space.xl }]}>
+            <ScrollView style={styles.sheetScroll} persistentScrollbar contentContainerStyle={[styles.sheetBody, { paddingBottom: insets.bottom + space.xl }]}>
             <View style={styles.baseRow}>
               {(['aerial', 'topo'] as const).map((b) => (
                 <Pressable
@@ -961,8 +963,8 @@ export default function MapScreen({ device, onSignOut }: Props) {
             />
             <AppButton variant="ghost" title="Leave this ranch" onPress={confirmSignOut} />
             </ScrollView>
-          </Pressable>
-        </Pressable>
+          </View>
+        </View>
       </Modal>
     </View>
   );
@@ -1183,6 +1185,7 @@ const styles = StyleSheet.create({
     paddingTop: space.xl, paddingHorizontal: space.lg, gap: 10,
   },
   sheetShrink: { flexShrink: 1, paddingBottom: 0 },
+  sheetScroll: { flexShrink: 1 },
   sheetBody: { gap: 10, paddingTop: 10 },
   sheetHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: -space.md },
   grabber: { position: 'absolute', top: -space.sm, alignSelf: 'center', left: '50%', marginLeft: -20, width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border },
