@@ -14,7 +14,7 @@ import * as Location from 'expo-location';
 import { addDatabaseChangeListener } from 'expo-sqlite';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Image, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Image, Modal, PanResponder, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import AppButton from '../components/AppButton';
@@ -91,6 +91,14 @@ export default function MapScreen({ device, onSignOut }: Props) {
   const [tab, setTab] = useState<Tab>('map');
   const [capturing, setCapturing] = useState(false);
   const [layersOpen, setLayersOpen] = useState(false);
+  // Dragging the Map sheet's header down closes it, like a pull-down on any bottom sheet
+  const closeOnSwipeDown = useMemo(
+    () => PanResponder.create({
+      onMoveShouldSetPanResponder: (_, g) => g.dy > 8 && Math.abs(g.dy) > Math.abs(g.dx),
+      onPanResponderRelease: (_, g) => { if (g.dy > 60 || g.vy > 0.8) setLayersOpen(false); },
+    }),
+    [],
+  );
   // Aerial photos, or USGS Topo (contours, creeks, section lines). Both are in every offline download.
   const [base, setBase] = useState<'aerial' | 'topo'>('aerial');
   const [pack, setPack] = useState<string>('No offline area yet');
@@ -815,9 +823,17 @@ export default function MapScreen({ device, onSignOut }: Props) {
       />
 
       <Modal visible={layersOpen} transparent animationType="fade" statusBarTranslucent onRequestClose={() => setLayersOpen(false)}>
-        <Pressable style={styles.backdrop} onPress={() => setLayersOpen(false)} accessibilityLabel="Close">
-          <Pressable style={[styles.sheet, { paddingBottom: insets.bottom + space.xl }]} onPress={() => {}}>
-            <Text style={styles.sheetTitle} accessibilityRole="header">Map</Text>
+        <Pressable style={[styles.backdrop, { paddingTop: insets.top + space.xl }]} onPress={() => setLayersOpen(false)} accessibilityLabel="Close">
+          <Pressable style={[styles.sheet, styles.sheetShrink]} onPress={() => {}}>
+            <View style={styles.sheetHeader} {...closeOnSwipeDown.panHandlers}>
+              <View style={styles.grabber} />
+              <Text style={styles.sheetTitle} accessibilityRole="header">Map</Text>
+              <Pressable onPress={() => setLayersOpen(false)} accessibilityRole="button" accessibilityLabel="Close" hitSlop={8} style={styles.sheetClose}>
+                <Icon name="close" size={24} color={colors.text} strokeWidth={2.4} />
+              </Pressable>
+            </View>
+            {/* Once a ranch has a few sharp areas the sheet outgrows the screen, so the header stays put and the rest scrolls */}
+            <ScrollView contentContainerStyle={[styles.sheetBody, { paddingBottom: insets.bottom + space.xl }]}>
             <View style={styles.baseRow}>
               {(['aerial', 'topo'] as const).map((b) => (
                 <Pressable
@@ -891,6 +907,7 @@ export default function MapScreen({ device, onSignOut }: Props) {
 
             <View style={styles.sheetDivider} />
             <AppButton variant="ghost" title="Leave this ranch" onPress={confirmSignOut} />
+            </ScrollView>
           </Pressable>
         </Pressable>
       </Modal>
@@ -1111,6 +1128,11 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20,
     paddingTop: space.xl, paddingHorizontal: space.lg, gap: 10,
   },
+  sheetShrink: { flexShrink: 1, paddingBottom: 0 },
+  sheetBody: { gap: 10, paddingTop: 10 },
+  sheetHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: -space.md },
+  grabber: { position: 'absolute', top: -space.sm, alignSelf: 'center', left: '50%', marginLeft: -20, width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border },
+  sheetClose: { width: touch.min, height: touch.min, marginRight: -space.md, alignItems: 'center', justifyContent: 'center' },
   sheetTitle: { fontFamily: fonts.display, fontSize: 26, color: colors.text },
   sheetText: { fontSize: 15, color: colors.text },
   sheetHint: { fontSize: 13, color: colors.textMuted },
