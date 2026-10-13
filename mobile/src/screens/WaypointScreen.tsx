@@ -5,6 +5,8 @@ import { Alert, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'rea
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import AppButton from '../components/AppButton';
+import { Contours } from '../components/FieldHeader';
+import Stamp from '../components/Stamp';
 import Icon from '../components/Icon';
 import MiniMap from '../components/MiniMap';
 import PlaceSheet from '../components/PlaceSheet';
@@ -100,15 +102,20 @@ export default function WaypointScreen({ waypoint, memberId, mapStyle, here, onB
     <View style={styles.screen}>
       <StatusBar style="light" />
       <ScrollView contentContainerStyle={{ paddingBottom: space.lg }}>
-        <View style={[styles.hero, { height: 240 + insets.top }]}>
+        <View style={[styles.hero, { height: 290 + insets.top }]}>
           {photoUri ? (
             <Image source={{ uri: photoUri }} style={StyleSheet.absoluteFill} resizeMode="cover" accessibilityLabel={`Latest photo of ${waypoint.name}`} />
           ) : (
-            <View style={styles.heroIcon}>
-              <Icon name={info.icon} size={72} color="rgba(245, 239, 224, 0.25)" />
-            </View>
+            <>
+              <Contours />
+              <View style={[styles.heroIcon, { paddingTop: insets.top }]}>
+                <Icon name={info.icon} size={120} color="rgba(245, 239, 224, 0.12)" strokeWidth={1.6} />
+              </View>
+            </>
           )}
-          <View style={styles.heroShade} />
+          <View style={[styles.shade, { height: 170, opacity: 0.25 }]} />
+          <View style={[styles.shade, { height: 120, opacity: 0.35 }]} />
+          <View style={[styles.shade, { height: 70, opacity: 0.45 }]} />
           <Pressable onPress={onBack} accessibilityRole="button" accessibilityLabel="Back to map" style={[styles.back, { top: insets.top + 8 }]}>
             <Icon name="back" size={22} color={colors.chromeText} strokeWidth={2.4} />
           </Pressable>
@@ -117,7 +124,7 @@ export default function WaypointScreen({ waypoint, memberId, mapStyle, here, onB
               <Text style={[styles.badge, { backgroundColor: info.badgeColor, color: info.onColor }]}>{info.label.toUpperCase()}</Text>
               <Text style={[styles.badge, styles.fixedBadge]}>STAYS PUT</Text>
             </View>
-            <Text style={styles.title} accessibilityRole="header">{waypoint.name}</Text>
+            <Text style={styles.title} accessibilityRole="header" numberOfLines={2} adjustsFontSizeToFit>{waypoint.name.toUpperCase()}</Text>
             {waypoint.note && <Text style={styles.note}>{waypoint.note}</Text>}
           </View>
         </View>
@@ -151,7 +158,10 @@ export default function WaypointScreen({ waypoint, memberId, mapStyle, here, onB
             {isOwner && <AppButton variant="ghost" title="Delete" onPress={confirmDelete} style={styles.flex} />}
           </View>
 
-          <Text style={styles.subheading} accessibilityRole="header">History</Text>
+          <View style={styles.subheadingRow}>
+            <Text style={styles.subheading} accessibilityRole="header">HISTORY</Text>
+            <View style={styles.rule} />
+          </View>
           {history.length === 0 && <Text style={styles.cardMeta}>Nothing logged here yet.</Text>}
           {history.map((check) => (
             <Pressable key={check.id} onPress={() => onOpenObservation(check)} accessibilityRole="button" style={styles.historyRow}>
@@ -198,7 +208,9 @@ export default function WaypointScreen({ waypoint, memberId, mapStyle, here, onB
 }
 
 function StatusTag({ status }: { status: Observation['status'] }) {
-  return <Text style={[styles.tag, status === 'open' && styles.tagOpen]}>{STATUS_LABEL[status]}</Text>;
+  if (status === 'open') return <Stamp label="Open" tone="open" />;
+  if (status === 'resolved') return <Stamp label="Fixed" tone="done" tilt={3} />;
+  return <Stamp label={STATUS_LABEL[status]} tone="clear" tilt={2} />;
 }
 
 const styles = StyleSheet.create({
@@ -206,37 +218,34 @@ const styles = StyleSheet.create({
   flex: { flex: 1, gap: 2 },
   hero: { backgroundColor: colors.chrome, justifyContent: 'flex-end' },
   heroIcon: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, alignItems: 'center', justifyContent: 'center' },
-  heroShade: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 100, backgroundColor: 'rgba(10, 16, 12, 0.55)' },
+  shade: { position: 'absolute', left: 0, right: 0, bottom: 0, backgroundColor: palette.pine },
   back: {
     position: 'absolute', left: 12, width: touch.round, height: touch.round, borderRadius: touch.round / 2,
     backgroundColor: 'rgba(16, 23, 19, 0.75)', alignItems: 'center', justifyContent: 'center',
   },
   heroText: { paddingHorizontal: space.lg, paddingBottom: space.lg, gap: 6 },
   badges: { flexDirection: 'row', gap: space.sm },
-  badge: { fontSize: 12, fontWeight: '800', letterSpacing: 0.5, borderRadius: 4, overflow: 'hidden', paddingVertical: 3, paddingHorizontal: 8 },
+  badge: { fontFamily: fonts.display, fontSize: 15, letterSpacing: 1.6, borderRadius: 4, overflow: 'hidden', paddingVertical: 2, paddingHorizontal: 8 },
   fixedBadge: { backgroundColor: palette.canvas, color: palette.pine },
-  title: { fontFamily: fonts.displayBlack, fontSize: 44, lineHeight: 44, color: palette.white },
+  title: { fontFamily: fonts.displayBlack, fontSize: 64, lineHeight: 60, color: palette.white, includeFontPadding: false },
   note: { fontSize: 15, color: palette.canvas },
   manage: { flexDirection: 'row', gap: space.sm },
   body: { padding: space.lg, gap: 12 },
   card: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: 12 },
   cardRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10, paddingHorizontal: 14 },
   cardDivider: { borderBottomWidth: 1, borderBottomColor: 'rgba(23, 27, 24, 0.1)', paddingVertical: 12 },
-  cardTitle: { fontSize: 16, fontWeight: '700', color: colors.text },
+  cardTitle: { fontFamily: fonts.display, fontSize: 22, lineHeight: 24, color: colors.text },
   cardMeta: { fontSize: 13, color: colors.textMuted },
   statusDot: { width: 14, height: 14, borderRadius: 7, borderWidth: 2, borderColor: palette.white },
-  subheading: { fontFamily: fonts.display, fontSize: 24, color: colors.text, marginTop: 4 },
+  subheadingRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 6 },
+  subheading: { fontFamily: fonts.display, fontSize: 16, letterSpacing: 2.4, color: colors.textMuted },
+  rule: { flex: 1, height: 1, backgroundColor: colors.border },
   historyRow: {
-    minHeight: 60, flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 14, paddingVertical: 10,
-    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: 12,
+    minHeight: 68, flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 14, paddingVertical: 12,
+    backgroundColor: colors.surface, borderRadius: 14, borderBottomWidth: 2, borderBottomColor: 'rgba(23, 27, 24, 0.1)',
   },
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm, flexWrap: 'wrap' },
-  tag: {
-    fontSize: 11, fontWeight: '800', letterSpacing: 0.5, color: colors.textMuted, borderWidth: 1, borderColor: colors.border,
-    borderRadius: 4, overflow: 'hidden', paddingVertical: 1, paddingHorizontal: 6,
-  },
-  tagOpen: { color: palette.white, backgroundColor: palette.trailDark, borderColor: palette.trailDark },
-  historyTitle: { fontSize: 16, fontWeight: '600', color: colors.text },
+  historyTitle: { fontFamily: fonts.display, fontSize: 21, lineHeight: 23, color: colors.text },
   actions: {
     paddingTop: 12, paddingHorizontal: space.lg, backgroundColor: colors.background,
     borderTopWidth: 1, borderTopColor: 'rgba(23, 27, 24, 0.12)',

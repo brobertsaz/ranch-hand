@@ -7,9 +7,9 @@ import AppButton from '../components/AppButton';
 import Icon from '../components/Icon';
 import MiniMap from '../components/MiniMap';
 import { photosFor, setObservationStatus, type Observation, type ObservationStatus } from '../db';
-import { dayAndTime, relativeTo, timeAgo, type LngLat } from '../format';
-import { KIND_INFO, STATUS_LABEL } from '../kinds';
-import { initials, useMemberNames, who } from '../members';
+import { bearingDegrees, compassPoint, dayAndTime, distanceMeters, clockParts, formatDistance, relativeTo, timeAgo, type LngLat } from '../format';
+import { KIND_INFO, STATUS_LABEL, splitNote } from '../kinds';
+import { useMemberNames, who } from '../members';
 import { photoFile } from '../photoFiles';
 import { colors, fonts, palette, space, sync, touch } from '../theme';
 import GuideScreen, { guideToObservation } from './GuideScreen';
@@ -36,9 +36,10 @@ export default function ObservationScreen({ observation, placeName = null, membe
   const lngLat: LngLat = [observation.longitude, observation.latitude];
   const names = useMemberNames();
   const author = who(names, observation.member_id, memberId);
-  const authorName = observation.member_id ? names[observation.member_id] : undefined;
   const synced = observation._status === 'synced';
   const accuracy = `±${Math.round(observation.accuracy ?? 0)} m`;
+  const { picks, extra } = splitNote(observation.kind, observation.note);
+  const meters = here ? distanceMeters(here, lngLat) : null;
 
   useEffect(() => {
     photosFor(observation.id).then((photos) => {
@@ -59,7 +60,7 @@ export default function ObservationScreen({ observation, placeName = null, membe
     <View style={styles.screen}>
       <StatusBar style="light" />
       <ScrollView contentContainerStyle={{ paddingBottom: space.lg }}>
-        <View style={[styles.hero, { height: 300 + insets.top }]}>
+        <View style={[styles.hero, { height: 330 + insets.top }]}>
           {photoUri ? (
             <Image source={{ uri: photoUri }} style={StyleSheet.absoluteFill} resizeMode="cover" accessibilityLabel={`Photo of ${info.label.toLowerCase()}`} />
           ) : (
@@ -68,7 +69,10 @@ export default function ObservationScreen({ observation, placeName = null, membe
               <Text style={styles.noPhotoText}>{photoUri === null ? 'Photo arrives on the next sync' : 'No photo'}</Text>
             </View>
           )}
-          <View style={styles.heroShade} />
+          {/* A stepped fade, so the big title reads on any photo */}
+          <View style={[styles.shade, { height: 190, opacity: 0.25 }]} />
+          <View style={[styles.shade, { height: 140, opacity: 0.35 }]} />
+          <View style={[styles.shade, { height: 90, opacity: 0.45 }]} />
           <Pressable
             onPress={onBack}
             accessibilityRole="button"
@@ -80,36 +84,47 @@ export default function ObservationScreen({ observation, placeName = null, membe
           <View style={styles.heroText}>
             <View style={styles.badges}>
               <Text style={[styles.badge, { backgroundColor: info.badgeColor, color: info.onColor }]}>{info.badge}</Text>
-              <Text style={[styles.badge, styles.statusBadge]}>{STATUS_LABEL[observation.status]}</Text>
+              <Text style={styles.statusStamp}>{STATUS_LABEL[observation.status]}</Text>
             </View>
-            <Text style={styles.title} accessibilityRole="header">
-              {observation.tag_number ? `Tag ${observation.tag_number}` : info.label}
+            <Text style={styles.title} accessibilityRole="header" numberOfLines={2} adjustsFontSizeToFit>
+              {(observation.tag_number ? `Tag ${observation.tag_number}` : placeName ?? info.label).toUpperCase()}
             </Text>
           </View>
         </View>
 
         <View style={styles.body}>
-          {observation.note ? <Text style={styles.note}>“{observation.note}”</Text> : null}
+          {picks.length > 0 && (
+            <View style={styles.picks}>
+              {picks.map((pick) => (
+                <Text key={pick} style={styles.pick}>{pick.toUpperCase()}</Text>
+              ))}
+            </View>
+          )}
+          {extra ? <Text style={styles.note}>“{extra}”</Text> : null}
+
+          {/* The three numbers a hand needs before riding out, big enough to read at arm's length */}
+          <View style={styles.stats}>
+            <View style={styles.stat}>
+              <Text style={styles.statValue}>{meters === null ? '—' : meters < 30 ? 'Here' : formatDistance(meters)}</Text>
+              <Text style={styles.statLabel}>{meters !== null && meters >= 30 && here ? compassPoint(bearingDegrees(here, lngLat)) : 'DISTANCE'}</Text>
+            </View>
+            <View style={[styles.stat, styles.statDivider]}>
+              <Text style={styles.statValue}>{clockParts(observation.observed_at).time}</Text>
+              <Text style={styles.statLabel} numberOfLines={1}>BY {author.toUpperCase()}</Text>
+            </View>
+            <View style={[styles.stat, styles.statDivider]}>
+              <Text style={styles.statValue}>{accuracy}</Text>
+              <Text style={styles.statLabel}>GPS</Text>
+            </View>
+          </View>
 
           <View style={styles.card}>
-            <View style={[styles.cardRow, styles.cardDivider]}>
-              <View style={styles.avatar}>
-                {authorName ? <Text style={styles.avatarText}>{initials(authorName)}</Text> : <Icon name="crew" size={18} color={palette.white} />}
-              </View>
-              <View>
-                <Text style={styles.cardTitle}>{author}</Text>
-                <Text style={styles.cardMeta}>
-                  {dayAndTime(observation.observed_at)} · {timeAgo(observation.observed_at)}
-                </Text>
-              </View>
-            </View>
             <View style={styles.cardRow}>
               <MiniMap mapStyle={mapStyle} lngLat={lngLat} color={info.pinColor} />
               <View style={styles.where}>
                 <Text style={styles.cardTitle}>{placeName ? `At ${placeName}` : here ? relativeTo(here, lngLat) : 'Where it was logged'}</Text>
                 <Text style={styles.cardMeta}>
-                  {placeName && here ? `${relativeTo(here, lngLat)} · ` : ''}
-                  {accuracy} accuracy
+                  {dayAndTime(observation.observed_at)} · {timeAgo(observation.observed_at)}
                 </Text>
               </View>
             </View>
@@ -162,23 +177,30 @@ const styles = StyleSheet.create({
   hero: { backgroundColor: colors.chrome, justifyContent: 'flex-end' },
   noPhoto: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, alignItems: 'center', justifyContent: 'center', gap: 6 },
   noPhotoText: { color: colors.chromeTextMuted, fontSize: 15, fontWeight: '600' },
-  heroShade: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 100, backgroundColor: 'rgba(10, 16, 12, 0.55)' },
+  shade: { position: 'absolute', left: 0, right: 0, bottom: 0, backgroundColor: palette.pine },
   back: {
     position: 'absolute', left: 12, width: touch.round, height: touch.round, borderRadius: touch.round / 2,
     backgroundColor: 'rgba(16, 23, 19, 0.75)', alignItems: 'center', justifyContent: 'center',
   },
   heroText: { paddingHorizontal: space.lg, paddingBottom: space.lg, gap: 6 },
   badges: { flexDirection: 'row', gap: space.sm },
-  badge: { fontSize: 12, fontWeight: '800', letterSpacing: 0.5, borderRadius: 4, overflow: 'hidden', paddingVertical: 3, paddingHorizontal: 8 },
-  statusBadge: { backgroundColor: palette.canvas, color: palette.pine },
-  title: { fontFamily: fonts.displayBlack, fontSize: 44, lineHeight: 44, color: palette.white },
-  body: { padding: space.lg, gap: 14 },
+  badge: { fontFamily: fonts.display, fontSize: 15, letterSpacing: 1.6, borderRadius: 4, overflow: 'hidden', paddingVertical: 2, paddingHorizontal: 8 },
+  statusStamp: {
+    fontFamily: fonts.display, fontSize: 15, letterSpacing: 1.6, color: palette.canvas, borderWidth: 2, borderColor: palette.canvas,
+    borderRadius: 4, paddingHorizontal: 7, transform: [{ rotate: '-3deg' }],
+  },
+  title: { fontFamily: fonts.displayBlack, fontSize: 68, lineHeight: 64, color: palette.white, includeFontPadding: false },
+  body: { padding: space.lg, gap: 16 },
+  picks: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
+  pick: { fontFamily: fonts.display, fontSize: 20, color: palette.canvas, backgroundColor: palette.pine, borderRadius: 999, overflow: 'hidden', paddingVertical: 6, paddingHorizontal: 16 },
   note: { fontSize: 18, lineHeight: 25, color: colors.text },
+  stats: { flexDirection: 'row', borderTopWidth: 2, borderTopColor: colors.text, borderBottomWidth: 1, borderBottomColor: colors.border },
+  stat: { flex: 1, paddingVertical: 10, gap: 2 },
+  statDivider: { borderLeftWidth: 1, borderLeftColor: colors.border, paddingLeft: 12 },
+  statValue: { fontFamily: fonts.displayBlack, fontSize: 30, lineHeight: 32, color: colors.text },
+  statLabel: { fontSize: 12, fontWeight: '800', letterSpacing: 1, color: colors.textMuted },
   card: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: 12 },
   cardRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10, paddingHorizontal: 14 },
-  cardDivider: { borderBottomWidth: 1, borderBottomColor: 'rgba(23, 27, 24, 0.1)', paddingVertical: 12 },
-  avatar: { width: 32, height: 32, borderRadius: 16, backgroundColor: palette.sky, alignItems: 'center', justifyContent: 'center' },
-  avatarText: { color: palette.white, fontSize: 13, fontWeight: '800' },
   resolvedText: { flex: 1, fontSize: 15, fontWeight: '700', color: colors.text },
   cardTitle: { fontSize: 15, fontWeight: '700', color: colors.text },
   cardMeta: { fontSize: 13, color: colors.textMuted },
@@ -190,6 +212,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row', gap: 10, paddingTop: 12, paddingHorizontal: space.lg,
     borderTopWidth: 1, borderTopColor: 'rgba(23, 27, 24, 0.12)', backgroundColor: colors.background,
   },
-  takeMeThere: { flex: 1, minHeight: 60, borderRadius: 12 },
-  resolve: { flex: 1.3, minHeight: 60, borderRadius: 12 },
+  takeMeThere: { flex: 1.2, minHeight: 68, borderRadius: 14 },
+  resolve: { flex: 1, minHeight: 68, borderRadius: 14 },
 });
