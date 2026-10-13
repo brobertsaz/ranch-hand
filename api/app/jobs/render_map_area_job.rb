@@ -13,6 +13,7 @@ class RenderMapAreaJob < ApplicationJob
 
   def perform(map_area)
     map_area.update!(status: :rendering, error: nil)
+    source = map_area.imagery
     queue = Queue.new
     map_area.tiles.each { |tile| queue << tile }
     queue.close
@@ -27,7 +28,7 @@ class RenderMapAreaJob < ApplicationJob
             count = rendered.increment
             break if (count % CHECK_EVERY).zero? && MapArea.where(id: map_area.id).update_all(tile_count: count).zero?
             begin
-              render(tile)
+              render(tile, source)
             rescue StandardError => e
               failures << e.message
             end
@@ -48,11 +49,11 @@ class RenderMapAreaJob < ApplicationJob
 
   private
 
-  def render((z, x, y))
-    return if NaipTiles.stored?(z, x, y)
+  def render((z, x, y), source)
+    return if NaipTiles.stored?(z, x, y, source.key)
     attempt = 0
     begin
-      NaipTiles.fetch_and_store(z, x, y)
+      NaipTiles.fetch_and_store(z, x, y, source)
     rescue StandardError
       attempt += 1
       raise if attempt >= ATTEMPTS

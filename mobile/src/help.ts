@@ -110,7 +110,7 @@ export const HELP: HelpSection[] = [
       { title: 'OPEN, RESOLVED and ALL CLEAR', body: 'OPEN needs someone. RESOLVED was fixed. ALL CLEAR was checked and fine.' },
       { title: 'Synced, Offline and "2 waiting"', body: 'The pill at the top right. Synced means the crew has everything. Offline or "2 waiting" means you have changes that send at the next signal.' },
       { title: 'Aerial and Topo', body: 'Aerial is photos of the ground. Topo shows contour lines, creeks, draws and section lines. Both come with every download.' },
-      { title: 'Offline map and Sharp areas', body: 'An offline map is the whole area at normal detail. A sharp area adds close-up photos (zoom 18) for one pasture.' },
+      { title: 'Offline map and Sharp areas', body: 'An offline map is the whole area at normal detail. A sharp area adds close-up photos for one pasture. In Montana and Wisconsin they come from the state\'s own, sharper imagery.' },
       { title: 'GPS ±4 m', body: 'How sure your phone is about where you are. A smaller number is better. Step into the open if it says No GPS fix.' },
       { title: 'No compass, arrow is north-up', body: "Your phone can't tell which way it's facing, so the arrow points as if you face north. Start moving and it steers by your direction of travel." },
     ],

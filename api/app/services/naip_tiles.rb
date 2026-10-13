@@ -1,12 +1,14 @@
 require "net/http"
 
-# Zoom 17-18 aerial tiles of NAIP imagery (public domain, 0.3-0.6 m). The USGS basemap cache stops at 16,
-# so tiles are rendered ahead of time and served from our own storage.
+# Zoom 17+ aerial tiles for sharp areas. The USGS basemap cache stops at 16, so tiles are rendered
+# ahead of time and served from our own storage, under a folder per ImagerySource.
 #
-# Tiles come from Microsoft Planetary Computer's NAIP mosaic (about 0.1 s a tile). Where it has no
+# NAIP tiles come from Microsoft Planetary Computer's NAIP mosaic (about 0.1 s a tile). Where it has no
 # coverage they come from the USGS ImageServer, which has the same imagery but takes ~10 s a tile.
+# A state source's tiles come from that state's own ImageServer.
 class NaipTiles
-  ZOOMS = (17..18)
+  MIN_ZOOM = 17
+  ZOOMS = (MIN_ZOOM..18)
   PLANETARY_URL = "https://planetarycomputer.microsoft.com/api/data/v1".freeze
   # Every NAIP scene, newest on top. Registering returns the same id for the same search.
   MOSAIC_SEARCH = { collections: [ "naip" ], sortby: [ { field: "datetime", direction: "desc" } ] }.freeze
@@ -15,17 +17,17 @@ class NaipTiles
   ORIGIN = 20_037_508.342789244
 
   class << self
-    # Every [z, x, y] at ZOOMS that touches the box
-    def tiles_in(west:, south:, east:, north:)
-      ZOOMS.flat_map do |z|
+    # Every [z, x, y] at those zooms that touches the box
+    def tiles_in(west:, south:, east:, north:, zooms: ZOOMS)
+      zooms.flat_map do |z|
         xs = tile_x(west, z)..tile_x(east, z)
         ys = tile_y(north, z)..tile_y(south, z)
         xs.to_a.product(ys.to_a).map { |x, y| [ z, x, y ] }
       end
     end
 
-    def count_in(west:, south:, east:, north:)
-      ZOOMS.sum { |z| (tile_x(east, z) - tile_x(west, z) + 1) * (tile_y(south, z) - tile_y(north, z) + 1) }
+    def count_in(west:, south:, east:, north:, zooms: ZOOMS)
+      zooms.sum { |z| (tile_x(east, z) - tile_x(west, z) + 1) * (tile_y(south, z) - tile_y(north, z) + 1) }
     end
 
     def tile_x(lng, z) = ((lng + 180) / 360 * (2**z)).floor
@@ -41,20 +43,24 @@ class NaipTiles
       [ -ORIGIN + x * size, ORIGIN - (y + 1) * size, -ORIGIN + (x + 1) * size, ORIGIN - y * size ]
     end
 
-    def key(z, x, y) = "naip/#{z}/#{x}/#{y}.jpg"
+    # NAIP keeps the plain naip/ folder it has always had
+    def key(z, x, y, source = "naip") = "#{source}/#{z}/#{x}/#{y}.jpg"
 
     # Plain keys on the Active Storage service, not blobs: a big ranch is tens of thousands of tiles
     def storage = ActiveStorage::Blob.service
 
-    def stored?(z, x, y) = storage.exist?(key(z, x, y))
+    def stored?(z, x, y, source = "naip") = storage.exist?(key(z, x, y, source))
 
-    def read(z, x, y) = storage.download(key(z, x, y))
+    def read(z, x, y, source = "naip") = storage.download(key(z, x, y, source))
 
-    def fetch_and_store(z, x, y)
-      storage.upload(key(z, x, y), StringIO.new(fetch(z, x, y)))
+    def fetch_and_store(z, x, y, source = ImagerySource::NAIP)
+      storage.upload(key(z, x, y, source.key), StringIO.new(fetch(z, x, y, source)))
     end
 
-    def fetch(z, x, y) = fetch_planetary(z, x, y) || fetch_usgs(z, x, y)
+    def fetch(z, x, y, source = ImagerySource::NAIP)
+      return fetch_planetary(z, x, y) || fetch_arcgis(EXPORT_URL, z, x, y) if source.naip?
+      fetch_arcgis("#{source.url}/exportImage", z, x, y)
+    end
 
     # nil where the mosaic has no imagery; any other failure raises so the job retries
     def fetch_planetary(z, x, y)
@@ -66,8 +72,8 @@ class NaipTiles
       response.body
     end
 
-    def fetch_usgs(z, x, y)
-      uri = URI(EXPORT_URL)
+    def fetch_arcgis(export_url, z, x, y)
+      uri = URI(export_url)
       uri.query = URI.encode_www_form(
         bbox: mercator_bbox(z, x, y).join(","), bboxSR: 3857, imageSR: 3857,
         size: "256,256", format: "jpg", f: "image"
@@ -75,7 +81,7 @@ class NaipTiles
       response = http_get(uri)
       # The server answers errors with a 200 and a JSON body
       unless response.is_a?(Net::HTTPSuccess) && response.content_type == "image/jpeg"
-        raise "NAIP tile #{z}/#{x}/#{y}: HTTP #{response.code} #{response.content_type}"
+        raise "Tile #{z}/#{x}/#{y} from #{uri.host}: HTTP #{response.code} #{response.content_type}"
       end
       response.body
     end

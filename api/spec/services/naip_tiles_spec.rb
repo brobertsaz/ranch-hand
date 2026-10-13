@@ -46,6 +46,13 @@ RSpec.describe NaipTiles do
       expect(described_class.fetch(18, 1, 2)).to eq("usgs jpeg")
     end
 
+    it "takes a state source's tiles from that state's ImageServer" do
+      allow(described_class).to receive(:http_get).and_return(response(Net::HTTPOK, "mt jpeg"))
+
+      expect(described_class.fetch(19, 1, 2, ImagerySource.find("mt-naip-2025"))).to eq("mt jpeg")
+      expect(described_class).to have_received(:http_get).with(satisfy { |uri| uri.host == "gisservice.mt.gov" && uri.path.end_with?("/ImageServer/exportImage") })
+    end
+
     it "raises on a Planetary Computer error so the render job retries" do
       allow(described_class).to receive(:http_get).and_return(response(Net::HTTPInternalServerError))
 
@@ -54,7 +61,7 @@ RSpec.describe NaipTiles do
   end
 
   it "stores a fetched tile under its z/x/y key" do
-    allow(described_class).to receive(:fetch).with(18, 1, 2).and_return("jpeg bytes")
+    allow(described_class).to receive(:fetch).with(18, 1, 2, ImagerySource::NAIP).and_return("jpeg bytes")
 
     described_class.fetch_and_store(18, 1, 2)
 

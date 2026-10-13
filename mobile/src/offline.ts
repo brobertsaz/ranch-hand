@@ -3,7 +3,8 @@ import type { LngLatBounds } from '@maplibre/maplibre-react-native';
 export const PACK_MIN_ZOOM = 10;
 // USGS imagery and topo stop at 16. Sharp areas go to 18, and only inside their bounds.
 const USGS_MAX_ZOOM = 16;
-export const PACK_MAX_ZOOM = 18;
+// Montana and Wisconsin imagery goes to 19 inside sharp areas (see the API's ImagerySource)
+export const PACK_MAX_ZOOM = 19;
 // MapLibre defaults to 6,000 tiles a pack. The API caps a sharp area at 50,000, so the biggest one fits in one download.
 export const TILE_LIMIT = 60_000;
 // "Download this area" keeps the old 6,000 for the USGS part, so a zoomed-out view can't grab a whole county
@@ -20,17 +21,6 @@ export function expandBounds([west, south, east, north]: LngLatBounds, minSpanKm
   const halfLat = Math.max((north - south) / 2, minSpanKm / 2 / 111.32);
   const halfLng = Math.max((east - west) / 2, minSpanKm / 2 / (111.32 * Math.cos((centerLat * Math.PI) / 180)));
   return [centerLng - halfLng, centerLat - halfLat, centerLng + halfLng, centerLat + halfLat];
-}
-
-// The API pads every sharp area by this much (MapArea::MARGIN_METERS), so estimates pad the same way
-const SHARP_MARGIN_KM = 0.4;
-
-// Zoom 17-18 tiles a sharp area for this view would render, and roughly how long: about 10 s a tile, 8 at a time
-export function estimateSharpen([west, south, east, north]: LngLatBounds): { tiles: number; minutes: number } {
-  const dLat = SHARP_MARGIN_KM / 111.32;
-  const dLng = dLat / Math.cos((((south + north) / 2) * Math.PI) / 180);
-  const tiles = countTiles([west - dLng, south - dLat, east + dLng, north + dLat], USGS_MAX_ZOOM + 1, PACK_MAX_ZOOM);
-  return { tiles, minutes: Math.max(1, Math.round((tiles * 10) / 8 / 60)) };
 }
 
 function tileX(lng: number, z: number) {
@@ -55,12 +45,14 @@ function overlap(a: LngLatBounds, b: LngLatBounds): LngLatBounds | null {
   return box[0] < box[2] && box[1] < box[3] ? box : null;
 }
 
-// USGS tiles over the whole box, and zoom 17-18 tiles wherever it overlaps a sharp area
-export function estimateTiles(bounds: LngLatBounds, sharpAreas: LngLatBounds[] = []): { usgs: number; sharp: number; total: number } {
+export type SharpBox = { box: LngLatBounds; maxZoom: number };
+
+// USGS tiles over the whole box, and zoom 17 and up wherever it overlaps a sharp area
+export function estimateTiles(bounds: LngLatBounds, sharpAreas: SharpBox[] = []): { usgs: number; sharp: number; total: number } {
   const usgs = countTiles(bounds, PACK_MIN_ZOOM, USGS_MAX_ZOOM) * USGS_SOURCES;
   const sharp = sharpAreas.reduce((sum, area) => {
-    const box = overlap(bounds, area);
-    return box ? sum + countTiles(box, USGS_MAX_ZOOM + 1, PACK_MAX_ZOOM) : sum;
+    const box = overlap(bounds, area.box);
+    return box ? sum + countTiles(box, USGS_MAX_ZOOM + 1, area.maxZoom) : sum;
   }, 0);
   return { usgs, sharp, total: usgs + sharp };
 }

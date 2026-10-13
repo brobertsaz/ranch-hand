@@ -52,7 +52,17 @@ export type MapArea = {
   tile_count: number;
   estimated_tiles: number;
   rendered_at: string | null;
+  // Where its close-up tiles come from (a state's own imagery, or NAIP) and how far they zoom
+  source: string;
+  source_name: string;
+  max_zoom: number;
 };
+
+export type SharpenEstimate = { source_name: string; max_zoom: number; estimated_tiles: number; estimated_minutes: number };
+
+export function estimateSharpening(device: Device, [west, south, east, north]: [number, number, number, number]) {
+  return request<SharpenEstimate>(device, `/api/v1/map_areas/new?west=${west}&south=${south}&east=${east}&north=${north}`);
+}
 
 export function fetchMapAreas(device: Device) {
   return request<MapArea[]>(device, '/api/v1/map_areas');

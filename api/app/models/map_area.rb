@@ -1,4 +1,4 @@
-# A part of the ranch that gets sharp (zoom 17-18) aerial tiles. A ranch has
+# A part of the ranch that gets sharp (zoom 17 and up) aerial tiles. A ranch has
 # several because pastures can sit miles apart.
 class MapArea < ApplicationRecord
   # Nobody knows exactly where a pasture ends, so every area reaches a bit past what was asked for
@@ -12,6 +12,7 @@ class MapArea < ApplicationRecord
   enum :status, { pending: "pending", rendering: "rendering", ready: "ready", failed: "failed" }, validate: true
 
   validates :name, presence: true
+  validates :source, inclusion: { in: ImagerySource::ALL.keys }
   validates :west, :east, numericality: { in: -180..180 }
   validates :south, :north, numericality: { in: -85..85 }
   validate :sensible_box
@@ -22,11 +23,20 @@ class MapArea < ApplicationRecord
     { west: west - dlng, south: south - dlat, east: east + dlng, north: north + dlat }
   end
 
+  # The state imagery the area sits in, or NAIP; picked by its center when it's made
+  def self.source_for(west:, south:, east:, north:) = ImagerySource.for(lng: (west + east) / 2, lat: (south + north) / 2)
+
   def bounds = { west:, south:, east:, north: }
 
-  def tiles = NaipTiles.tiles_in(**bounds)
+  def imagery = ImagerySource.find(source)
 
-  def estimated_tiles = NaipTiles.count_in(**bounds)
+  def max_zoom = imagery.max_zoom
+
+  def tiles = NaipTiles.tiles_in(**bounds, zooms: imagery.zooms)
+
+  def estimated_tiles = NaipTiles.count_in(**bounds, zooms: imagery.zooms)
+
+  def estimated_minutes = [ (estimated_tiles * imagery.seconds_per_tile / 60).ceil, 1 ].max
 
   private
 
