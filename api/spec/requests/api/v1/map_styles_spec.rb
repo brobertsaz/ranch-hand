@@ -47,6 +47,22 @@ RSpec.describe "Map style", type: :request do
       )
     end
 
+    it "takes the token from the style URL, which is how the app sends it" do
+      area = create(:map_area, ranch: member.ranch, status: :ready)
+
+      get "/api/v1/map/style", params: { token: member.device_token }
+
+      expect(json["layers"].pluck("id")).to include("naip-#{area.id}")
+    end
+
+    it "gives a bad token the plain style" do
+      create(:map_area, ranch: member.ranch, status: :ready)
+
+      get "/api/v1/map/style", params: { token: "nope" }
+
+      expect(json["layers"].pluck("id")).to eq(%w[background imagery aerial-top])
+    end
+
     it "keeps one ranch's style out of shared caches, and fresh enough for a new area" do
       get "/api/v1/map/style", headers: auth_headers(member)
 

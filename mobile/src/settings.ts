@@ -1,4 +1,3 @@
-import { TransformRequestManager } from '@maplibre/maplibre-react-native';
 import * as SecureStore from 'expo-secure-store';
 
 export type Device = {
@@ -26,20 +25,9 @@ export async function forgetDevice(): Promise<void> {
   await SecureStore.deleteItemAsync(KEY);
 }
 
+// The token rides in the style URL so the style includes the ranch's sharp areas. MapLibre's request
+// header hook (TransformRequestManager) never reached the style request on Android, so the live map got
+// the plain style and only offline packs had the sharp tiles. Packs are keyed by this URL too.
 export function mapStyleUrl(device: Device): string {
-  return `${device.apiUrl}/api/v1/map/style`;
-}
-
-const MAP_AUTH = 'ranch-auth';
-
-// MapLibre makes its own requests, so it needs the token separately to get the ranch's sharp areas
-// in the style. Set it before the map mounts, or the first style load comes back without them.
-export function authorizeMapRequests(device: Device | null): void {
-  if (!device) return TransformRequestManager.removeHeader(MAP_AUTH);
-  TransformRequestManager.addHeader({
-    id: MAP_AUTH,
-    name: 'Authorization',
-    value: `Bearer ${device.token}`,
-    match: `^${device.apiUrl.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')}/`,
-  });
+  return `${device.apiUrl}/api/v1/map/style?token=${encodeURIComponent(device.token)}`;
 }
