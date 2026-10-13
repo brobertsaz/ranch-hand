@@ -59,7 +59,10 @@ Acceptance:
 2. Download the area, turn on airplane mode, force-quit, reopen: same detail at zoom 18.
 3. Outside the area, the map looks like it does today (no gray holes, no errors).
 
+## Tile source
+Tiles now come from Microsoft Planetary Computer's NAIP mosaic (`/api/data/v1/mosaic`), about 0.1 s a tile against ~10 s from the
+ImageServer (measured on Area 1, Oct 2026). Where the mosaic has no imagery (HTTP 204), `NaipTiles` falls back to the ImageServer.
+
 ## Later
-- Faster source: NAIP COGs on Microsoft's Planetary Computer or AWS instead of the ImageServer.
 - For huge ranches: zoom 18 only around headquarters and water, zoom 17 elsewhere.
 - Rerender when a new NAIP year is flown for the ranch's state (every 3–5 years).
