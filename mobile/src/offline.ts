@@ -22,6 +22,17 @@ export function expandBounds([west, south, east, north]: LngLatBounds, minSpanKm
   return [centerLng - halfLng, centerLat - halfLat, centerLng + halfLng, centerLat + halfLat];
 }
 
+// The API pads every sharp area by this much (MapArea::MARGIN_METERS), so estimates pad the same way
+const SHARP_MARGIN_KM = 0.4;
+
+// Zoom 17-18 tiles a sharp area for this view would render, and roughly how long: about 10 s a tile, 8 at a time
+export function estimateSharpen([west, south, east, north]: LngLatBounds): { tiles: number; minutes: number } {
+  const dLat = SHARP_MARGIN_KM / 111.32;
+  const dLng = dLat / Math.cos((((south + north) / 2) * Math.PI) / 180);
+  const tiles = countTiles([west - dLng, south - dLat, east + dLng, north + dLat], USGS_MAX_ZOOM + 1, PACK_MAX_ZOOM);
+  return { tiles, minutes: Math.max(1, Math.round((tiles * 10) / 8 / 60)) };
+}
+
 function tileX(lng: number, z: number) {
   return Math.floor(((lng + 180) / 360) * 2 ** z);
 }

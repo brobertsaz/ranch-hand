@@ -32,8 +32,8 @@ import { crewNews, isNew, newsSeenAt } from '../news';
 import { activeRide, resumeRideIfNeeded, ridePoints, startRide, stopRide, type ActiveRide } from '../rides';
 import { KIND_INFO, nextPlaceName, WAYPOINT_INFO } from '../kinds';
 import { locate } from '../locate';
-import { estimateTiles, expandBounds, MIN_PACK_SPAN_KM, PACK_MAX_ZOOM, PACK_MIN_ZOOM, TILE_LIMIT, VIEW_USGS_LIMIT } from '../offline';
-import { fetchMapAreas, sharpenArea, type MapArea } from '../api';
+import { estimateSharpen, estimateTiles, expandBounds, MIN_PACK_SPAN_KM, PACK_MAX_ZOOM, PACK_MIN_ZOOM, TILE_LIMIT, VIEW_USGS_LIMIT } from '../offline';
+import { fetchMapAreas, removeMapArea, sharpenArea, type MapArea } from '../api';
 import { deleteAllPhotos, photoFile } from '../photoFiles';
 import { cumulative, placesOnTrail } from '../trail';
 import { forgetDevice, mapStyleUrl, type Device } from '../settings';
@@ -410,21 +410,46 @@ export default function MapScreen({ device, onSignOut }: Props) {
     savePack(bounds, estimateTiles(bounds, [bounds]).total, `${area.name}, sharp to zoom 18.`);
   }
 
+  // Asks first, since a big view can take a while to render
   async function sharpenView() {
     const visibleBounds = await map.current?.getBounds();
     if (!visibleBounds) return;
+    const { minutes } = estimateSharpen(visibleBounds);
+    Alert.alert('Sharpen this area?', `It takes about ${minutes} min. When it says Ready here, download it to have it with no signal.`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Sharpen', onPress: () => startSharpen(visibleBounds) },
+    ]);
+  }
+
+  async function startSharpen(visibleBounds: [number, number, number, number]) {
     setSharpening(true);
     try {
       const area = await sharpenArea(device, visibleBounds);
       setAreas((list) => [...list, area]);
-      // About 10 s a tile, 8 at a time
-      const minutes = Math.max(1, Math.round((area.estimated_tiles * 10) / 8 / 60));
-      Alert.alert('Sharpening this area', `${area.name} will take about ${minutes} min. When it says Ready here, download it to have it with no signal.`);
     } catch (error) {
       Alert.alert("Couldn't sharpen", syncState.online ? (error as Error).message : 'This needs a signal. Try again at the house.');
     } finally {
       setSharpening(false);
     }
+  }
+
+  function confirmRemoveArea(area: MapArea) {
+    const busy = area.status === 'pending' || area.status === 'rendering';
+    Alert.alert(busy ? `Stop sharpening ${area.name}?` : `Remove ${area.name}?`, busy ? 'It stops now and leaves the list.' : 'It leaves the list. Maps you already downloaded stay on this phone.', [
+      { text: 'Keep it', style: 'cancel' },
+      {
+        text: busy ? 'Stop' : 'Remove',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await removeMapArea(device, area.id);
+            setAreas((list) => list.filter((a) => a.id !== area.id));
+          } catch {
+            Alert.alert("Couldn't remove it", 'This needs a signal. Try again at the house.');
+          }
+        },
+      },
+    ]);
   }
 
   async function savePack(bounds: [number, number, number, number], tiles: number, saved: string) {
@@ -880,6 +905,9 @@ export default function MapScreen({ device, onSignOut }: Props) {
                     icon={<Icon name="download" size={20} color={palette.white} strokeWidth={2.4} />}
                   />
                 )}
+                <Pressable onPress={() => confirmRemoveArea(area)} accessibilityRole="button" accessibilityLabel={`Remove ${area.name}`} style={styles.sheetClose}>
+                  <Icon name="close" size={20} color={colors.textMuted} strokeWidth={2.4} />
+                </Pressable>
               </View>
             ))}
             <AppButton

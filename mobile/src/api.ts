@@ -62,6 +62,11 @@ export function sharpenArea(device: Device, [west, south, east, north]: [number,
   return request<MapArea>(device, '/api/v1/map_areas', { method: 'POST', body: JSON.stringify({ map_area: { west, south, east, north } }) });
 }
 
+// Also stops its render on the server if it's still going
+export function removeMapArea(device: Device, id: string) {
+  return request<void>(device, `/api/v1/map_areas/${id}`, { method: 'DELETE' });
+}
+
 export function photoFileUrl(device: Device, photoId: string) {
   return `${device.apiUrl}/api/v1/photos/${photoId}/file`;
 }
