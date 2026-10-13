@@ -380,16 +380,22 @@ export default function MapScreen({ device, onSignOut }: Props) {
     return adding.noFix ? 'No GPS fix. Set it on the map instead.' : 'Getting a GPS fix…';
   }
 
-  // The sheet shows each area's render progress, so refetch whenever it opens
+  // The sheet shows each area's render progress, so refetch when it opens and every few seconds while one is rendering
+  const rendering = areas.some((a) => a.status === 'pending' || a.status === 'rendering');
   useEffect(() => {
     if (!layersOpen) return;
-    fetchMapAreas(device)
-      .then((list) => {
-        setAreas(list);
-        setState(AREAS_KEY, JSON.stringify(list));
-      })
-      .catch(() => {});
-  }, [layersOpen, device]);
+    const refresh = () =>
+      fetchMapAreas(device)
+        .then((list) => {
+          setAreas(list);
+          setState(AREAS_KEY, JSON.stringify(list));
+        })
+        .catch(() => {});
+    refresh();
+    if (!rendering) return;
+    const timer = setInterval(refresh, 5000);
+    return () => clearInterval(timer);
+  }, [layersOpen, device, rendering]);
 
   const sharpBounds = areas.filter((a) => a.status === 'ready').map((a): [number, number, number, number] => [a.west, a.south, a.east, a.north]);
 
@@ -895,6 +901,11 @@ export default function MapScreen({ device, onSignOut }: Props) {
                 <View style={{ flex: 1 }}>
                   <Text style={styles.sheetText}>{area.name}</Text>
                   <Text style={styles.sheetHint}>{describeArea(area)}</Text>
+                  {area.status === 'rendering' && (
+                    <View style={styles.progressTrack}>
+                      <View style={[styles.progressFill, { width: `${Math.min(100, (area.tile_count / Math.max(1, area.estimated_tiles)) * 100)}%` }]} />
+                    </View>
+                  )}
                 </View>
                 {area.status === 'ready' && (
                   <AppButton
@@ -1067,7 +1078,8 @@ function endPoint(coordinates: LngLat, end: 'start' | 'end'): GeoJSON.Feature<Ge
 function describeArea(area: MapArea): string {
   if (area.status === 'ready') return `Ready · ${area.tile_count} tiles`;
   if (area.status === 'failed') return 'Failed. Tap Sharpen this area to try again.';
-  return `Preparing · about ${area.estimated_tiles} tiles`;
+  if (area.status === 'rendering') return `Sharpening · ${area.tile_count} of ${area.estimated_tiles} tiles`;
+  return `Waiting to start · about ${area.estimated_tiles} tiles`;
 }
 
 function describePack(status: OfflinePackStatus): string {
@@ -1173,5 +1185,7 @@ const styles = StyleSheet.create({
   baseText: { fontSize: 17, fontWeight: '800', color: colors.text },
   baseTextOn: { color: palette.white },
   sheetDivider: { height: 1, backgroundColor: colors.border, marginVertical: 6 },
+  progressTrack: { height: 6, borderRadius: 3, backgroundColor: colors.surfaceSunken, overflow: 'hidden', marginTop: 4 },
+  progressFill: { height: 6, borderRadius: 3, backgroundColor: palette.sky },
   areaRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
 });

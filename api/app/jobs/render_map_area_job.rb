@@ -5,8 +5,8 @@ class RenderMapAreaJob < ApplicationJob
   THREADS = 8
   # The ImageServer throws the odd 502 under load; five tries with backoff (about 30 s) rides those out
   ATTEMPTS = 5
-  # How many tiles go by between checks that the area wasn't removed
-  CANCEL_CHECK_EVERY = 25
+  # How many tiles go by between progress saves, which also notice an area that was removed
+  CHECK_EVERY = 25
 
   # Removed before the render started
   discard_on ActiveJob::DeserializationError
@@ -24,7 +24,8 @@ class RenderMapAreaJob < ApplicationJob
         # Without the executor, a worker that autoloads a constant waits forever on the joining thread
         Rails.application.executor.wrap do
           while (tile = queue.pop)
-            break if (rendered.increment % CANCEL_CHECK_EVERY).zero? && !MapArea.exists?(map_area.id)
+            count = rendered.increment
+            break if (count % CHECK_EVERY).zero? && MapArea.where(id: map_area.id).update_all(tile_count: count).zero?
             begin
               render(tile)
             rescue StandardError => e
