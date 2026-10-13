@@ -661,19 +661,14 @@ export default function MapScreen({ device, onSignOut }: Props) {
             </View>
             <SyncPill state={syncState} unsynced={unsynced} onPress={syncState.syncNow} />
           </View>
-          {/* Slim pills with the pin colors, scrolling sideways, so more of the map shows; the dots double as the legend */}
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.chips}
-            accessibilityRole="radiogroup"
-            accessibilityLabel="Show on the map"
-          >
-            <Chip label="All" on={filter === 'all'} onPress={() => setFilter('all')} />
+          {/* Seven slim pills sharing the width, so all of them always show; the dots double as the map's legend */}
+          <View style={styles.filterRow} accessibilityRole="radiogroup" accessibilityLabel="Show on the map">
+            <Chip label="All" fill on={filter === 'all'} onPress={() => setFilter('all')} />
             {KINDS.map((k) => (
-              <Chip key={k} label={KIND_INFO[k].short} color={KIND_INFO[k].pinColor} on={filter === k} onPress={() => setFilter(k)} />
+              // Tapping the one that's on goes back to All
+              <Chip key={k} label={KIND_INFO[k].short} color={KIND_INFO[k].pinColor} fill on={filter === k} onPress={() => setFilter(filter === k ? 'all' : k)} />
             ))}
-          </ScrollView>
+          </View>
         </View>
       )}
 
@@ -1046,11 +1041,12 @@ function SyncPill({ state, unsynced, onPress }: { state: SyncState; unsynced: nu
   );
 }
 
-function Chip({ label, color, on, onPress }: { label: string; color?: string; on: boolean; onPress: () => void }) {
+// fill: one of a row of equal pills (the map filters) rather than sized to its label
+function Chip({ label, color, on, fill = false, onPress }: { label: string; color?: string; on: boolean; fill?: boolean; onPress: () => void }) {
   return (
-    <Pressable onPress={onPress} accessibilityRole="button" accessibilityState={{ selected: on }} style={[styles.chip, on && styles.chipOn]}>
-      {color && <View style={[styles.chipDot, { backgroundColor: color }]} />}
-      <Text style={[styles.chipText, on && styles.chipTextOn]}>{label}</Text>
+    <Pressable onPress={onPress} accessibilityRole="button" accessibilityState={{ selected: on }} style={[styles.chip, fill && styles.chipFill, on && styles.chipOn]}>
+      {color && <View style={[styles.chipDot, fill && styles.chipDotFill, { backgroundColor: color }]} />}
+      <Text style={[styles.chipText, fill && styles.chipTextFill, on && styles.chipTextOn]} numberOfLines={1}>{label}</Text>
     </Pressable>
   );
 }
@@ -1187,6 +1183,10 @@ const styles = StyleSheet.create({
   },
   // Same size on and off, so picking a filter doesn't nudge the row
   chipOn: { backgroundColor: palette.canvas },
+  filterRow: { flexDirection: 'row', gap: 4 },
+  chipFill: { flex: 1, paddingHorizontal: 0, justifyContent: 'center', gap: 4 },
+  chipDotFill: { width: 9, height: 9, borderRadius: 5, borderWidth: 1 },
+  chipTextFill: { fontSize: 13 },
   chipDot: { width: 12, height: 12, borderRadius: 6, borderWidth: 1.5, borderColor: palette.white },
   chipText: { color: colors.chromeText, fontSize: 15, fontWeight: '700' },
   chipTextOn: { color: palette.pine },
