@@ -33,8 +33,8 @@ import { crewNews, isNew, newsSeenAt } from '../news';
 import { activeRide, resumeRideIfNeeded, ridePoints, startRide, stopRide, type ActiveRide } from '../rides';
 import { KIND_INFO, nextPlaceName, WAYPOINT_INFO } from '../kinds';
 import { locate } from '../locate';
-import { estimateSharpen, estimateTiles, expandBounds, MIN_PACK_SPAN_KM, PACK_MAX_ZOOM, PACK_MIN_ZOOM, TILE_LIMIT, VIEW_USGS_LIMIT } from '../offline';
-import { fetchMapAreas, removeMapArea, sharpenArea, type MapArea } from '../api';
+import { estimateTiles, expandBounds, MIN_PACK_SPAN_KM, PACK_MAX_ZOOM, PACK_MIN_ZOOM, TILE_LIMIT, VIEW_USGS_LIMIT } from '../offline';
+import { estimateSharpening, fetchMapAreas, removeMapArea, sharpenArea, type MapArea } from '../api';
 import { deleteAllPhotos, photoFile } from '../photoFiles';
 import { cumulative, placesOnTrail } from '../trail';
 import { forgetDevice, mapStyleUrl, type Device } from '../settings';
@@ -404,13 +404,13 @@ export default function MapScreen({ device, onSignOut }: Props) {
     return () => clearInterval(timer);
   }, [layersOpen, device, rendering]);
 
-  const sharpBounds = areas.filter((a) => a.status === 'ready').map((a): [number, number, number, number] => [a.west, a.south, a.east, a.north]);
+  const sharpBoxes = areas.filter((a) => a.status === 'ready').map((a) => ({ box: areaBounds(a), maxZoom: a.max_zoom ?? 18 }));
 
   async function downloadArea() {
     const visibleBounds = await map.current?.getBounds();
     if (!visibleBounds) return;
     const bounds = expandBounds(visibleBounds);
-    const tiles = estimateTiles(bounds, sharpBounds);
+    const tiles = estimateTiles(bounds, sharpBoxes);
     if (tiles.usgs > VIEW_USGS_LIMIT) {
       Alert.alert('Area too big', `About ${tiles.usgs} tiles. Zoom in until it's under ${VIEW_USGS_LIMIT}.`);
       return;
@@ -419,19 +419,30 @@ export default function MapScreen({ device, onSignOut }: Props) {
   }
 
   function downloadSharpArea(area: MapArea) {
-    const bounds: [number, number, number, number] = [area.west, area.south, area.east, area.north];
-    savePack(bounds, estimateTiles(bounds, [bounds]).total, `${area.name}, sharp to zoom 18.`, area.id);
+    const bounds = areaBounds(area);
+    const maxZoom = area.max_zoom ?? 18;
+    savePack(bounds, estimateTiles(bounds, [{ box: bounds, maxZoom }]).total, `${area.name}, sharp to zoom ${maxZoom}.`, area.id);
   }
 
   // Asks first, since a big view can take a while to render
   async function sharpenView() {
     const visibleBounds = await map.current?.getBounds();
     if (!visibleBounds) return;
-    const { minutes } = estimateSharpen(visibleBounds);
-    Alert.alert('Sharpen this area?', `It takes about ${minutes} min. When it says Ready here, download it to have it with no signal.`, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Sharpen', onPress: () => startSharpen(visibleBounds) },
-    ]);
+    let estimate;
+    try {
+      estimate = await estimateSharpening(device, visibleBounds);
+    } catch (error) {
+      Alert.alert("Couldn't sharpen", syncState.online ? (error as Error).message : 'This needs a signal. Try again at the house.');
+      return;
+    }
+    Alert.alert(
+      'Sharpen this area?',
+      `${estimate.source_name} imagery, close up to zoom ${estimate.max_zoom}. It takes about ${estimate.estimated_minutes} min. When it says Ready here, download it to have it with no signal.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Sharpen', onPress: () => startSharpen(visibleBounds) },
+      ],
+    );
   }
 
   async function startSharpen(visibleBounds: [number, number, number, number]) {
@@ -947,7 +958,7 @@ export default function MapScreen({ device, onSignOut }: Props) {
               disabled={sharpening}
               icon={<Icon name="plus" size={20} color={palette.white} strokeWidth={2.4} />}
             />
-            <Text style={styles.sheetHint}>Gets close-up aerial photos (zoom 18) for the current view plus a quarter mile. Do it once per pasture, with signal.</Text>
+            <Text style={styles.sheetHint}>Gets close-up aerial photos for the current view plus a quarter mile, from the state's own imagery where it's sharper. Do it once per pasture, with signal.</Text>
 
             <View style={styles.sheetDivider} />
             <Text style={styles.sheetTitle}>Sync</Text>
@@ -1102,8 +1113,12 @@ function endPoint(coordinates: LngLat, end: 'start' | 'end'): GeoJSON.Feature<Ge
   return { type: 'Feature', properties: { end }, geometry: { type: 'Point', coordinates } };
 }
 
+function areaBounds(area: MapArea): [number, number, number, number] {
+  return [area.west, area.south, area.east, area.north];
+}
+
 function describeArea(area: MapArea): string {
-  if (area.status === 'ready') return `Ready · ${area.tile_count} tiles`;
+  if (area.status === 'ready') return `Ready · ${area.source_name ?? 'NAIP'} · ${area.tile_count} tiles`;
   if (area.status === 'failed') return 'Failed. Tap Sharpen this area to try again.';
   if (area.status === 'rendering') return `Sharpening · ${area.tile_count} of ${area.estimated_tiles} tiles`;
   return `Waiting to start · about ${area.estimated_tiles} tiles`;

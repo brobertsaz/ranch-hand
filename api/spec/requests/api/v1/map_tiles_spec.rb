@@ -14,6 +14,16 @@ RSpec.describe "Map tiles", type: :request do
     expect(response.headers["Cache-Control"]).to eq("max-age=31556952, public")
   end
 
+  it "serves a state source's tiles from that source's folder" do
+    NaipTiles.storage.upload(NaipTiles.key(19, 1, 2, "mt-naip-2025"), StringIO.new("montana"))
+
+    get "/api/v1/map/tiles/mt-naip-2025/19/1/2.jpg"
+
+    expect(response.body).to eq("montana")
+  ensure
+    NaipTiles.storage.delete(NaipTiles.key(19, 1, 2, "mt-naip-2025"))
+  end
+
   it "answers 404 for a tile that was never rendered" do
     get "/api/v1/map/tiles/18/1/1.jpg"
 

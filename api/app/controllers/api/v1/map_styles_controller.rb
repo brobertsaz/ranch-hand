@@ -58,16 +58,22 @@ module Api
 
       private
 
+      # NAIP keeps its original URL, so offline packs saved before state imagery still match
+      def tile_url(imagery)
+        folder = imagery.naip? ? "" : "#{imagery.key}/"
+        "#{request.base_url}/api/v1/map/tiles/#{folder}{z}/{x}/{y}.jpg"
+      end
+
       # bounds keeps MapLibre from asking for tiles between pastures, live or in a download
       def naip_source(area)
         {
           type: "raster",
-          tiles: [ "#{request.base_url}/api/v1/map/tiles/{z}/{x}/{y}.jpg" ],
+          tiles: [ tile_url(area.imagery) ],
           tileSize: 256,
-          minzoom: NaipTiles::ZOOMS.first,
-          maxzoom: NaipTiles::ZOOMS.last,
+          minzoom: NaipTiles::MIN_ZOOM,
+          maxzoom: area.max_zoom,
           bounds: area.bounds.values_at(:west, :south, :east, :north),
-          attribution: "USDA NAIP via USGS"
+          attribution: area.imagery.attribution
         }
       end
     end

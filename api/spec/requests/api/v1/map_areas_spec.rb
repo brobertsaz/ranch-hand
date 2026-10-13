@@ -28,6 +28,23 @@ RSpec.describe "Map areas", type: :request do
     expect(area.east).to be > -89.45
   end
 
+  it "sharpens from the state's own imagery where there is some, with its extra zoom" do
+    post "/api/v1/map_areas", params: { map_area: { west: -108.51, south: 45.99, east: -108.50, north: 46.0 } }, headers: auth_headers(member)
+
+    expect(json).to include("source" => "mt-naip-2025", "source_name" => "Montana 2025", "max_zoom" => 19)
+    expect(member.ranch.map_areas.sole.tiles.map(&:first).uniq).to eq([ 17, 18, 19 ])
+  end
+
+  it "estimates an area before it's made, without saving it" do
+    get "/api/v1/map_areas/new", params: { west: -108.51, south: 45.99, east: -108.50, north: 46.0 }, headers: auth_headers(member)
+
+    expect(response).to have_http_status(:ok)
+    expect(json).to include("source_name" => "Montana 2025", "max_zoom" => 19)
+    expect(json["estimated_tiles"]).to be > 100
+    expect(json["estimated_minutes"]).to be >= 1
+    expect(MapArea.count).to eq(0)
+  end
+
   it "names an unnamed area" do
     post "/api/v1/map_areas", params: { map_area: { west: -89.46, south: 43.0, east: -89.45, north: 43.01 } }, headers: auth_headers(member)
 

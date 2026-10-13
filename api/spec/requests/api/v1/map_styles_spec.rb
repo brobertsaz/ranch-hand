@@ -35,6 +35,18 @@ RSpec.describe "Map style", type: :request do
       )
     end
 
+    it "points a state-imagery area at its own tiles and zooms" do
+      area = create(:map_area, ranch: member.ranch, status: :ready, source: "mt-naip-2025")
+
+      get "/api/v1/map/style", headers: auth_headers(member)
+
+      expect(json.dig("sources", "naip-#{area.id}")).to include(
+        "tiles" => [ "http://www.example.com/api/v1/map/tiles/mt-naip-2025/{z}/{x}/{y}.jpg" ],
+        "maxzoom" => 19,
+        "attribution" => "USDA NAIP 2025 via Montana State Library"
+      )
+    end
+
     it "keeps one ranch's style out of shared caches, and fresh enough for a new area" do
       get "/api/v1/map/style", headers: auth_headers(member)
 
