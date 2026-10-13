@@ -64,7 +64,7 @@ export default function SetupScreen({ onJoined }: { onJoined: (device: Device) =
             autoCapitalize="characters"
             autoCorrect={false}
             placeholder="BOBSRANCH"
-            placeholderTextColor="rgba(23, 27, 24, 0.3)"
+            placeholderTextColor={colors.placeholder}
             accessibilityLabelledBy="code-label"
           />
           <Text style={styles.hint}>The ranch owner finds it on their Crew tab.</Text>
@@ -131,7 +131,7 @@ const styles = StyleSheet.create({
   },
   codeInput: { fontFamily: fonts.displayBlack, fontSize: 30, letterSpacing: 2, minHeight: 60 },
   hint: { fontSize: 13, color: colors.textMuted },
-  error: { backgroundColor: '#F8E1DC', borderRadius: radius.md, padding: 12, marginVertical: space.sm },
+  error: { backgroundColor: colors.dangerBackground, borderRadius: radius.md, padding: 12, marginVertical: space.sm },
   errorText: { color: palette.destructive, fontSize: 15, fontWeight: '600' },
   serverToggle: { minHeight: touch.min, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, marginTop: space.sm },
   serverToggleText: { fontSize: 14, fontWeight: '600', color: colors.textMuted },

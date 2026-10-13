@@ -15,7 +15,7 @@ export default function StubScreen({ title, icon, body }: Props) {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top + space.xl, paddingBottom: tabBarHeight + space.xl }]}>
-      <StatusBar style="dark" />
+      <StatusBar style={colors.statusBar} />
       <Icon name={icon} size={40} color={colors.textMuted} />
       <Text style={styles.title} accessibilityRole="header">{title}</Text>
       <Text style={styles.body}>{body}</Text>

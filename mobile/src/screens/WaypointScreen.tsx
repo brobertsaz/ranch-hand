@@ -233,7 +233,7 @@ const styles = StyleSheet.create({
   body: { padding: space.lg, gap: 12 },
   card: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: 12 },
   cardRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10, paddingHorizontal: 14 },
-  cardDivider: { borderBottomWidth: 1, borderBottomColor: 'rgba(23, 27, 24, 0.1)', paddingVertical: 12 },
+  cardDivider: { borderBottomWidth: 1, borderBottomColor: colors.hairline, paddingVertical: 12 },
   cardTitle: { fontFamily: fonts.display, fontSize: 22, lineHeight: 24, color: colors.text },
   cardMeta: { fontSize: 13, color: colors.textMuted },
   statusDot: { width: 14, height: 14, borderRadius: 7, borderWidth: 2, borderColor: palette.white },
@@ -242,13 +242,13 @@ const styles = StyleSheet.create({
   rule: { flex: 1, height: 1, backgroundColor: colors.border },
   historyRow: {
     minHeight: 68, flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 14, paddingVertical: 12,
-    backgroundColor: colors.surface, borderRadius: 14, borderBottomWidth: 2, borderBottomColor: 'rgba(23, 27, 24, 0.1)',
+    backgroundColor: colors.surface, borderRadius: 14, borderBottomWidth: 2, borderBottomColor: colors.hairline,
   },
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm, flexWrap: 'wrap' },
   historyTitle: { fontFamily: fonts.display, fontSize: 21, lineHeight: 23, color: colors.text },
   actions: {
     paddingTop: 12, paddingHorizontal: space.lg, backgroundColor: colors.background,
-    borderTopWidth: 1, borderTopColor: 'rgba(23, 27, 24, 0.12)',
+    borderTopWidth: 1, borderTopColor: colors.hairline,
   },
 });
 

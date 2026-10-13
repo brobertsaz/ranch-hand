@@ -74,7 +74,7 @@ export default function NewsScreen({ memberId, ranchName, sync, onOpenObservatio
       <ScrollView contentContainerStyle={[styles.list, { paddingBottom: tabBarHeight + space.xl }]}>
         {waiting > 0 && (
           <View style={styles.waiting}>
-            <Icon name="cloudOff" size={24} color="#C98A22" strokeWidth={2.2} />
+            <Icon name="cloudOff" size={24} color={colors.warn} strokeWidth={2.2} />
             <View style={styles.flex}>
               <Text style={styles.waitingTitle}>
                 {waiting} of yours waiting for signal
@@ -139,18 +139,18 @@ const styles = StyleSheet.create({
   syncButtonText: { color: colors.chromeText, fontSize: 14, fontWeight: '700' },
   list: { paddingHorizontal: 14, paddingTop: 16, gap: 12 },
   waiting: {
-    borderWidth: 2, borderStyle: 'dashed', borderColor: '#C98A22', backgroundColor: '#FBEFD6', borderRadius: 12,
+    borderWidth: 2, borderStyle: 'dashed', borderColor: colors.warn, backgroundColor: colors.warnBackground, borderRadius: 12,
     padding: 12, flexDirection: 'row', alignItems: 'center', gap: 12,
   },
   waitingTitle: { fontSize: 15, fontWeight: '700', color: colors.text },
-  waitingDetail: { fontSize: 13, color: '#5E4A26' },
+  waitingDetail: { fontSize: 13, color: colors.warnText },
   empty: { fontSize: 15, lineHeight: 21, color: colors.textMuted, paddingHorizontal: 4, paddingTop: space.sm },
   dayRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 4, marginHorizontal: 2 },
   day: { fontFamily: fonts.display, fontSize: 16, letterSpacing: 2.4, color: colors.textMuted },
   dayRule: { flex: 1, height: 1, backgroundColor: colors.border },
   row: {
     minHeight: 88, backgroundColor: colors.surface, borderRadius: 16, padding: 10, flexDirection: 'row', alignItems: 'center', gap: 14,
-    borderBottomWidth: 2, borderBottomColor: 'rgba(23, 27, 24, 0.1)',
+    borderBottomWidth: 2, borderBottomColor: colors.hairline,
   },
   rowNew: { borderWidth: 2, borderColor: palette.trailDark },
   badge: { width: 64, height: 64, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },

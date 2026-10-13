@@ -1,15 +1,10 @@
 import { StyleSheet, Text } from 'react-native';
 
-import { fonts, palette } from '../theme';
+import { colors, fonts } from '../theme';
 
 type Tone = 'open' | 'done' | 'clear';
 
-const TONES: Record<Tone, string> = {
-  open: palette.trailDark,
-  // Darker than the synced green so it holds 4.5:1 on canvas and card
-  done: '#3B6E4A',
-  clear: palette.sky,
-};
+const TONES: Record<Tone, string> = { open: colors.stampOpen, done: colors.stampDone, clear: colors.stampClear };
 
 // A rubber-stamp status: outlined, condensed caps, a few degrees off true, like a tally book entry.
 // The word carries the meaning, so it reads without the color.

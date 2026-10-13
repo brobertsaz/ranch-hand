@@ -12,6 +12,7 @@ import {
 } from '@maplibre/maplibre-react-native';
 import * as Location from 'expo-location';
 import { addDatabaseChangeListener } from 'expo-sqlite';
+import { reloadAppAsync } from 'expo';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Image, Modal, PanResponder, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -38,7 +39,8 @@ import { estimateSharpening, fetchMapAreas, removeMapArea, sharpenArea, type Map
 import { deleteAllPhotos, photoFile } from '../photoFiles';
 import { cumulative, placesOnTrail } from '../trail';
 import { forgetDevice, mapStyleUrl, type Device } from '../settings';
-import { colors, fonts, palette, radius, space, sync, touch } from '../theme';
+import { colors, fonts, isDark, palette, radius, space, sync, themeMode, touch } from '../theme';
+import { saveThemeMode, type ThemeMode } from '../themeMode';
 import { useSync, type SyncState } from '../useSync';
 import CaptureScreen from './CaptureScreen';
 import ObservationScreen from './ObservationScreen';
@@ -547,6 +549,13 @@ export default function MapScreen({ device, onSignOut }: Props) {
     }
   }
 
+  // Every screen's colors are set when the app starts, so a new look takes a quick restart
+  async function chooseThemeMode(next: ThemeMode) {
+    if (next === themeMode) return;
+    await saveThemeMode(next);
+    await reloadAppAsync('Theme changed');
+  }
+
   function chooseBase(next: 'aerial' | 'topo') {
     setBase(next);
     setState(BASE_KEY, next);
@@ -968,6 +977,23 @@ export default function MapScreen({ device, onSignOut }: Props) {
             </Text>
 
             <View style={styles.sheetDivider} />
+            <Text style={styles.sheetTitle}>Look</Text>
+            <View style={styles.baseRow}>
+              {THEME_MODES.map(({ mode, label }) => (
+                <Pressable
+                  key={mode}
+                  onPress={() => chooseThemeMode(mode)}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected: themeMode === mode }}
+                  style={[styles.baseChoice, themeMode === mode && styles.baseChoiceOn]}
+                >
+                  <Text style={[styles.baseText, themeMode === mode && styles.baseTextOn]}>{label}</Text>
+                </Pressable>
+              ))}
+            </View>
+            <Text style={styles.sheetHint}>Light reads best in the sun, Dark before sunup and after dark. Auto follows your phone. Switching restarts the app.</Text>
+
+            <View style={styles.sheetDivider} />
             <Text style={styles.sheetTitle}>Offline map</Text>
             <Text style={styles.sheetText}>{pack}</Text>
             <AppButton
@@ -1198,10 +1224,18 @@ function describePack(status: OfflinePackStatus): string {
 // Covers the whole map for the wash layer
 const WORLD = { type: 'Feature' as const, properties: {}, geometry: { type: 'Polygon' as const, coordinates: [[[-180, -85], [180, -85], [180, 85], [-180, 85], [-180, -85]]] } };
 // Topo is white and blue out of the box; pull it toward canvas and leather
-const TOPO_PAINT = { 'raster-saturation': -0.35, 'raster-contrast': -0.08, 'raster-brightness-max': 0.93 };
-const TOPO_WASH = { 'fill-color': palette.leather, 'fill-opacity': 0.16 };
+// Night Ride dims Topo to a low parchment so it doesn't glare at 5 AM
+const TOPO_PAINT = isDark
+  ? { 'raster-saturation': -0.5, 'raster-contrast': -0.1, 'raster-brightness-max': 0.55 }
+  : { 'raster-saturation': -0.35, 'raster-contrast': -0.08, 'raster-brightness-max': 0.93 };
+const TOPO_WASH = { 'fill-color': isDark ? palette.pine : palette.leather, 'fill-opacity': isDark ? 0.25 : 0.16 };
 // Aerial just gets warmer and a touch darker, like late-afternoon light, so white pins and labels pop
-const AERIAL_WASH = { 'fill-color': '#4A3418', 'fill-opacity': 0.14 };
+const AERIAL_WASH = { 'fill-color': isDark ? palette.pine : '#4A3418', 'fill-opacity': isDark ? 0.3 : 0.14 };
+const THEME_MODES: { mode: ThemeMode; label: string }[] = [
+  { mode: 'light', label: 'Light' },
+  { mode: 'dark', label: 'Dark' },
+  { mode: 'auto', label: 'Auto' },
+];
 
 const shadow = { elevation: 8, shadowColor: '#0A100C', shadowOpacity: 0.35, shadowRadius: 12, shadowOffset: { width: 0, height: 6 } };
 

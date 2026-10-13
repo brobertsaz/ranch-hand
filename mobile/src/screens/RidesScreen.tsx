@@ -111,7 +111,7 @@ export default function RidesScreen({ memberId, riding, onStart, onBackToRide, o
 const styles = StyleSheet.create({
   screen: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, backgroundColor: colors.background },
   content: { paddingHorizontal: 14, paddingTop: 16, gap: space.md },
-  startCard: { backgroundColor: colors.surface, borderRadius: 18, padding: space.lg, gap: space.md, borderBottomWidth: 2, borderBottomColor: 'rgba(23, 27, 24, 0.1)' },
+  startCard: { backgroundColor: colors.surface, borderRadius: 18, padding: space.lg, gap: space.md, borderBottomWidth: 2, borderBottomColor: colors.hairline },
   startText: { fontSize: 17, lineHeight: 24, color: colors.text },
   subheadingRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: space.sm },
   subheading: { fontFamily: fonts.display, fontSize: 16, letterSpacing: 2.4, color: colors.textMuted },
@@ -119,7 +119,7 @@ const styles = StyleSheet.create({
   empty: { fontSize: 15, color: colors.textMuted },
   ride: {
     minHeight: 88, flexDirection: 'row', alignItems: 'center', gap: 14, padding: 10,
-    backgroundColor: colors.surface, borderRadius: 16, borderBottomWidth: 2, borderBottomColor: 'rgba(23, 27, 24, 0.1)',
+    backgroundColor: colors.surface, borderRadius: 16, borderBottomWidth: 2, borderBottomColor: colors.hairline,
   },
   rideIcon: { width: 64, height: 64, borderRadius: 12, backgroundColor: palette.sky, alignItems: 'center', justifyContent: 'center' },
   rideText: { flex: 1, gap: 2 },
