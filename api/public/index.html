@@ -50,6 +50,8 @@
 }
 
 * { box-sizing: border-box; }
+/* Classes like .thanks set display, which would otherwise beat the hidden attribute */
+[hidden] { display: none !important; }
 html { scroll-behavior: smooth; }
 body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 18px; line-height: 1.55; -webkit-font-smoothing: antialiased; }
 p { margin: 0; }
