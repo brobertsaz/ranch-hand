@@ -21,6 +21,7 @@ import AppButton from '../components/AppButton';
 import Icon, { type IconName } from '../components/Icon';
 import Pin from '../components/Pin';
 import FollowSheet from '../components/FollowSheet';
+import HelpScreen from './HelpScreen';
 import NameRideSheet from '../components/NameRideSheet';
 import PlaceSheet, { type PlaceFields } from '../components/PlaceSheet';
 import RideSheet, { ModePill } from '../components/RideSheet';
@@ -91,6 +92,7 @@ export default function MapScreen({ device, onSignOut }: Props) {
   const [tab, setTab] = useState<Tab>('map');
   const [capturing, setCapturing] = useState(false);
   const [layersOpen, setLayersOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   // Dragging the Map sheet's header down closes it, like a pull-down on any bottom sheet
   const closeOnSwipeDown = useMemo(
     () => PanResponder.create({
@@ -853,6 +855,10 @@ export default function MapScreen({ device, onSignOut }: Props) {
         onSkip={() => setNaming(null)}
       />
 
+      <Modal visible={helpOpen} animationType="slide" statusBarTranslucent navigationBarTranslucent onRequestClose={() => setHelpOpen(false)}>
+        <HelpScreen onClose={() => setHelpOpen(false)} />
+      </Modal>
+
       <Modal visible={layersOpen} transparent animationType="fade" statusBarTranslucent onRequestClose={() => setLayersOpen(false)}>
         <Pressable style={[styles.backdrop, { paddingTop: insets.top + space.xl }]} onPress={() => setLayersOpen(false)} accessibilityLabel="Close">
           <Pressable style={[styles.sheet, styles.sheetShrink]} onPress={() => {}}>
@@ -945,6 +951,14 @@ export default function MapScreen({ device, onSignOut }: Props) {
             />
 
             <View style={styles.sheetDivider} />
+            <AppButton
+              variant="ghost"
+              title="Help and how-tos"
+              onPress={() => {
+                setLayersOpen(false);
+                setHelpOpen(true);
+              }}
+            />
             <AppButton variant="ghost" title="Leave this ranch" onPress={confirmSignOut} />
             </ScrollView>
           </Pressable>
