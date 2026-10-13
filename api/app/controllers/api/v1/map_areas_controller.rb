@@ -16,6 +16,12 @@ module Api
         render json: { error: "Bounds must be numbers" }, status: :unprocessable_content
       end
 
+      # Cancels a render in progress too: the job stops once its area is gone
+      def destroy
+        current_ranch.map_areas.find(params[:id]).destroy!
+        head :no_content
+      end
+
       private
 
       def default_name = "Area #{current_ranch.map_areas.count + 1}"

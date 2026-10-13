@@ -14,7 +14,7 @@ import * as Location from 'expo-location';
 import { addDatabaseChangeListener } from 'expo-sqlite';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Image, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Image, Modal, PanResponder, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import AppButton from '../components/AppButton';
@@ -32,8 +32,8 @@ import { crewNews, isNew, newsSeenAt } from '../news';
 import { activeRide, resumeRideIfNeeded, ridePoints, startRide, stopRide, type ActiveRide } from '../rides';
 import { KIND_INFO, nextPlaceName, WAYPOINT_INFO } from '../kinds';
 import { locate } from '../locate';
-import { estimateTiles, expandBounds, MIN_PACK_SPAN_KM, PACK_MAX_ZOOM, PACK_MIN_ZOOM, TILE_LIMIT, VIEW_USGS_LIMIT } from '../offline';
-import { fetchMapAreas, sharpenArea, type MapArea } from '../api';
+import { estimateSharpen, estimateTiles, expandBounds, MIN_PACK_SPAN_KM, PACK_MAX_ZOOM, PACK_MIN_ZOOM, TILE_LIMIT, VIEW_USGS_LIMIT } from '../offline';
+import { fetchMapAreas, removeMapArea, sharpenArea, type MapArea } from '../api';
 import { deleteAllPhotos, photoFile } from '../photoFiles';
 import { cumulative, placesOnTrail } from '../trail';
 import { forgetDevice, mapStyleUrl, type Device } from '../settings';
@@ -91,6 +91,14 @@ export default function MapScreen({ device, onSignOut }: Props) {
   const [tab, setTab] = useState<Tab>('map');
   const [capturing, setCapturing] = useState(false);
   const [layersOpen, setLayersOpen] = useState(false);
+  // Dragging the Map sheet's header down closes it, like a pull-down on any bottom sheet
+  const closeOnSwipeDown = useMemo(
+    () => PanResponder.create({
+      onMoveShouldSetPanResponder: (_, g) => g.dy > 8 && Math.abs(g.dy) > Math.abs(g.dx),
+      onPanResponderRelease: (_, g) => { if (g.dy > 60 || g.vy > 0.8) setLayersOpen(false); },
+    }),
+    [],
+  );
   // Aerial photos, or USGS Topo (contours, creeks, section lines). Both are in every offline download.
   const [base, setBase] = useState<'aerial' | 'topo'>('aerial');
   const [pack, setPack] = useState<string>('No offline area yet');
@@ -372,16 +380,22 @@ export default function MapScreen({ device, onSignOut }: Props) {
     return adding.noFix ? 'No GPS fix. Set it on the map instead.' : 'Getting a GPS fix…';
   }
 
-  // The sheet shows each area's render progress, so refetch whenever it opens
+  // The sheet shows each area's render progress, so refetch when it opens and every few seconds while one is rendering
+  const rendering = areas.some((a) => a.status === 'pending' || a.status === 'rendering');
   useEffect(() => {
     if (!layersOpen) return;
-    fetchMapAreas(device)
-      .then((list) => {
-        setAreas(list);
-        setState(AREAS_KEY, JSON.stringify(list));
-      })
-      .catch(() => {});
-  }, [layersOpen, device]);
+    const refresh = () =>
+      fetchMapAreas(device)
+        .then((list) => {
+          setAreas(list);
+          setState(AREAS_KEY, JSON.stringify(list));
+        })
+        .catch(() => {});
+    refresh();
+    if (!rendering) return;
+    const timer = setInterval(refresh, 5000);
+    return () => clearInterval(timer);
+  }, [layersOpen, device, rendering]);
 
   const sharpBounds = areas.filter((a) => a.status === 'ready').map((a): [number, number, number, number] => [a.west, a.south, a.east, a.north]);
 
@@ -402,21 +416,46 @@ export default function MapScreen({ device, onSignOut }: Props) {
     savePack(bounds, estimateTiles(bounds, [bounds]).total, `${area.name}, sharp to zoom 18.`);
   }
 
+  // Asks first, since a big view can take a while to render
   async function sharpenView() {
     const visibleBounds = await map.current?.getBounds();
     if (!visibleBounds) return;
+    const { minutes } = estimateSharpen(visibleBounds);
+    Alert.alert('Sharpen this area?', `It takes about ${minutes} min. When it says Ready here, download it to have it with no signal.`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Sharpen', onPress: () => startSharpen(visibleBounds) },
+    ]);
+  }
+
+  async function startSharpen(visibleBounds: [number, number, number, number]) {
     setSharpening(true);
     try {
       const area = await sharpenArea(device, visibleBounds);
       setAreas((list) => [...list, area]);
-      // About 10 s a tile, 8 at a time
-      const minutes = Math.max(1, Math.round((area.estimated_tiles * 10) / 8 / 60));
-      Alert.alert('Sharpening this area', `${area.name} will take about ${minutes} min. When it says Ready here, download it to have it with no signal.`);
     } catch (error) {
       Alert.alert("Couldn't sharpen", syncState.online ? (error as Error).message : 'This needs a signal. Try again at the house.');
     } finally {
       setSharpening(false);
     }
+  }
+
+  function confirmRemoveArea(area: MapArea) {
+    const busy = area.status === 'pending' || area.status === 'rendering';
+    Alert.alert(busy ? `Stop sharpening ${area.name}?` : `Remove ${area.name}?`, busy ? 'It stops now and leaves the list.' : 'It leaves the list. Maps you already downloaded stay on this phone.', [
+      { text: 'Keep it', style: 'cancel' },
+      {
+        text: busy ? 'Stop' : 'Remove',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await removeMapArea(device, area.id);
+            setAreas((list) => list.filter((a) => a.id !== area.id));
+          } catch {
+            Alert.alert("Couldn't remove it", 'This needs a signal. Try again at the house.');
+          }
+        },
+      },
+    ]);
   }
 
   async function savePack(bounds: [number, number, number, number], tiles: number, saved: string) {
@@ -815,9 +854,17 @@ export default function MapScreen({ device, onSignOut }: Props) {
       />
 
       <Modal visible={layersOpen} transparent animationType="fade" statusBarTranslucent onRequestClose={() => setLayersOpen(false)}>
-        <Pressable style={styles.backdrop} onPress={() => setLayersOpen(false)} accessibilityLabel="Close">
-          <Pressable style={[styles.sheet, { paddingBottom: insets.bottom + space.xl }]} onPress={() => {}}>
-            <Text style={styles.sheetTitle} accessibilityRole="header">Map</Text>
+        <Pressable style={[styles.backdrop, { paddingTop: insets.top + space.xl }]} onPress={() => setLayersOpen(false)} accessibilityLabel="Close">
+          <Pressable style={[styles.sheet, styles.sheetShrink]} onPress={() => {}}>
+            <View style={styles.sheetHeader} {...closeOnSwipeDown.panHandlers}>
+              <View style={styles.grabber} />
+              <Text style={styles.sheetTitle} accessibilityRole="header">Map</Text>
+              <Pressable onPress={() => setLayersOpen(false)} accessibilityRole="button" accessibilityLabel="Close" hitSlop={8} style={styles.sheetClose}>
+                <Icon name="close" size={24} color={colors.text} strokeWidth={2.4} />
+              </Pressable>
+            </View>
+            {/* Once a ranch has a few sharp areas the sheet outgrows the screen, so the header stays put and the rest scrolls */}
+            <ScrollView contentContainerStyle={[styles.sheetBody, { paddingBottom: insets.bottom + space.xl }]}>
             <View style={styles.baseRow}>
               {(['aerial', 'topo'] as const).map((b) => (
                 <Pressable
@@ -854,6 +901,11 @@ export default function MapScreen({ device, onSignOut }: Props) {
                 <View style={{ flex: 1 }}>
                   <Text style={styles.sheetText}>{area.name}</Text>
                   <Text style={styles.sheetHint}>{describeArea(area)}</Text>
+                  {area.status === 'rendering' && (
+                    <View style={styles.progressTrack}>
+                      <View style={[styles.progressFill, { width: `${Math.min(100, (area.tile_count / Math.max(1, area.estimated_tiles)) * 100)}%` }]} />
+                    </View>
+                  )}
                 </View>
                 {area.status === 'ready' && (
                   <AppButton
@@ -864,6 +916,9 @@ export default function MapScreen({ device, onSignOut }: Props) {
                     icon={<Icon name="download" size={20} color={palette.white} strokeWidth={2.4} />}
                   />
                 )}
+                <Pressable onPress={() => confirmRemoveArea(area)} accessibilityRole="button" accessibilityLabel={`Remove ${area.name}`} style={styles.sheetClose}>
+                  <Icon name="close" size={20} color={colors.textMuted} strokeWidth={2.4} />
+                </Pressable>
               </View>
             ))}
             <AppButton
@@ -891,6 +946,7 @@ export default function MapScreen({ device, onSignOut }: Props) {
 
             <View style={styles.sheetDivider} />
             <AppButton variant="ghost" title="Leave this ranch" onPress={confirmSignOut} />
+            </ScrollView>
           </Pressable>
         </Pressable>
       </Modal>
@@ -1022,7 +1078,8 @@ function endPoint(coordinates: LngLat, end: 'start' | 'end'): GeoJSON.Feature<Ge
 function describeArea(area: MapArea): string {
   if (area.status === 'ready') return `Ready · ${area.tile_count} tiles`;
   if (area.status === 'failed') return 'Failed. Tap Sharpen this area to try again.';
-  return `Preparing · about ${area.estimated_tiles} tiles`;
+  if (area.status === 'rendering') return `Sharpening · ${area.tile_count} of ${area.estimated_tiles} tiles`;
+  return `Waiting to start · about ${area.estimated_tiles} tiles`;
 }
 
 function describePack(status: OfflinePackStatus): string {
@@ -1111,6 +1168,11 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20,
     paddingTop: space.xl, paddingHorizontal: space.lg, gap: 10,
   },
+  sheetShrink: { flexShrink: 1, paddingBottom: 0 },
+  sheetBody: { gap: 10, paddingTop: 10 },
+  sheetHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: -space.md },
+  grabber: { position: 'absolute', top: -space.sm, alignSelf: 'center', left: '50%', marginLeft: -20, width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border },
+  sheetClose: { width: touch.min, height: touch.min, marginRight: -space.md, alignItems: 'center', justifyContent: 'center' },
   sheetTitle: { fontFamily: fonts.display, fontSize: 26, color: colors.text },
   sheetText: { fontSize: 15, color: colors.text },
   sheetHint: { fontSize: 13, color: colors.textMuted },
@@ -1123,5 +1185,7 @@ const styles = StyleSheet.create({
   baseText: { fontSize: 17, fontWeight: '800', color: colors.text },
   baseTextOn: { color: palette.white },
   sheetDivider: { height: 1, backgroundColor: colors.border, marginVertical: 6 },
+  progressTrack: { height: 6, borderRadius: 3, backgroundColor: colors.surfaceSunken, overflow: 'hidden', marginTop: 4 },
+  progressFill: { height: 6, borderRadius: 3, backgroundColor: palette.sky },
   areaRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
 });

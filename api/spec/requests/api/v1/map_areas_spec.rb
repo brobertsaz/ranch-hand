@@ -47,6 +47,24 @@ RSpec.describe "Map areas", type: :request do
     expect(response).to have_http_status(:unprocessable_content)
   end
 
+  it "removes an area, which stops its render" do
+    area = create(:map_area, ranch: member.ranch)
+
+    delete "/api/v1/map_areas/#{area.id}", headers: auth_headers(member)
+
+    expect(response).to have_http_status(:no_content)
+    expect(MapArea.exists?(area.id)).to be(false)
+  end
+
+  it "won't remove another ranch's area" do
+    area = create(:map_area)
+
+    delete "/api/v1/map_areas/#{area.id}", headers: auth_headers(member)
+
+    expect(response).to have_http_status(:not_found)
+    expect(MapArea.exists?(area.id)).to be(true)
+  end
+
   it "needs a device token" do
     get "/api/v1/map_areas"
 
