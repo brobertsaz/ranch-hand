@@ -271,12 +271,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14, fontFamily: fonts.display, fontSize: 30, color: colors.text,
   },
   noteInput: {
-    height: 56, borderRadius: 10, borderWidth: 1, borderColor: 'rgba(23, 27, 24, 0.3)', backgroundColor: colors.surface,
+    height: 56, borderRadius: 10, borderWidth: 1, borderColor: colors.input, backgroundColor: colors.surface,
     paddingHorizontal: 14, fontSize: 17, color: colors.text,
   },
   saveBar: {
     paddingTop: 14, paddingHorizontal: space.lg, gap: 10, backgroundColor: colors.background,
-    borderTopWidth: 1, borderTopColor: 'rgba(23, 27, 24, 0.12)',
+    borderTopWidth: 1, borderTopColor: colors.hairline,
   },
-  caption: { textAlign: 'center', fontSize: 14, color: '#4F554F' },
+  caption: { textAlign: 'center', fontSize: 14, color: colors.textMuted },
 });

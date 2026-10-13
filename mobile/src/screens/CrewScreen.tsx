@@ -128,7 +128,7 @@ const styles = StyleSheet.create({
   inviteHint: { fontSize: 15, fontWeight: '600', color: palette.pine, marginBottom: space.xs },
   empty: { fontSize: 15, color: colors.textMuted, paddingHorizontal: 4 },
   member: {
-    minHeight: 76, backgroundColor: colors.surface, borderRadius: 16, borderBottomWidth: 2, borderBottomColor: 'rgba(23, 27, 24, 0.1)',
+    minHeight: 76, backgroundColor: colors.surface, borderRadius: 16, borderBottomWidth: 2, borderBottomColor: colors.hairline,
     padding: 12, flexDirection: 'row', alignItems: 'center', gap: 14,
   },
   avatar: { width: 52, height: 52, borderRadius: 26, backgroundColor: palette.sky, alignItems: 'center', justifyContent: 'center' },

@@ -130,7 +130,7 @@ const styles = StyleSheet.create({
   kindLabelOn: { color: palette.canvas, fontWeight: '800' },
   input: {
     minHeight: touch.min, borderWidth: 1, borderColor: colors.input, borderRadius: radius.md, paddingHorizontal: 14,
-    fontSize: 17, color: colors.text, backgroundColor: palette.white,
+    fontSize: 17, color: colors.text, backgroundColor: colors.inputBackground,
   },
   actions: { flexDirection: 'row', gap: 10 },
   flex: { flex: 1 },
