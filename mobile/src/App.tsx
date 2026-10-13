@@ -10,18 +10,13 @@ import { db } from './db';
 import MapScreen from './screens/MapScreen';
 import SetupScreen from './screens/SetupScreen';
 import { fetchRanch } from './api';
-import { authorizeMapRequests, loadDevice, saveDevice, type Device } from './settings';
+import { loadDevice, saveDevice, type Device } from './settings';
 import { colors } from './theme';
 
 export default function App() {
-  const [device, setDeviceState] = useState<Device | null | undefined>(undefined);
+  const [device, setDevice] = useState<Device | null | undefined>(undefined);
   // Only the two weights theme.ts names, so the rest of the family stays out of the bundle
   const [fontsLoaded, fontError] = useFonts({ BarlowCondensed_800ExtraBold, BarlowCondensed_900Black });
-
-  const setDevice = (next: Device | null) => {
-    authorizeMapRequests(next);
-    setDeviceState(next);
-  };
 
   useEffect(() => {
     db();
@@ -36,7 +31,7 @@ export default function App() {
         if (ranch.name === device.ranchName) return;
         const next = { ...device, ranchName: ranch.name };
         saveDevice(next);
-        setDeviceState(next);
+        setDevice(next);
       })
       .catch(() => {}); // offline: keep the saved name
   }, [device]);

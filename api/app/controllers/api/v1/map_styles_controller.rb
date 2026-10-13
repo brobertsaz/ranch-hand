@@ -11,9 +11,10 @@ module Api
       DEFAULT_TOPO_TILE_URL = "https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/tile/{z}/{y}/{x}".freeze
 
       def show
-        # The app sends its token on map requests so the style can add the ranch's sharp areas.
-        # Older apps don't, and get the plain style.
-        @current_member = authenticate_with_http_token { |token| Member.find_by(device_token: token) }
+        # The app puts its token in the style URL (MapLibre won't send our header on Android) so the style can
+        # add the ranch's sharp areas. Without one, the plain style.
+        token = params[:token].presence || authenticate_with_http_token { |header_token| header_token }
+        @current_member = token && Member.find_by(device_token: token)
         areas = current_member ? current_ranch.map_areas.ready.order(:id) : MapArea.none
 
         # Rails' default must-revalidate makes MapLibre refuse the copy stored in an offline pack
