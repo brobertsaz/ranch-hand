@@ -108,6 +108,10 @@ export default function MapScreen({ device, onSignOut }: Props) {
   const [start, setStart] = useState<[number, number] | null>(null);
   const [here, setHere] = useState<LngLat | null>(null);
   const [downloading, setDownloading] = useState<number | null>(null);
+  // What's downloading ('view' or a sharp area's id), so the progress shows on the button that was tapped
+  const [downloadTarget, setDownloadTarget] = useState<string | null>(null);
+  // Sharp areas already saved on this phone, read back from the offline packs
+  const [savedAreas, setSavedAreas] = useState<Set<string>>(new Set());
   const [areas, setAreas] = useState<MapArea[]>([]);
   const [sharpening, setSharpening] = useState(false);
   // Putting a place under the crosshair: a new one, or an existing one being moved
@@ -159,6 +163,7 @@ export default function MapScreen({ device, onSignOut }: Props) {
     OfflineManager.getPacks().then(async (packs) => {
       const last = packs.at(-1);
       if (last) setPack(describePack(await last.status()));
+      setSavedAreas(new Set(packs.map((p) => p.metadata?.areaId).filter((id): id is string => typeof id === 'string')));
     });
     return () => sub.remove();
   }, [reload]);
@@ -415,7 +420,7 @@ export default function MapScreen({ device, onSignOut }: Props) {
 
   function downloadSharpArea(area: MapArea) {
     const bounds: [number, number, number, number] = [area.west, area.south, area.east, area.north];
-    savePack(bounds, estimateTiles(bounds, [bounds]).total, `${area.name}, sharp to zoom 18.`);
+    savePack(bounds, estimateTiles(bounds, [bounds]).total, `${area.name}, sharp to zoom 18.`, area.id);
   }
 
   // Asks first, since a big view can take a while to render
@@ -460,13 +465,16 @@ export default function MapScreen({ device, onSignOut }: Props) {
     ]);
   }
 
-  async function savePack(bounds: [number, number, number, number], tiles: number, saved: string) {
+  async function savePack(bounds: [number, number, number, number], tiles: number, saved: string, areaId?: string) {
     setDownloading(0);
+    setDownloadTarget(areaId ?? 'view');
     let finished = false;
-    const finish = (title: string, message: string) => {
+    const finish = (title: string, message: string, ok = false) => {
       if (finished) return;
       finished = true;
       setDownloading(null);
+      setDownloadTarget(null);
+      if (ok && areaId) setSavedAreas((ids) => new Set(ids).add(areaId));
       Alert.alert(title, message);
     };
 
@@ -477,13 +485,13 @@ export default function MapScreen({ device, onSignOut }: Props) {
           bounds,
           minZoom: PACK_MIN_ZOOM,
           maxZoom: PACK_MAX_ZOOM,
-          metadata: { name: `Area ${new Date().toISOString()}`, estimatedTiles: tiles },
+          metadata: { name: `Area ${new Date().toISOString()}`, estimatedTiles: tiles, ...(areaId ? { areaId } : {}) },
         },
         (_pack, status) => {
           setPack(describePack(status));
           setDownloading(status.percentage);
           if (status.state === 'complete') {
-            finish('Saved for offline', `${saved} ${describePack(status)}`);
+            finish('Saved for offline', `${saved} ${describePack(status)}`, true);
           }
         },
         (_pack, error) => {
@@ -895,7 +903,7 @@ export default function MapScreen({ device, onSignOut }: Props) {
             <Text style={styles.sheetTitle}>Offline map</Text>
             <Text style={styles.sheetText}>{pack}</Text>
             <AppButton
-              title={downloading === null ? 'Download this area' : `Downloading ${Math.round(downloading)}%`}
+              title={downloading !== null && downloadTarget === 'view' ? `Downloading ${Math.round(downloading)}%` : 'Download this area'}
               onPress={downloadArea}
               disabled={downloading !== null}
               icon={<Icon name="download" size={20} color={palette.white} strokeWidth={2.4} />}
@@ -908,7 +916,10 @@ export default function MapScreen({ device, onSignOut }: Props) {
               <View key={area.id} style={styles.areaRow}>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.sheetText}>{area.name}</Text>
-                  <Text style={styles.sheetHint}>{describeArea(area)}</Text>
+                  <Text style={styles.sheetHint}>
+                    {describeArea(area)}
+                    {savedAreas.has(area.id) ? ' · saved on this phone' : ''}
+                  </Text>
                   {area.status === 'rendering' && (
                     <View style={styles.progressTrack}>
                       <View style={[styles.progressFill, { width: `${Math.min(100, (area.tile_count / Math.max(1, area.estimated_tiles)) * 100)}%` }]} />
@@ -918,7 +929,7 @@ export default function MapScreen({ device, onSignOut }: Props) {
                 {area.status === 'ready' && (
                   <AppButton
                     variant="secondary"
-                    title="Download"
+                    title={downloading !== null && downloadTarget === area.id ? `${Math.round(downloading)}%` : savedAreas.has(area.id) ? 'Update' : 'Download'}
                     onPress={() => downloadSharpArea(area)}
                     disabled={downloading !== null}
                     icon={<Icon name="download" size={20} color={palette.white} strokeWidth={2.4} />}
