@@ -66,7 +66,7 @@ RSpec.describe "Map style", type: :request do
     it "keeps one ranch's style out of shared caches, and fresh enough for a new area" do
       get "/api/v1/map/style", headers: auth_headers(member)
 
-      expect(response.headers["Cache-Control"]).to eq("max-age=300, private")
+      expect(response.headers["Cache-Control"]).to eq("max-age=0, private")
     end
   end
 end
