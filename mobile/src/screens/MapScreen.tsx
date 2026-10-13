@@ -85,6 +85,12 @@ export default function MapScreen({ device, onSignOut }: Props) {
   // Unread count for the New tab
   const [newsCount, setNewsCount] = useState(0);
   const [filter, setFilter] = useState<Kind | 'all'>('all');
+  // The filter button's list of kinds, open or closed
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const pickFilter = (next: Kind | 'all') => {
+    setFilter(next);
+    setFiltersOpen(false);
+  };
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedPhoto, setSelectedPhoto] = useState<string | null>(null);
   // A stack, so Back from a check opened inside a place returns to the place. Ids name either kind of record.
@@ -573,7 +579,10 @@ export default function MapScreen({ device, onSignOut }: Props) {
     <View style={styles.screen}>
       <StatusBar style="light" />
       <Map key={mapKey} ref={map} style={StyleSheet.absoluteFill} mapStyle={mapStyleUrl(device)} logo={false}
-        onPress={() => Date.now() - pinPressedAt.current > 500 && setSelectedId(null)}
+        onPress={() => {
+          setFiltersOpen(false);
+          if (Date.now() - pinPressedAt.current > 500) setSelectedId(null);
+        }}
         onLongPress={(e) => !placing && startPlacing([e.nativeEvent.lngLat[0], e.nativeEvent.lngLat[1]], null)}
       >
         {start && <Camera ref={camera} initialViewState={view ?? { center: start, zoom: 14 }} trackUserLocation={following ? 'default' : undefined} />}
@@ -661,18 +670,26 @@ export default function MapScreen({ device, onSignOut }: Props) {
             </View>
             <SyncPill state={syncState} unsynced={unsynced} onPress={syncState.syncNow} />
           </View>
-          {/* Seven slim pills sharing the width, so all of them always show; the dots double as the map's legend */}
-          <View style={styles.filterRow} accessibilityRole="radiogroup" accessibilityLabel="Show on the map">
-            <Chip label="All" fill on={filter === 'all'} onPress={() => setFilter('all')} />
-            {KINDS.map((k) => (
-              // Tapping the one that's on goes back to All
-              <Chip key={k} label={KIND_INFO[k].short} color={KIND_INFO[k].pinColor} fill on={filter === k} onPress={() => setFilter(filter === k ? 'all' : k)} />
-            ))}
-          </View>
         </View>
       )}
 
-      <View style={[styles.controls, { top: insets.top + (riding || following ? 8 : 150) }]}>
+      <View style={[styles.controls, { top: insets.top + (riding || following ? 8 : 92) }]}>
+        {/* One button instead of a row across the map; while a filter is on it wears that kind's icon */}
+        <Pressable
+          onPress={() => setFiltersOpen((open) => !open)}
+          accessibilityRole="button"
+          accessibilityLabel={filter === 'all' ? 'Filter the map' : `Showing ${KIND_INFO[filter].label} only. Change filter`}
+          accessibilityState={{ expanded: filtersOpen }}
+          style={[styles.control, filtersOpen && styles.controlOpen]}
+        >
+          {filter === 'all' ? (
+            <Icon name="filter" size={22} color={filtersOpen ? palette.pine : colors.chromeText} />
+          ) : (
+            <View style={[styles.filterIcon, { backgroundColor: KIND_INFO[filter].pinColor }]}>
+              <Icon name={KIND_INFO[filter].icon} size={17} color={KIND_INFO[filter].onColor} strokeWidth={2.4} />
+            </View>
+          )}
+        </Pressable>
         <Pressable onPress={() => setLayersOpen(true)} accessibilityRole="button" accessibilityLabel="Map layers and offline areas" style={styles.control}>
           <Icon name="layers" size={22} color={colors.chromeText} />
         </Pressable>
@@ -688,6 +705,23 @@ export default function MapScreen({ device, onSignOut }: Props) {
           </Pressable>
         )}
       </View>
+
+      {filtersOpen && !riding && !following && (
+        <View style={[styles.filterMenu, { top: insets.top + 92 }]} accessibilityRole="radiogroup" accessibilityLabel="Show on the map">
+          <FilterOption label="Everything" icon="all" color={palette.canvas} onColor={palette.pine} on={filter === 'all'} onPress={() => pickFilter('all')} />
+          {KINDS.map((k) => (
+            <FilterOption
+              key={k}
+              label={KIND_INFO[k].label}
+              icon={KIND_INFO[k].icon}
+              color={KIND_INFO[k].pinColor}
+              onColor={KIND_INFO[k].onColor}
+              on={filter === k}
+              onPress={() => pickFilter(k)}
+            />
+          ))}
+        </View>
+      )}
 
       {placing && (
         <>
@@ -1041,12 +1075,23 @@ function SyncPill({ state, unsynced, onPress }: { state: SyncState; unsynced: nu
   );
 }
 
-// fill: one of a row of equal pills (the map filters) rather than sized to its label
-function Chip({ label, color, on, fill = false, onPress }: { label: string; color?: string; on: boolean; fill?: boolean; onPress: () => void }) {
+// One kind in the filter menu: its pin icon in its color, so the menu doubles as the map's legend
+function FilterOption({ label, icon, color, onColor, on, onPress }: { label: string; icon: IconName; color: string; onColor: string; on: boolean; onPress: () => void }) {
   return (
-    <Pressable onPress={onPress} accessibilityRole="button" accessibilityState={{ selected: on }} style={[styles.chip, fill && styles.chipFill, on && styles.chipOn]}>
-      {color && <View style={[styles.chipDot, fill && styles.chipDotFill, { backgroundColor: color }]} />}
-      <Text style={[styles.chipText, fill && styles.chipTextFill, on && styles.chipTextOn]} numberOfLines={1}>{label}</Text>
+    <Pressable onPress={onPress} accessibilityRole="radio" accessibilityState={{ selected: on }} style={[styles.filterOption, on && styles.filterOptionOn]}>
+      <View style={[styles.filterIcon, { backgroundColor: color }]}>
+        <Icon name={icon} size={17} color={onColor} strokeWidth={2.4} />
+      </View>
+      <Text style={[styles.filterLabel, on && styles.filterLabelOn]}>{label}</Text>
+    </Pressable>
+  );
+}
+
+function Chip({ label, color, on, onPress }: { label: string; color?: string; on: boolean; onPress: () => void }) {
+  return (
+    <Pressable onPress={onPress} accessibilityRole="button" accessibilityState={{ selected: on }} style={[styles.chip, on && styles.chipOn]}>
+      {color && <View style={[styles.chipDot, { backgroundColor: color }]} />}
+      <Text style={[styles.chipText, on && styles.chipTextOn]} numberOfLines={1}>{label}</Text>
     </Pressable>
   );
 }
@@ -1183,10 +1228,6 @@ const styles = StyleSheet.create({
   },
   // Same size on and off, so picking a filter doesn't nudge the row
   chipOn: { backgroundColor: palette.canvas },
-  filterRow: { flexDirection: 'row', gap: 4 },
-  chipFill: { flex: 1, paddingHorizontal: 0, justifyContent: 'center', gap: 4 },
-  chipDotFill: { width: 9, height: 9, borderRadius: 5, borderWidth: 1 },
-  chipTextFill: { fontSize: 13 },
   chipDot: { width: 12, height: 12, borderRadius: 6, borderWidth: 1.5, borderColor: palette.white },
   chipText: { color: colors.chromeText, fontSize: 15, fontWeight: '700' },
   chipTextOn: { color: palette.pine },
@@ -1204,6 +1245,13 @@ const styles = StyleSheet.create({
   placingHint: { fontSize: 15, color: colors.chromeTextMuted },
   placingActions: { flexDirection: 'row', gap: 10, marginTop: 6 },
   flex: { flex: 1 },
+  controlOpen: { backgroundColor: palette.canvas },
+  filterMenu: { ...shadow, position: 'absolute', right: 12 + touch.min + space.sm, width: 200, backgroundColor: colors.chrome, borderRadius: 16, padding: 6, gap: 2 },
+  filterOption: { minHeight: touch.min, flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 10, borderRadius: 12 },
+  filterOptionOn: { backgroundColor: palette.canvas },
+  filterIcon: { width: 30, height: 30, borderRadius: 15, borderWidth: 2, borderColor: palette.white, alignItems: 'center', justifyContent: 'center' },
+  filterLabel: { color: colors.chromeText, fontSize: 17, fontWeight: '700' },
+  filterLabelOn: { color: palette.pine, fontWeight: '800' },
   control: { width: touch.min, height: touch.min, borderRadius: 14, backgroundColor: colors.chrome, alignItems: 'center', justifyContent: 'center' },
   peek: {
     ...shadow, position: 'absolute', left: 12, right: 12, backgroundColor: colors.surface, borderRadius: 16, padding: 10,

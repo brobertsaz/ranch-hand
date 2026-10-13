@@ -15,6 +15,8 @@ const PATHS = {
   plus: ['M12 6v12M6 12h12'],
   // "All" in the map filter
   all: [],
+  // The map's filter button
+  filter: ['M4 5h16l-6 7.5V19l-4-2v-4.5z'],
   // Kind icons: a cow's head (sick animal), a round hay bale (feed), barbed wire on a post (fence)
   cow: [
     'M5 3.5c0 2.5 1.5 4 4 4.8', 'M19 3.5c0 2.5-1.5 4-4 4.8',
