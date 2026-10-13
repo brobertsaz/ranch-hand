@@ -19,9 +19,10 @@ module Api
 
         # Rails' default must-revalidate makes MapLibre refuse the copy stored in an offline pack
         # when there's no network, so a cold start offline shows no map.
-        # A ranch's style is kept short so a download started once an area turns Ready includes it.
+        # A ranch's style is fetched fresh every time, so an area that just turned Ready shows on the next load.
+        # max-age 0 without must-revalidate still lets MapLibre use its stored copy when offline.
         if current_member
-          expires_in 5.minutes, public: false
+          expires_in 0, public: false
         else
           expires_in 1.hour, public: true
         end

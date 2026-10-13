@@ -106,6 +106,11 @@ export default function MapScreen({ device, onSignOut }: Props) {
   const [pack, setPack] = useState<string>('No offline area yet');
   // Where the map opens: the phone's last fix, or START for a phone that has never had one
   const [start, setStart] = useState<[number, number] | null>(null);
+  // MapLibre reads the style (which lists the ready sharp areas) once, when the map mounts. Bumping mapKey remounts
+  // the map so an area that turned Ready shows up, and `view` puts the camera back where it was.
+  const [mapKey, setMapKey] = useState(0);
+  const [view, setView] = useState<{ center: [number, number]; zoom: number } | null>(null);
+  const readyKey = useRef<string | null>(null);
   const [here, setHere] = useState<LngLat | null>(null);
   const [downloading, setDownloading] = useState<number | null>(null);
   // What's downloading ('view' or a sharp area's id), so the progress shows on the button that was tapped
@@ -159,7 +164,13 @@ export default function MapScreen({ device, onSignOut }: Props) {
         setStart(newest ? [newest.longitude, newest.latitude] : START);
       });
     getState(BASE_KEY).then((saved) => saved === 'topo' && setBase('topo'));
-    getState(AREAS_KEY).then((saved) => saved && setAreas(JSON.parse(saved) as MapArea[]));
+    getState(AREAS_KEY).then((saved) => {
+      if (!saved) return;
+      const list = JSON.parse(saved) as MapArea[];
+      // The map is loading the style for these same areas, so this isn't a change that needs a reload
+      readyKey.current = readyKeyOf(list);
+      setAreas(list);
+    });
     OfflineManager.setTileCountLimit(TILE_LIMIT);
     OfflineManager.getPacks().then(async (packs) => {
       const last = packs.at(-1);
@@ -405,6 +416,19 @@ export default function MapScreen({ device, onSignOut }: Props) {
     return () => clearInterval(timer);
   }, [layersOpen, device, rendering]);
 
+  // An area that turned Ready, or was re-rendered, isn't in the style the map loaded, so reload it
+  useEffect(() => {
+    const key = readyKeyOf(areas);
+    const previous = readyKey.current;
+    readyKey.current = key;
+    if (previous === null || previous === key) return;
+    (async () => {
+      const [center, zoom] = await Promise.all([map.current?.getCenter(), map.current?.getZoom()]);
+      if (center && zoom !== undefined) setView({ center: center as [number, number], zoom });
+      setMapKey((k) => k + 1);
+    })();
+  }, [areas]);
+
   const sharpBoxes = areas.filter((a) => a.status === 'ready').map((a) => ({ box: areaBounds(a), maxZoom: a.max_zoom ?? 18 }));
 
   async function downloadArea() {
@@ -548,11 +572,11 @@ export default function MapScreen({ device, onSignOut }: Props) {
   return (
     <View style={styles.screen}>
       <StatusBar style="light" />
-      <Map ref={map} style={StyleSheet.absoluteFill} mapStyle={mapStyleUrl(device)} logo={false}
+      <Map key={mapKey} ref={map} style={StyleSheet.absoluteFill} mapStyle={mapStyleUrl(device)} logo={false}
         onPress={() => Date.now() - pinPressedAt.current > 500 && setSelectedId(null)}
         onLongPress={(e) => !placing && startPlacing([e.nativeEvent.lngLat[0], e.nativeEvent.lngLat[1]], null)}
       >
-        {start && <Camera ref={camera} initialViewState={{ center: start, zoom: 14 }} trackUserLocation={following ? 'default' : undefined} />}
+        {start && <Camera ref={camera} initialViewState={view ?? { center: start, zoom: 14 }} trackUserLocation={following ? 'default' : undefined} />}
         {/* Above the sharp areas too, which the style ends with aerial-top */}
         {base === 'topo' && <Layer type="raster" id="topo" source="topo" afterId="aerial-top" />}
         <UserLocation accuracy />
@@ -1113,6 +1137,10 @@ function lineString(coordinates: LngLat[]): GeoJSON.Feature<GeoJSON.LineString> 
 
 function endPoint(coordinates: LngLat, end: 'start' | 'end'): GeoJSON.Feature<GeoJSON.Point> {
   return { type: 'Feature', properties: { end }, geometry: { type: 'Point', coordinates } };
+}
+
+function readyKeyOf(areas: MapArea[]): string {
+  return areas.filter((a) => a.status === 'ready').map(savedKey).sort().join(',');
 }
 
 function savedKey(area: MapArea): string {
