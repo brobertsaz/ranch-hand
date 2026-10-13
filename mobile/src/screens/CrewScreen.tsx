@@ -2,10 +2,10 @@ import { addDatabaseChangeListener } from 'expo-sqlite';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useState } from 'react';
 import { ScrollView, Share, StyleSheet, Text, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { fetchRanch } from '../api';
 import AppButton from '../components/AppButton';
+import FieldHeader from '../components/FieldHeader';
 import Icon from '../components/Icon';
 import { useTabBarHeight } from '../components/TabBar';
 import { db, getState, setState, type Member } from '../db';
@@ -33,7 +33,6 @@ async function loadCrew(): Promise<CrewMember[]> {
 }
 
 export default function CrewScreen({ device }: { device: Device }) {
-  const insets = useSafeAreaInsets();
   const tabBarHeight = useTabBarHeight();
   const [crew, setCrew] = useState<CrewMember[]>([]);
   const [inviteCode, setInviteCode] = useState<string | null>(null);
@@ -65,16 +64,20 @@ export default function CrewScreen({ device }: { device: Device }) {
   return (
     <View style={styles.screen}>
       <StatusBar style="light" />
-      <View style={[styles.header, { paddingTop: insets.top + space.lg }]}>
-        <Text style={styles.title} accessibilityRole="header">Crew</Text>
-        <Text style={styles.headerMeta}>
-          {device.ranchName} · {crew.length} {crew.length === 1 ? 'hand' : 'hands'}
-        </Text>
-      </View>
+      <FieldHeader
+        eyebrow={device.ranchName.toUpperCase()}
+        title="Crew"
+        stats={[
+          { value: String(crew.length), label: crew.length === 1 ? 'Hand' : 'Hands' },
+          { value: String(crew.filter((m) => m.lastOut && Date.now() - m.lastOut < 86_400_000).length), label: 'Out today' },
+          { value: String(crew.reduce((sum, m) => sum + m.logged, 0)), label: 'Logged' },
+        ]}
+      />
 
       <ScrollView contentContainerStyle={[styles.list, { paddingBottom: tabBarHeight + space.xl }]}>
+        {/* Ear-tag yellow, so the code reads like the tag it's named after */}
         <View style={styles.invite}>
-          <Text style={styles.inviteLabel}>Invite a hand</Text>
+          <Text style={styles.inviteLabel}>INVITE A HAND</Text>
           <Text style={styles.code} selectable accessibilityLabel={inviteCode ? `Invite code ${inviteCode.split('').join(' ')}` : undefined}>
             {inviteCode ?? '—'}
           </Text>
@@ -118,25 +121,22 @@ export default function CrewScreen({ device }: { device: Device }) {
 const styles = StyleSheet.create({
   screen: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, backgroundColor: colors.background },
   flex: { flex: 1, gap: 2 },
-  header: { backgroundColor: colors.chrome, paddingHorizontal: space.lg, paddingBottom: 18, gap: 6 },
-  title: { fontFamily: fonts.displayBlack, fontSize: 44, lineHeight: 44, color: colors.chromeText },
-  headerMeta: { fontSize: 14, color: colors.chromeTextMuted },
-  list: { paddingHorizontal: 12, paddingTop: 14, gap: 10 },
-  invite: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: 14, padding: space.lg, gap: space.sm },
-  inviteLabel: { fontSize: 13, fontWeight: '800', letterSpacing: 1, color: colors.textMuted },
-  code: { fontFamily: fonts.displayBlack, fontSize: 48, lineHeight: 50, letterSpacing: 2, color: colors.text },
-  inviteHint: { fontSize: 14, color: colors.textMuted, marginBottom: space.xs },
+  list: { paddingHorizontal: 14, paddingTop: 16, gap: 12 },
+  invite: { backgroundColor: palette.harvest, borderRadius: 18, padding: space.lg, gap: space.sm },
+  inviteLabel: { fontFamily: fonts.display, fontSize: 16, letterSpacing: 2.4, color: palette.pine },
+  code: { fontFamily: fonts.displayBlack, fontSize: 60, lineHeight: 62, letterSpacing: 3, color: palette.pine },
+  inviteHint: { fontSize: 15, fontWeight: '600', color: palette.pine, marginBottom: space.xs },
   empty: { fontSize: 15, color: colors.textMuted, paddingHorizontal: 4 },
   member: {
-    minHeight: 64, backgroundColor: colors.surface, borderWidth: 1, borderColor: 'rgba(23, 27, 24, 0.14)', borderRadius: 12,
-    padding: 12, flexDirection: 'row', alignItems: 'center', gap: 12,
+    minHeight: 76, backgroundColor: colors.surface, borderRadius: 16, borderBottomWidth: 2, borderBottomColor: 'rgba(23, 27, 24, 0.1)',
+    padding: 12, flexDirection: 'row', alignItems: 'center', gap: 14,
   },
-  avatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: palette.sky, alignItems: 'center', justifyContent: 'center' },
+  avatar: { width: 52, height: 52, borderRadius: 26, backgroundColor: palette.sky, alignItems: 'center', justifyContent: 'center' },
   avatarMe: { backgroundColor: palette.leather },
-  avatarText: { color: palette.white, fontSize: 16, fontWeight: '800' },
+  avatarText: { color: palette.white, fontFamily: fonts.displayBlack, fontSize: 22 },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
-  name: { fontSize: 17, fontWeight: '700', color: colors.text },
+  name: { fontFamily: fonts.display, fontSize: 24, lineHeight: 26, color: colors.text },
   you: { fontSize: 11, fontWeight: '800', letterSpacing: 0.5, color: palette.white, backgroundColor: palette.leather, borderRadius: 4, overflow: 'hidden', paddingHorizontal: 6, paddingVertical: 1 },
   role: { fontSize: 11, fontWeight: '800', letterSpacing: 0.5, color: colors.textMuted, borderWidth: 1, borderColor: colors.border, borderRadius: 4, paddingHorizontal: 6, paddingVertical: 1 },
-  meta: { fontSize: 13, color: colors.textMuted },
+  meta: { fontSize: 14, color: colors.textMuted },
 });

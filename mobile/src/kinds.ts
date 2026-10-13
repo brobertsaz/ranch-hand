@@ -73,6 +73,16 @@ export function initialStatus(kind: Kind, picks: string[]): ObservationStatus {
 
 export const STATUS_LABEL: Record<ObservationStatus, string> = { open: 'OPEN', resolved: 'RESOLVED', ok: 'ALL CLEAR' };
 
+// The other way: "Limping, Off feed — by the creek" back into the picks and the free text, for showing picks as chips
+export function splitNote(kind: Kind, note: string | null): { picks: string[]; extra: string | null } {
+  if (!note) return { picks: [], extra: null };
+  const [first, ...rest] = note.split(' — ');
+  const options = new Set(CONDITIONS[kind].options);
+  const parts = first.split(', ');
+  if (!parts.every((part) => options.has(part))) return { picks: [], extra: note };
+  return { picks: parts, extra: rest.join(' — ') || null };
+}
+
 export function composeNote(picks: string[], extra: string): string | null {
   const text = [picks.join(', '), extra.trim()].filter(Boolean).join(' — ');
   return text || null;

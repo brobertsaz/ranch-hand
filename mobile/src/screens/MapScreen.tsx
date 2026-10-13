@@ -578,7 +578,7 @@ export default function MapScreen({ device, onSignOut }: Props) {
   return (
     <View style={styles.screen}>
       <StatusBar style="light" />
-      <Map key={mapKey} ref={map} style={StyleSheet.absoluteFill} mapStyle={mapStyleUrl(device)} logo={false}
+      <Map key={mapKey} ref={map} androidView="texture" style={StyleSheet.absoluteFill} mapStyle={mapStyleUrl(device)} logo={false}
         onPress={() => {
           setFiltersOpen(false);
           if (Date.now() - pinPressedAt.current > 500) setSelectedId(null);
@@ -820,7 +820,7 @@ export default function MapScreen({ device, onSignOut }: Props) {
         <RidesScreen memberId={device.memberId} riding={!!ride} onStart={beginRide} onBackToRide={() => setTab('map')} onShowRide={showRide} />
       )}
       {tab === 'new' && (
-        <NewsScreen memberId={device.memberId} sync={syncState} onOpenObservation={openDetail} onShowRide={showRide} />
+        <NewsScreen memberId={device.memberId} ranchName={device.ranchName} sync={syncState} onOpenObservation={openDetail} onShowRide={showRide} />
       )}
       {tab === 'crew' && <CrewScreen device={device} />}
 
