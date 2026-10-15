@@ -161,6 +161,8 @@ section + section { border-top: 1px solid var(--line); }
 /* Places that remember */
 .split { display: grid; grid-template-columns: 0.9fr 1.1fr; gap: 64px; align-items: center; }
 .split > * { min-width: 0; }
+.film { width: min(360px, 100%); aspect-ratio: 9 / 16; justify-self: center; border-radius: 22px; overflow: hidden; background: #050806; box-shadow: 0 30px 60px -30px rgba(0,0,0,0.6); }
+.film video { display: block; width: 100%; height: 100%; object-fit: cover; }
 .kinds { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 30px; }
 .kind { display: inline-flex; align-items: center; gap: 9px; padding: 8px 14px 8px 8px; border-radius: 999px; background: var(--surface); border: 1px solid var(--line); font-weight: 600; font-size: 0.95rem; }
 .kind i { width: 28px; height: 28px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 1px var(--line); flex: none; display: grid; place-items: center; color: #fff; }
@@ -360,6 +362,20 @@ footer.site .brand svg { width: 26px; height: 28px; }
 </div>
 
 <main>
+  <section aria-labelledby="watch-h">
+    <div class="wrap split">
+      <div class="sec-head">
+        <p class="eyebrow">42 seconds</p>
+        <h2 id="watch-h">Watch Tag 1147 get pinned, synced and found again</h2>
+        <p class="lede">One hand pins her in the brush with no signal. Back in range the crew has it, and whoever rides out next goes straight to her.</p>
+      </div>
+      <div class="film">
+        <video controls playsinline preload="none" poster="img/launch-poster.jpg" width="720" height="1280" aria-label="Ranch Hand launch video">
+          <source src="img/launch.mp4" type="video/mp4">
+        </video>
+      </div>
+    </div>
+  </section>
   <section aria-labelledby="flow-h">
     <div class="wrap">
       <div class="sec-head">
