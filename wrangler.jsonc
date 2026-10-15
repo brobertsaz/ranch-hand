@@ -3,5 +3,8 @@
   "name": "ranch-hand-site",
   "compatibility_date": "2026-10-01",
   "assets": { "directory": "./site" },
-  "workers_dev": true
+  "routes": [
+    { "pattern": "getranchhand.com", "custom_domain": true },
+    { "pattern": "www.getranchhand.com", "custom_domain": true }
+  ]
 }
