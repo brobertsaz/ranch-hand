@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Sign-ups · Ranch Hand</title>
+  <style>
+    :root { --bg: #F5EFE0; --card: #FFFDF7; --ink: #101713; --muted: #4F554F; --line: #E2D9C4; --pine: #101713; --harvest: #E3A33B; }
+    @media (prefers-color-scheme: dark) { :root { --bg: #0B100D; --card: #18201B; --ink: #F5EFE0; --muted: #A8ADA3; --line: #2A332D; } }
+    body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.4 system-ui, sans-serif; }
+    header { background: var(--pine); color: #F5EFE0; padding: 28px 16px 20px; }
+    header p { margin: 0; color: var(--harvest); font-weight: 800; letter-spacing: 0.14em; font-size: 0.8rem; }
+    h1 { margin: 6px 0 0; font-size: 2.4rem; line-height: 1; text-transform: uppercase; }
+    main { max-width: 860px; margin: 0 auto; padding: 16px; display: grid; gap: 10px; }
+    .row { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; display: grid; gap: 2px; }
+    .row b { font-size: 1.1rem; }
+    .row a { color: inherit; }
+    .row small { color: var(--muted); }
+    .empty { color: var(--muted); }
+  </style>
+</head>
+<body>
+  <header>
+    <p>RANCH HAND · EARLY ACCESS</p>
+    <h1><%= pluralize(@signups.size, "sign-up") %></h1>
+  </header>
+  <main>
+    <% if @signups.empty? %>
+      <p class="empty">Nobody yet. Sign-ups from getranchhand.com show up here, newest first.</p>
+    <% end %>
+    <% @signups.each do |signup| %>
+      <div class="row">
+        <b><%= signup.name %></b>
+        <a href="mailto:<%= signup.email %>"><%= signup.email %></a>
+        <small><%= [signup.state.presence, signup.head_count.presence && "#{signup.head_count} head", signup.rides.presence && "rides #{signup.rides}"].compact.join(" · ") %></small>
+        <small><%= signup.created_at.in_time_zone("America/Chicago").strftime("%b %-d, %Y · %-I:%M %p") %></small>
+      </div>
+    <% end %>
+  </main>
+</body>
+</html>
