@@ -1,0 +1,7 @@
+// The landing page (site/) as static assets on Cloudflare. Deploy with: npx wrangler deploy
+{
+  "name": "ranch-hand-site",
+  "compatibility_date": "2026-10-01",
+  "assets": { "directory": "./site" },
+  "workers_dev": true
+}
