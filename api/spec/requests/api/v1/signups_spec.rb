@@ -24,4 +24,14 @@ RSpec.describe "Signups", type: :request do
     expect(response).to have_http_status(:unprocessable_content)
     expect(Signup.count).to eq(0)
   end
+
+  it "lets the landing page on getranchhand.com post across origins, and no other site" do
+    preflight = ->(origin) { process :options, "/api/v1/signups", headers: { "Origin" => origin, "Access-Control-Request-Method" => "POST" } }
+
+    preflight.call("https://getranchhand.com")
+    expect(response.headers["Access-Control-Allow-Origin"]).to eq("https://getranchhand.com")
+
+    preflight.call("https://example.com")
+    expect(response.headers["Access-Control-Allow-Origin"]).to be_nil
+  end
 end
