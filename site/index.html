@@ -574,7 +574,7 @@ footer.site .brand svg { width: 26px; height: 28px; }
           <div class="row"><label for="email">Email</label><input id="email" name="email" type="email" autocomplete="email" inputmode="email" required></div>
           <div class="row"><label for="state">State</label><input id="state" name="state" autocomplete="address-level1" placeholder="Wyoming"></div>
           <div class="row"><label for="head">About how many head?</label>
-            <select id="head" name="head">
+            <select id="head" name="head_count">
               <option value="">Pick one</option>
               <option value="under-100">Under 100</option>
               <option value="100-499">100 to 499</option>
@@ -652,9 +652,9 @@ footer.site .brand svg { width: 26px; height: 28px; }
   window.addEventListener("resize", () => { clearTimeout(timer); timer = setTimeout(draw, 120); });
 })();
 
-// Sign-up form. Set WAITLIST_ENDPOINT to the Rails API's sign-up route once the page is hosted.
-// Left empty, the form checks the fields and shows the thank-you message without sending anything.
-const WAITLIST_ENDPOINT = "";
+// Sign-up form. Posts to the Rails API (Api::V1::SignupsController); on getranchhand.com that is cross-origin, so the API allows it in config/initializers/cors.rb.
+// Left empty (as in a preview), the form checks the fields and shows the thank-you message without sending anything.
+const WAITLIST_ENDPOINT = "https://ranch.thebob.dev/api/v1/signups";
 
 const form = document.getElementById("waitlist");
 const err = document.getElementById("err");
