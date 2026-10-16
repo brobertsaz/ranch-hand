@@ -239,6 +239,14 @@ section + section { border-top: 1px solid var(--line); }
 .date { font-family: var(--font-display); font-weight: 900; font-size: clamp(4rem, 11vw, 7rem); line-height: 0.82; text-transform: uppercase; color: var(--trail-dark); }
 .test p { color: var(--muted); max-width: 54ch; margin-top: 14px; }
 
+.who { display: grid; grid-template-columns: auto 1fr; gap: 40px; align-items: start; }
+.who > * { min-width: 0; }
+.mono { width: 112px; height: 112px; border-radius: 50%; background: var(--pine); border: 2px solid var(--harvest); color: var(--harvest); display: grid; place-items: center; font: 900 2.6rem/1 var(--font-display); letter-spacing: 0.02em; }
+.who p { color: var(--muted); max-width: 60ch; margin-top: 14px; }
+.who .mail { display: inline-block; margin-top: 22px; font: 600 1.15rem var(--font-body); color: var(--ink); text-decoration: none; border-bottom: 2px solid var(--trail); padding-bottom: 2px; }
+.who .mail:hover { color: var(--trail-dark); }
+footer.site a { color: var(--on-pine); }
+
 .join { background: var(--bg-deep); }
 .join-grid { display: grid; grid-template-columns: 0.8fr 1.2fr; gap: 56px; align-items: start; }
 .join-grid > * { min-width: 0; }
@@ -280,6 +288,8 @@ footer.site .brand svg { width: 26px; height: 28px; }
   section { padding-block: 72px; }
   .flow { grid-template-columns: 1fr; }
   .test { grid-template-columns: 1fr; gap: 18px; }
+  .who { grid-template-columns: 1fr; gap: 22px; }
+  .mono { width: 84px; height: 84px; font-size: 2rem; }
   .next { grid-template-columns: 1fr; gap: 14px; padding: 24px; }
   form { grid-template-columns: 1fr; padding: 22px; }
   .choices { grid-template-columns: 1fr; }
@@ -505,6 +515,20 @@ footer.site .brand svg { width: 26px; height: 28px; }
     </div>
   </section>
 
+  <section aria-labelledby="who-h">
+    <div class="wrap who">
+      <div class="mono" aria-hidden="true">BR</div>
+      <div>
+        <p class="eyebrow">Who's building this</p>
+        <h2 id="who-h" style="margin-top:12px">One builder, and the ranches on the list</h2>
+        <p>I'm Bob Roberts, a senior software developer who has spent years building and shipping web apps. Ranch Hand is built for the hardest place to use software: no signal, gloves on, and no time for an app that gets in the way.</p>
+        <p>It's a small, focused tool, offline-first from day one, built on open maps so a ranch's pins aren't locked into anybody's platform. It rides out on a working Wyoming ranch in June 2027, and what the hands there say decides what gets built next.</p>
+        <p>If something on your place gets lost between the pasture and the house, I'd like to hear about it. Email comes straight to me.</p>
+        <a class="mail" href="mailto:bob@getranchhand.com">bob@getranchhand.com</a>
+      </div>
+    </div>
+  </section>
+
   <section class="join" id="join" aria-labelledby="join-h">
     <div class="wrap join-grid">
       <div>
@@ -554,7 +578,7 @@ footer.site .brand svg { width: 26px; height: 28px; }
 <footer class="site">
   <div class="wrap">
     <span class="brand"><svg aria-hidden="true"><use href="#tag"/></svg>Ranch Hand</span>
-    <span>Made for working ranches · Field-tested in Wyoming</span>
+    <span>Made for working ranches · Field-tested in Wyoming · <a href="mailto:bob@getranchhand.com">bob@getranchhand.com</a></span>
   </div>
 </footer>
 
