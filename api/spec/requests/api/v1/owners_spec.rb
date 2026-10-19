@@ -16,7 +16,7 @@ RSpec.describe "Owners", type: :request do
     expect(owner).to have_attributes(role: "owner", name: "Bob Roberts", email: "bob@example.com", google_sub: "google-123")
     expect(owner.ranch).to have_attributes(name: "Bar T", hand_limit: 3)
     expect(owner.ranch.invite_code).to match(/\A[A-Z2-9]{6}\z/)
-    expect(json).to eq("token" => owner.device_token, "member_id" => owner.id.to_s, "ranch" => { "id" => owner.ranch_id.to_s, "name" => "Bar T" })
+    expect(json).to eq("token" => owner.device_token, "member_id" => owner.id.to_s, "ranch" => { "id" => owner.ranch_id.to_s, "name" => "Bar T", "headquarters" => nil })
   end
 
   it "names the ranch after the owner when they leave it blank" do

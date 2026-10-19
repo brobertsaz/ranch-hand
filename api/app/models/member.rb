@@ -13,7 +13,7 @@ class Member < ApplicationRecord
 
   # What a phone keeps after joining or signing in: its token, who it is, and which ranch
   def device_json
-    { token: device_token, member_id: id.to_s, ranch: { id: ranch.id.to_s, name: ranch.name } }
+    { token: device_token, member_id: id.to_s, ranch: { id: ranch.id.to_s, name: ranch.name, headquarters: ranch.headquarters } }
   end
 
   # Read-only on the phone: names for "Jess logged this", never pushed back

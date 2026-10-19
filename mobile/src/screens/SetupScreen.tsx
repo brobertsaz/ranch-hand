@@ -5,13 +5,14 @@ import { BackHandler, KeyboardAvoidingView, Pressable, ScrollView, StyleSheet, T
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
 
-import { ApiError, joinRanch, startRanch } from '../api';
+import { ApiError, joinRanch, startRanch, type Joined } from '../api';
 import AppButton from '../components/AppButton';
 import GoogleMark from '../components/GoogleMark';
 import Icon from '../components/Icon';
 import Logo from '../components/Logo';
 import { canStartRanch, googleIdToken } from '../google';
 import { DEFAULT_API_URL, saveDevice, type Device } from '../settings';
+import HeadquartersScreen from './HeadquartersScreen';
 import { colors, fonts, palette, radius, space, touch } from '../theme';
 
 // Matches Ranch#hand_limit's default on the server.
@@ -33,6 +34,8 @@ export default function SetupScreen({ onJoined }: { onJoined: (device: Device) =
   const [name, setName] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // A new owner, signed in but not on the map yet: they set headquarters first
+  const [placing, setPlacing] = useState<Device | null>(null);
 
   // Android's back button steps back to the two choices instead of closing the app
   useEffect(() => {
@@ -49,8 +52,11 @@ export default function SetupScreen({ onJoined }: { onJoined: (device: Device) =
     setMode(next);
   }
 
-  async function finish(url: string, result: Awaited<ReturnType<typeof joinRanch>>) {
-    const device = { apiUrl: url, token: result.token, memberId: result.member_id, ranchName: result.ranch.name };
+  function toDevice(url: string, result: Joined): Device {
+    return { apiUrl: url, token: result.token, memberId: result.member_id, ranchName: result.ranch.name };
+  }
+
+  async function finish(device: Device) {
     await saveDevice(device);
     onJoined(device);
   }
@@ -62,7 +68,10 @@ export default function SetupScreen({ onJoined }: { onJoined: (device: Device) =
       const idToken = await googleIdToken();
       if (!idToken) return;
       const url = serverUrl();
-      await finish(url, await startRanch(url, idToken, ranchName.trim()));
+      const result = await startRanch(url, idToken, ranchName.trim());
+      // A returning owner who already set headquarters goes straight to the map
+      if (result.ranch.headquarters) await finish(toDevice(url, result));
+      else setPlacing(toDevice(url, result));
     } catch (e) {
       if (isErrorWithCode(e) && e.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
         setError('Google sign-in needs Google Play services on this phone.');
@@ -81,7 +90,7 @@ export default function SetupScreen({ onJoined }: { onJoined: (device: Device) =
     setError(null);
     try {
       const url = serverUrl();
-      await finish(url, await joinRanch(url, inviteCode, name.trim()));
+      await finish(toDevice(url, await joinRanch(url, inviteCode, name.trim())));
     } catch (e) {
       setError(
         e instanceof ApiError
@@ -96,6 +105,8 @@ export default function SetupScreen({ onJoined }: { onJoined: (device: Device) =
       setBusy(false);
     }
   }
+
+  if (placing) return <HeadquartersScreen device={placing} onDone={() => finish(placing)} />;
 
   function serverUrl() {
     return apiUrl.trim().replace(/\/+$/, '');

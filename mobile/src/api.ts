@@ -21,7 +21,9 @@ async function request<T>(device: Pick<Device, 'apiUrl'> & Partial<Device>, path
   return (response.status === 204 ? undefined : await response.json()) as T;
 }
 
-type Joined = { token: string; member_id: string; ranch: { id: string; name: string } };
+export type Headquarters = { lat: number; lng: number };
+
+export type Joined = { token: string; member_id: string; ranch: { id: string; name: string; headquarters: Headquarters | null } };
 
 // 403 means the ranch already has as many hands as its plan allows
 export function joinRanch(apiUrl: string, inviteCode: string, name: string) {
@@ -50,7 +52,15 @@ export function pushChanges(device: Device, changes: Changes) {
 }
 
 export function fetchRanch(device: Device) {
-  return request<{ id: string; name: string; invite_code: string; hand_count: number; hand_limit: number }>(device, '/api/v1/ranch');
+  return request<{ id: string; name: string; invite_code: string; hand_count: number; hand_limit: number; headquarters: Headquarters | null }>(device, '/api/v1/ranch');
+}
+
+// Owner only. The server also sharpens about a mile around it, unless a sharp area already covers it.
+export function setHeadquarters(device: Device, { lat, lng }: Headquarters) {
+  return request<{ headquarters: Headquarters; map_area_id: string | null }>(device, '/api/v1/ranch', {
+    method: 'PATCH',
+    body: JSON.stringify({ headquarters: { lat, lng } }),
+  });
 }
 
 export type MapArea = {

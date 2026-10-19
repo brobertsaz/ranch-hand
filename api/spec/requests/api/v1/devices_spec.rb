@@ -9,7 +9,7 @@ RSpec.describe "Devices", type: :request do
     expect(response).to have_http_status(:created)
     member = ranch.members.sole
     expect(json).to include("token" => member.device_token, "member_id" => member.id.to_s)
-    expect(json["ranch"]).to eq("id" => ranch.id.to_s, "name" => "Bob's Ranch")
+    expect(json["ranch"]).to eq("id" => ranch.id.to_s, "name" => "Bob's Ranch", "headquarters" => nil)
   end
 
   it "turns away a fourth hand on the free plan" do
