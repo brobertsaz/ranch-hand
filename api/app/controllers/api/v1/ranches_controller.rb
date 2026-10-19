@@ -11,10 +11,12 @@ module Api
         return head :forbidden unless current_member.owner?
 
         headquarters = params.require(:headquarters)
-        area = current_ranch.place_headquarters!(lat: Float(headquarters.require(:lat)), lng: Float(headquarters.require(:lng)))
+        area = current_ranch.place_headquarters!(
+          lat: Float(headquarters.require(:lat)), lng: Float(headquarters.require(:lng)), miles: Integer(headquarters.fetch(:miles, 3))
+        )
         render json: ranch_json.merge(map_area_id: area&.id&.to_s)
       rescue ArgumentError, TypeError
-        render json: { error: "Headquarters must be numbers" }, status: :unprocessable_content
+        render json: { error: "Headquarters needs a lat, lng and one of #{Ranch::HEADQUARTERS_MILES.join(", ")} miles" }, status: :unprocessable_content
       end
 
       private

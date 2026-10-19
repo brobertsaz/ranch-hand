@@ -45,6 +45,15 @@ RSpec.describe "Map areas", type: :request do
     expect(MapArea.count).to eq(0)
   end
 
+  it "estimates so many miles around a point, for the headquarters screen" do
+    get "/api/v1/map_areas/new", params: { lat: 43.0, lng: -89.4, miles: 3 }, headers: auth_headers(member)
+
+    expect(response).to have_http_status(:ok)
+    expect(json).to include("source_name" => "Wisconsin leaf-off", "max_zoom" => 19)
+    expect(json["estimated_megabytes"]).to eq((json["estimated_tiles"] * MapArea::KILOBYTES_PER_TILE / 1000.0).ceil)
+    expect(json["estimated_tiles"]).to be_between(9_000, 11_000)
+  end
+
   it "names an unnamed area" do
     post "/api/v1/map_areas", params: { map_area: { west: -89.46, south: 43.0, east: -89.45, north: 43.01 } }, headers: auth_headers(member)
 

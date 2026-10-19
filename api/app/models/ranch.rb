@@ -8,8 +8,8 @@ class Ranch < ApplicationRecord
 
   # No 0/O or 1/I, so a code read over the phone or off a whiteboard comes through right
   INVITE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789".chars.freeze
-  # Headquarters gets sharp imagery about a mile across (this far each way), before MapArea's own margin
-  HEADQUARTERS_REACH_METERS = 800
+  # How many miles across the owner can have sharpened around headquarters; 3 is preselected
+  HEADQUARTERS_MILES = [ 1, 3, 5 ].freeze
 
   before_validation :assign_invite_code, on: :create
 
@@ -24,22 +24,23 @@ class Ranch < ApplicationRecord
 
   def headquarters = hq_lat && { lat: hq_lat, lng: hq_lng }
 
-  # Moves the pin, and sharpens around it unless an area already covers it. Returns the new area, if any.
-  def place_headquarters!(lat:, lng:)
+  # Moves the pin, and sharpens that many miles around it unless one working area already covers all of it.
+  # Returns the new area, if any.
+  def place_headquarters!(lat:, lng:, miles: 3)
+    raise ArgumentError, "miles must be one of #{HEADQUARTERS_MILES.join(", ")}" unless HEADQUARTERS_MILES.include?(miles)
+
+    box = MapArea.around(lng:, lat:, miles:)
     area = transaction do
       update!(hq_lat: lat, hq_lng: lng)
-      sharpen_headquarters unless map_areas.where.not(status: :failed).any? { |existing| existing.covers?(lng:, lat:) }
+      unless map_areas.where.not(status: :failed).any? { |existing| existing.covers?(**box) }
+        map_areas.create!(name: "Headquarters", source: MapArea.source_for(**box).key, **box)
+      end
     end
     RenderMapAreaJob.perform_later(area) if area
     area
   end
 
   private
-
-  def sharpen_headquarters
-    box = MapArea.padded(west: hq_lng, south: hq_lat, east: hq_lng, north: hq_lat, margin: HEADQUARTERS_REACH_METERS + MapArea::MARGIN_METERS)
-    map_areas.create!(name: "Headquarters", source: MapArea.source_for(**box).key, **box)
-  end
 
   def assign_invite_code
     self.invite_code ||= loop do

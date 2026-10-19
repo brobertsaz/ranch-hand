@@ -55,12 +55,16 @@ export function fetchRanch(device: Device) {
   return request<{ id: string; name: string; invite_code: string; hand_count: number; hand_limit: number; headquarters: Headquarters | null }>(device, '/api/v1/ranch');
 }
 
-// Owner only. The server also sharpens about a mile around it, unless a sharp area already covers it.
-export function setHeadquarters(device: Device, { lat, lng }: Headquarters) {
+// Owner only. The server also sharpens a square that many miles across around it, unless a sharp area already covers it.
+export function setHeadquarters(device: Device, { lat, lng }: Headquarters, miles: number) {
   return request<{ headquarters: Headquarters; map_area_id: string | null }>(device, '/api/v1/ranch', {
     method: 'PATCH',
-    body: JSON.stringify({ headquarters: { lat, lng } }),
+    body: JSON.stringify({ headquarters: { lat, lng, miles } }),
   });
+}
+
+export function estimateAround(device: Device, { lat, lng }: Headquarters, miles: number) {
+  return request<SharpenEstimate>(device, `/api/v1/map_areas/new?lat=${lat}&lng=${lng}&miles=${miles}`);
 }
 
 export type MapArea = {
@@ -80,7 +84,7 @@ export type MapArea = {
   max_zoom: number;
 };
 
-export type SharpenEstimate = { source_name: string; max_zoom: number; estimated_tiles: number; estimated_minutes: number };
+export type SharpenEstimate = { source_name: string; max_zoom: number; estimated_tiles: number; estimated_megabytes: number; estimated_minutes: number };
 
 export function estimateSharpening(device: Device, [west, south, east, north]: [number, number, number, number]) {
   return request<SharpenEstimate>(device, `/api/v1/map_areas/new?west=${west}&south=${south}&east=${east}&north=${north}`);
