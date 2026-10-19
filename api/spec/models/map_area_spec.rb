@@ -1,6 +1,19 @@
 require "rails_helper"
 
 RSpec.describe MapArea do
+  include ActiveJob::TestHelper
+
+  it "restarts renders a restart cut off, and leaves finished ones alone" do
+    stuck = create(:map_area, status: :rendering, tile_count: 3100)
+    waiting = create(:map_area, status: :pending)
+    create(:map_area, status: :ready)
+    create(:map_area, status: :failed)
+
+    expect { described_class.resume_unfinished }.to have_enqueued_job(RenderMapAreaJob).exactly(2).times
+    expect(RenderMapAreaJob).to have_been_enqueued.with(stuck)
+    expect(RenderMapAreaJob).to have_been_enqueued.with(waiting)
+  end
+
   it "pads a box by about 400 m on every side" do
     padded = described_class.padded(west: -89.46, south: 43.0, east: -89.45, north: 43.01)
 

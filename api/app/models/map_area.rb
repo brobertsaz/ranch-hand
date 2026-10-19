@@ -29,6 +29,9 @@ class MapArea < ApplicationRecord
   # A square this many miles across, centered on a point. The margin is already in it.
   def self.around(lng:, lat:, miles:) = padded(west: lng, south: lat, east: lng, north: lat, margin: miles * METERS_PER_MILE / 2)
 
+  # Renders run inside the web process, so a restart stops them. This starts them again; they skip stored tiles.
+  def self.resume_unfinished = where(status: %i[pending rendering]).find_each { |area| RenderMapAreaJob.perform_later(area) }
+
   # The state imagery the area sits in, or NAIP; picked by its center when it's made
   def self.source_for(west:, south:, east:, north:) = ImagerySource.for(lng: (west + east) / 2, lat: (south + north) / 2)
 
