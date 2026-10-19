@@ -334,17 +334,17 @@ footer.site .brand svg { width: 26px; height: 28px; }
   <div class="wrap">
     <header class="top">
       <a class="brand" href="#"><svg aria-hidden="true"><use href="#tag"/></svg>Ranch Hand</a>
-      <a class="link" href="#join">Get early access</a>
+      <a class="link" href="#join">Join the beta</a>
     </header>
 
     <div class="hero-grid">
       <div>
-        <p class="eyebrow">Find it, pin it, someone else fixes it</p>
+        <p class="eyebrow">Android beta testers wanted</p>
         <h1>Mark it once. <span class="tag">Anyone can find it.</span></h1>
         <p class="lede">Out in the brush you almost have to step on a sick calf to find it again. Snap it and pin it in seconds, even with no signal. Whoever rides out next gets the photo and an arrow straight to it, and the owner sees what the crew found today and what's still open.</p>
         <div class="actions">
-          <a class="btn" href="#join">Put my ranch on the list</a>
-          <span class="note">Free for crews of up to 3. Bigger crews: $19.99 a month per ranch, any size. iPhone and Android.</span>
+          <a class="btn" href="#join">Join the Android beta</a>
+          <span class="note">Free for up to 3 working hands. Bigger crews: $19.99 a month per ranch, any size. Android now, iPhone next.</span>
         </div>
         <div class="proof">
           <span><b>Under 10 s</b> to pin it</span>
@@ -500,9 +500,9 @@ footer.site .brand svg { width: 26px; height: 28px; }
   <section class="join" id="join" aria-labelledby="join-h">
     <div class="wrap join-grid">
       <div>
-        <p class="eyebrow">Early access</p>
-        <h2 id="join-h" style="margin-top:12px">Put your ranch on the list</h2>
-        <p class="lede">Five quick questions. We'll reach out before the spring beta, and founding ranches keep their early price for as long as they stay.</p>
+        <p class="eyebrow">Android beta</p>
+        <h2 id="join-h" style="margin-top:12px">Test it on your ranch</h2>
+        <p class="lede">Six quick questions. Android crews get a Play Store test link as soon as the beta opens; iPhone crews hear from us first when it's ready. Founding ranches keep their early price for as long as they stay.</p>
       </div>
 
       <div>
@@ -527,16 +527,24 @@ footer.site .brand svg { width: 26px; height: 28px; }
               <label class="choice"><input type="radio" name="rides" id="rides-both" value="both">Both</label>
             </div>
           </fieldset>
+          <fieldset class="row full">
+            <legend>What phones does your crew carry?</legend>
+            <div class="choices">
+              <label class="choice"><input type="radio" name="phone" id="phone-android" value="android">Android</label>
+              <label class="choice"><input type="radio" name="phone" id="phone-iphone" value="iphone">iPhone</label>
+              <label class="choice"><input type="radio" name="phone" id="phone-both" value="both">Both</label>
+            </div>
+          </fieldset>
           <div class="form-foot">
-            <button class="btn" type="submit">Join the list</button>
+            <button class="btn" type="submit">Sign me up</button>
             <span class="fine">We only use your email to reach you about Ranch Hand.</span>
             <span id="err" class="error" role="alert" hidden></span>
           </div>
         </form>
         <div id="thanks" class="thanks" hidden>
           <span class="dot"></span>
-          <h3>You're on the list</h3>
-          <p>Thanks. We'll be in touch before the spring beta.</p>
+          <h3>You're in</h3>
+          <p id="thanks-note">Thanks. We'll email you a Play Store test link for Android.</p>
         </div>
       </div>
     </div>
@@ -622,6 +630,10 @@ form.addEventListener("submit", async (e) => {
       err.hidden = false;
       return;
     }
+  }
+  // Android (or both) can test now; iPhone-only crews wait for the iPhone build
+  if (form.elements.phone.value === "iphone") {
+    document.getElementById("thanks-note").textContent = "Thanks. We'll tell you as soon as the iPhone version is ready.";
   }
   form.hidden = true;
   thanks.hidden = false;
