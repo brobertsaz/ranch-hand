@@ -47,6 +47,22 @@ RSpec.describe "Ranch", type: :request do
       expect((area.north - area.south) * MapArea::METERS_PER_DEGREE).to be_within(10).of(5 * MapArea::METERS_PER_MILE)
     end
 
+    it "doesn't sharpen again when the pin moves a few yards" do
+      patch "/api/v1/ranch", params: { headquarters: { lat: 43.0, lng: -89.4 } }, headers: auth_headers(owner), as: :json
+
+      expect {
+        patch "/api/v1/ranch", params: { headquarters: { lat: 43.00007, lng: -89.40008 } }, headers: auth_headers(owner), as: :json
+      }.not_to have_enqueued_job(RenderMapAreaJob)
+      expect(ranch.map_areas.count).to eq(1)
+    end
+
+    it "sharpens again when the owner picks a bigger square" do
+      patch "/api/v1/ranch", params: { headquarters: { lat: 43.0, lng: -89.4, miles: 3 } }, headers: auth_headers(owner), as: :json
+      patch "/api/v1/ranch", params: { headquarters: { lat: 43.0, lng: -89.4, miles: 5 } }, headers: auth_headers(owner), as: :json
+
+      expect(ranch.map_areas.count).to eq(2)
+    end
+
     it "still sharpens when an existing area covers the pin but not the whole box" do
       create(:map_area, ranch:, west: -89.41, south: 42.99, east: -89.39, north: 43.01)
 
