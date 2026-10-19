@@ -10,6 +10,8 @@ const WEB_CLIENT_ID =
 // Owners start a ranch on Android only for now; iOS needs its own client and Sign in with Apple
 export const canStartRanch = Platform.OS === 'android';
 
+// shortcut: the free google-signin package uses Google's deprecated legacy Sign-In SDK on Android, upgrade to
+// Credential Manager (react-native-nitro-google-signin) before Google drops the legacy SDK
 // Null when they back out of Google's account picker
 export async function googleIdToken(): Promise<string | null> {
   GoogleSignin.configure({ webClientId: WEB_CLIENT_ID });

@@ -14,7 +14,8 @@ import { canStartRanch, googleIdToken } from '../google';
 import { DEFAULT_API_URL, saveDevice, type Device } from '../settings';
 import { colors, fonts, palette, radius, space, touch } from '../theme';
 
-// Matches Ranch#hand_limit's default on the server
+// Matches Ranch#hand_limit's default on the server.
+// shortcut: the "ranch is full" message assumes the free limit, upgrade to reading hand_limit from the 403 body once paid plans exist
 const FREE_HANDS = 3;
 
 type Mode = 'welcome' | 'start' | 'join';
