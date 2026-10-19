@@ -293,6 +293,11 @@ export default function MapScreen({ device, onSignOut }: Props) {
     });
   }
 
+  function showArea(area: MapArea) {
+    setLayersOpen(false);
+    camera.current?.fitBounds(areaBounds(area), { padding: { top: 220, right: 40, bottom: 200, left: 40 }, duration: 600 });
+  }
+
   function rideTitle(r: Ride): string {
     return r.name ?? (r.member_id === device.memberId ? 'Your ride' : `${who(names, r.member_id, device.memberId)}'s ride`);
   }
@@ -407,22 +412,32 @@ export default function MapScreen({ device, onSignOut }: Props) {
     return adding.noFix ? 'No GPS fix. Set it on the map instead.' : 'Getting a GPS fix…';
   }
 
-  // The sheet shows each area's render progress, so refetch when it opens and every few seconds while one is rendering
-  const rendering = areas.some((a) => a.status === 'pending' || a.status === 'rendering');
-  useEffect(() => {
-    if (!layersOpen) return;
-    const refresh = () =>
+  const refreshAreas = useCallback(
+    () =>
       fetchMapAreas(device)
         .then((list) => {
           setAreas(list);
           setState(AREAS_KEY, JSON.stringify(list));
         })
-        .catch(() => {});
+        .catch(() => {}), // no signal: keep the saved list
+    [device],
+  );
+
+  // Once when the map opens, since the owner may have just added areas on the headquarters screen
+  useEffect(() => {
+    refreshAreas();
+  }, [refreshAreas]);
+
+  // The sheet shows each area's render progress, so refetch when it opens and every few seconds while one is rendering
+  const rendering = areas.some((a) => a.status === 'pending' || a.status === 'rendering');
+  useEffect(() => {
+    if (!layersOpen) return;
+    const refresh = refreshAreas;
     refresh();
     if (!rendering) return;
     const timer = setInterval(refresh, 5000);
     return () => clearInterval(timer);
-  }, [layersOpen, device, rendering]);
+  }, [layersOpen, refreshAreas, rendering]);
 
   // An area that turned Ready, or was re-rendered, isn't in the style the map loaded, so reload it
   useEffect(() => {
@@ -594,6 +609,17 @@ export default function MapScreen({ device, onSignOut }: Props) {
         <GeoJSONSource id="wash" data={WORLD}>
           <Layer type="fill" id="wash" afterId={base === 'topo' ? 'topo' : 'aerial-top'} paint={base === 'topo' ? TOPO_WASH : AERIAL_WASH} />
         </GeoJSONSource>
+        {/* Where each sharp area is: a faint dashed outline, with its name on the top edge */}
+        <GeoJSONSource id="sharp-areas" data={areaOutlines(areas)}>
+          <Layer type="line" id="sharp-areas-line" paint={{ 'line-color': palette.canvas, 'line-width': 1.5, 'line-opacity': 0.7, 'line-dasharray': [3, 2] }} />
+        </GeoJSONSource>
+        {areas.map((area) => (
+          <Marker key={`area:${area.id}`} id={`area:${area.id}`} lngLat={[(area.west + area.east) / 2, area.north]} anchor="center" onPress={() => showArea(area)}>
+            <View style={styles.areaLabel} accessibilityLabel={`${area.name} sharp area`}>
+              <Text style={styles.areaLabelText} numberOfLines={1}>{area.name}</Text>
+            </View>
+          </Marker>
+        ))}
         <LocationDot />
         {shownRide && (
           <GeoJSONSource id="shown-ride" data={lineString(JSON.parse(shownRide.track) as LngLat[])}>
@@ -994,8 +1020,8 @@ export default function MapScreen({ device, onSignOut }: Props) {
             <Text style={styles.sheetTitle}>Sharp areas</Text>
             {areas.map((area) => (
               <View key={area.id} style={styles.areaRow}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.sheetText}>{area.name}</Text>
+                <Pressable onPress={() => showArea(area)} accessibilityRole="button" accessibilityHint="Shows it on the map" style={{ flex: 1 }}>
+                  <Text style={[styles.sheetText, styles.areaName]}>{area.name}</Text>
                   <Text style={styles.sheetHint}>
                     {describeArea(area)}
                     {savedAreas.has(savedKey(area)) ? ' · saved on this phone' : ''}
@@ -1005,7 +1031,7 @@ export default function MapScreen({ device, onSignOut }: Props) {
                       <View style={[styles.progressFill, { width: `${Math.min(100, (area.tile_count / Math.max(1, area.estimated_tiles)) * 100)}%` }]} />
                     </View>
                   )}
-                </View>
+                </Pressable>
                 {area.status === 'ready' && (
                   <AppButton
                     variant="secondary"
@@ -1151,6 +1177,15 @@ function PlacePeekCard({ waypoint, latest, photoUri, author, here, bottom, onPre
   );
 }
 
+function areaOutlines(areas: MapArea[]): GeoJSON.FeatureCollection<GeoJSON.LineString> {
+  return {
+    type: 'FeatureCollection',
+    features: areas.map(({ west, south, east, north }) =>
+      lineString([[west, south], [east, south], [east, north], [west, north], [west, south]]),
+    ),
+  };
+}
+
 function lineString(coordinates: LngLat[]): GeoJSON.Feature<GeoJSON.LineString> {
   return { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates } };
 }
@@ -1280,6 +1315,9 @@ const styles = StyleSheet.create({
   sheetClose: { width: touch.min, height: touch.min, marginRight: -space.md, alignItems: 'center', justifyContent: 'center' },
   sheetTitle: { fontFamily: fonts.display, fontSize: 26, color: colors.text },
   sheetText: { fontSize: 15, color: colors.text },
+  areaName: { fontWeight: '700', textDecorationLine: 'underline' },
+  areaLabel: { backgroundColor: 'rgba(16, 23, 19, 0.82)', borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 4, maxWidth: 180 },
+  areaLabelText: { color: palette.canvas, fontSize: 13, fontWeight: '700' },
   sheetHint: { fontSize: 13, color: colors.textMuted },
   baseRow: { flexDirection: 'row', gap: 10 },
   baseChoice: {
