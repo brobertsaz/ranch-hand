@@ -12,7 +12,6 @@ import {
 } from '@maplibre/maplibre-react-native';
 import * as Location from 'expo-location';
 import { addDatabaseChangeListener } from 'expo-sqlite';
-import { reloadAppAsync } from 'expo';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Image, Modal, PanResponder, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -39,12 +38,12 @@ import { estimateSharpening, fetchMapAreas, removeMapArea, sharpenArea, type Map
 import { deleteAllPhotos, photoFile } from '../photoFiles';
 import { cumulative, placesOnTrail } from '../trail';
 import { forgetDevice, mapStyleUrl, type Device } from '../settings';
-import { colors, fonts, isDark, palette, radius, space, sync, themeMode, touch } from '../theme';
-import { saveThemeMode, type ThemeMode } from '../themeMode';
+import { colors, fonts, isDark, palette, radius, space, sync, touch } from '../theme';
 import { useSync, type SyncState } from '../useSync';
 import CaptureScreen from './CaptureScreen';
 import ObservationScreen from './ObservationScreen';
 import CrewScreen from './CrewScreen';
+import SettingsScreen from './SettingsScreen';
 import NewsScreen from './NewsScreen';
 import RidesScreen from './RidesScreen';
 import WaypointScreen from './WaypointScreen';
@@ -101,6 +100,7 @@ export default function MapScreen({ device, onSignOut }: Props) {
   const [capturing, setCapturing] = useState(false);
   const [layersOpen, setLayersOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   // Dragging the Map sheet's header down closes it, like a pull-down on any bottom sheet
   const closeOnSwipeDown = useMemo(
     () => PanResponder.create({
@@ -549,13 +549,6 @@ export default function MapScreen({ device, onSignOut }: Props) {
     }
   }
 
-  // Every screen's colors are set when the app starts, so a new look takes a quick restart
-  async function chooseThemeMode(next: ThemeMode) {
-    if (next === themeMode) return;
-    await saveThemeMode(next);
-    await reloadAppAsync('Theme changed');
-  }
-
   function chooseBase(next: 'aerial' | 'topo') {
     setBase(next);
     setState(BASE_KEY, next);
@@ -574,7 +567,7 @@ export default function MapScreen({ device, onSignOut }: Props) {
         text: 'Leave',
         style: 'destructive',
         onPress: async () => {
-          setLayersOpen(false);
+          setSettingsOpen(false);
           await forgetDevice();
           await clearRanchData();
           deleteAllPhotos();
@@ -831,7 +824,7 @@ export default function MapScreen({ device, onSignOut }: Props) {
       {tab === 'new' && (
         <NewsScreen memberId={device.memberId} ranchName={device.ranchName} sync={syncState} onOpenObservation={openDetail} onShowRide={showRide} />
       )}
-      {tab === 'crew' && <CrewScreen device={device} />}
+      {tab === 'crew' && <CrewScreen device={device} onOpenSettings={() => setSettingsOpen(true)} />}
 
       {riding && ride && !placing && (
         <RideSheet
@@ -940,6 +933,16 @@ export default function MapScreen({ device, onSignOut }: Props) {
         onSkip={() => setNaming(null)}
       />
 
+      <Modal visible={settingsOpen} animationType="slide" statusBarTranslucent navigationBarTranslucent onRequestClose={() => setSettingsOpen(false)}>
+        <SettingsScreen
+          ranchName={device.ranchName}
+          sync={syncState}
+          onHelp={() => setHelpOpen(true)}
+          onLeave={confirmSignOut}
+          onClose={() => setSettingsOpen(false)}
+        />
+      </Modal>
+
       <Modal visible={helpOpen} animationType="slide" statusBarTranslucent navigationBarTranslucent onRequestClose={() => setHelpOpen(false)}>
         <HelpScreen onClose={() => setHelpOpen(false)} />
       </Modal>
@@ -975,23 +978,6 @@ export default function MapScreen({ device, onSignOut }: Props) {
             <Text style={styles.sheetHint}>
               {base === 'topo' ? 'Contour lines, creeks, draws and section lines.' : 'Aerial photos of the ground.'} Offline areas saved before today need saving again to have Topo.
             </Text>
-
-            <View style={styles.sheetDivider} />
-            <Text style={styles.sheetTitle}>Look</Text>
-            <View style={styles.baseRow}>
-              {THEME_MODES.map(({ mode, label }) => (
-                <Pressable
-                  key={mode}
-                  onPress={() => chooseThemeMode(mode)}
-                  accessibilityRole="radio"
-                  accessibilityState={{ selected: themeMode === mode }}
-                  style={[styles.baseChoice, themeMode === mode && styles.baseChoiceOn]}
-                >
-                  <Text style={[styles.baseText, themeMode === mode && styles.baseTextOn]}>{label}</Text>
-                </Pressable>
-              ))}
-            </View>
-            <Text style={styles.sheetHint}>Light reads best in the sun, Dark before sunup and after dark. Auto follows your phone. Switching restarts the app.</Text>
 
             <View style={styles.sheetDivider} />
             <Text style={styles.sheetTitle}>Offline map</Text>
@@ -1043,30 +1029,6 @@ export default function MapScreen({ device, onSignOut }: Props) {
             />
             <Text style={styles.sheetHint}>Gets close-up aerial photos for the current view plus a quarter mile, from the state's own imagery where it's sharper. Do it once per pasture, with signal.</Text>
 
-            <View style={styles.sheetDivider} />
-            <Text style={styles.sheetTitle}>Sync</Text>
-            <Text style={styles.sheetText}>
-              {syncState.online ? 'Online' : 'No signal'} · {syncState.pending.records} records and {syncState.pending.uploads} photos waiting
-            </Text>
-            {syncState.lastResult && <Text style={styles.sheetHint}>Last run {syncState.lastResult}</Text>}
-            <AppButton
-              variant="secondary"
-              title={syncState.syncing ? 'Syncing…' : 'Sync now'}
-              onPress={syncState.syncNow}
-              disabled={syncState.syncing}
-              icon={<Icon name="refresh" size={20} color={palette.white} />}
-            />
-
-            <View style={styles.sheetDivider} />
-            <AppButton
-              variant="ghost"
-              title="Help and how-tos"
-              onPress={() => {
-                setLayersOpen(false);
-                setHelpOpen(true);
-              }}
-            />
-            <AppButton variant="ghost" title="Leave this ranch" onPress={confirmSignOut} />
             </ScrollView>
           </View>
         </View>
@@ -1231,12 +1193,6 @@ const TOPO_PAINT = isDark
 const TOPO_WASH = { 'fill-color': isDark ? palette.pine : palette.leather, 'fill-opacity': isDark ? 0.25 : 0.16 };
 // Aerial just gets warmer and a touch darker, like late-afternoon light, so white pins and labels pop
 const AERIAL_WASH = { 'fill-color': isDark ? palette.pine : '#4A3418', 'fill-opacity': isDark ? 0.3 : 0.14 };
-const THEME_MODES: { mode: ThemeMode; label: string }[] = [
-  { mode: 'light', label: 'Light' },
-  { mode: 'dark', label: 'Dark' },
-  { mode: 'auto', label: 'Auto' },
-];
-
 const shadow = { elevation: 8, shadowColor: '#0A100C', shadowOpacity: 0.35, shadowRadius: 12, shadowOffset: { width: 0, height: 6 } };
 
 const styles = StyleSheet.create({

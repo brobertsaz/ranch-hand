@@ -96,7 +96,7 @@ export const HELP: HelpSection[] = [
       },
       {
         title: 'Syncing',
-        body: 'Everything saves on your phone first. It sends to the crew on its own whenever you have signal or Wi-Fi. To push it right now, open the layers button and tap Sync now.',
+        body: 'Everything saves on your phone first. It sends to the crew on its own whenever you have signal or Wi-Fi. To push it right now, tap Sync on the New tab, or the gear on the Crew tab and then Sync now.',
       },
     ],
   },
