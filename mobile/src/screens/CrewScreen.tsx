@@ -36,6 +36,7 @@ export default function CrewScreen({ device }: { device: Device }) {
   const tabBarHeight = useTabBarHeight();
   const [crew, setCrew] = useState<CrewMember[]>([]);
   const [inviteCode, setInviteCode] = useState<string | null>(null);
+  const [hands, setHands] = useState<{ hand_count: number; hand_limit: number } | null>(null);
 
   const reload = useCallback(() => {
     loadCrew().then(setCrew);
@@ -43,10 +44,16 @@ export default function CrewScreen({ device }: { device: Device }) {
 
   useEffect(() => {
     reload();
-    getState(RANCH_KEY).then((json) => json && setInviteCode(JSON.parse(json).invite_code));
+    getState(RANCH_KEY).then((json) => {
+      if (!json) return;
+      const ranch = JSON.parse(json);
+      setInviteCode(ranch.invite_code);
+      if (ranch.hand_limit) setHands(ranch);
+    });
     fetchRanch(device)
       .then((ranch) => {
         setInviteCode(ranch.invite_code);
+        setHands(ranch);
         setState(RANCH_KEY, JSON.stringify(ranch));
       })
       .catch(() => {}); // offline: keep the cached code
@@ -84,6 +91,13 @@ export default function CrewScreen({ device }: { device: Device }) {
           <Text style={styles.inviteHint}>
             {inviteCode ? 'They enter this code when they first open Ranch Hand.' : 'Connect once to see the invite code.'}
           </Text>
+          {hands && (
+            <Text style={styles.inviteHint}>
+              {hands.hand_count >= hands.hand_limit
+                ? `All ${hands.hand_limit} free spots are taken.`
+                : `${hands.hand_count} of ${hands.hand_limit} free spots taken.`}
+            </Text>
+          )}
           <AppButton title="Share the code" onPress={share} disabled={!inviteCode} variant="secondary" />
         </View>
 

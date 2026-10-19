@@ -21,10 +21,22 @@ async function request<T>(device: Pick<Device, 'apiUrl'> & Partial<Device>, path
   return (response.status === 204 ? undefined : await response.json()) as T;
 }
 
+type Joined = { token: string; member_id: string; ranch: { id: string; name: string } };
+
+// 403 means the ranch already has as many hands as its plan allows
 export function joinRanch(apiUrl: string, inviteCode: string, name: string) {
-  return request<{ token: string; member_id: string; ranch: { id: string; name: string } }>({ apiUrl }, '/api/v1/devices', {
+  return request<Joined>({ apiUrl }, '/api/v1/devices', {
     method: 'POST',
     body: JSON.stringify({ invite_code: inviteCode, name }),
+  });
+}
+
+// An owner signs in with the ID token Google Sign-In gave the phone. The first time starts the ranch
+// (ranchName is ignored after that); a returning owner gets their same ranch back.
+export function startRanch(apiUrl: string, idToken: string, ranchName: string) {
+  return request<Joined>({ apiUrl }, '/api/v1/owners', {
+    method: 'POST',
+    body: JSON.stringify({ id_token: idToken, ranch_name: ranchName }),
   });
 }
 
@@ -38,7 +50,7 @@ export function pushChanges(device: Device, changes: Changes) {
 }
 
 export function fetchRanch(device: Device) {
-  return request<{ id: string; name: string; invite_code: string }>(device, '/api/v1/ranch');
+  return request<{ id: string; name: string; invite_code: string; hand_count: number; hand_limit: number }>(device, '/api/v1/ranch');
 }
 
 export type MapArea = {
