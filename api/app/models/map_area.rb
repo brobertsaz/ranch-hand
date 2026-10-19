@@ -14,7 +14,7 @@ class MapArea < ApplicationRecord
 
   enum :status, { pending: "pending", rendering: "rendering", ready: "ready", failed: "failed" }, validate: true
 
-  validates :name, presence: true
+  validates :name, presence: true, length: { maximum: 60 }
   validates :source, inclusion: { in: ImagerySource::ALL.keys }
   validates :west, :east, numericality: { in: -180..180 }
   validates :south, :north, numericality: { in: -85..85 }

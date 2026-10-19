@@ -54,6 +54,18 @@ RSpec.describe "Map areas", type: :request do
     expect(json["estimated_tiles"]).to be_between(9_000, 11_000)
   end
 
+  it "sharpens so many miles around a point, with the pasture's name" do
+    expect {
+      post "/api/v1/map_areas", params: { map_area: { name: " North pasture ", lat: 43.0, lng: -89.4, miles: 1 } }, headers: auth_headers(member)
+    }.to have_enqueued_job(RenderMapAreaJob)
+
+    expect(response).to have_http_status(:created)
+    area = member.ranch.map_areas.sole
+    expect(area.name).to eq("North pasture")
+    expect(area.covers?(west: -89.4, south: 43.0, east: -89.4, north: 43.0)).to be(true)
+    expect((area.north - area.south) * MapArea::METERS_PER_DEGREE).to be_within(10).of(MapArea::METERS_PER_MILE)
+  end
+
   it "names an unnamed area" do
     post "/api/v1/map_areas", params: { map_area: { west: -89.46, south: 43.0, east: -89.45, north: 43.01 } }, headers: auth_headers(member)
 
