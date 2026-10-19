@@ -3,7 +3,10 @@ module Api
     # The ranch this phone belongs to, so the Crew tab can show and share the invite code
     class RanchesController < BaseController
       def show
-        render json: { id: current_ranch.id.to_s, name: current_ranch.name, invite_code: current_ranch.invite_code }
+        render json: {
+          id: current_ranch.id.to_s, name: current_ranch.name, invite_code: current_ranch.invite_code,
+          hand_count: current_ranch.members.hand.count, hand_limit: current_ranch.hand_limit
+        }
       end
     end
   end
