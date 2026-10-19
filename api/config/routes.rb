@@ -8,7 +8,7 @@ Rails.application.routes.draw do
       resources :owners, only: :create
       resources :signups, only: :create
       resource :sync, only: %i[show create]
-      resource :ranch, only: :show
+      resource :ranch, only: %i[show update]
       resources :photos, only: [] do
         resource :file, only: %i[show update], controller: :photo_files
       end

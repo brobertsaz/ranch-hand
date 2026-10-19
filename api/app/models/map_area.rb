@@ -28,6 +28,8 @@ class MapArea < ApplicationRecord
 
   def bounds = { west:, south:, east:, north: }
 
+  def covers?(lng:, lat:) = lng.between?(west, east) && lat.between?(south, north)
+
   def imagery = ImagerySource.find(source)
 
   def max_zoom = imagery.max_zoom
