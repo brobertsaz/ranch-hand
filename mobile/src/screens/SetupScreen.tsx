@@ -10,7 +10,7 @@ import AppButton from '../components/AppButton';
 import GoogleMark from '../components/GoogleMark';
 import Icon from '../components/Icon';
 import Logo from '../components/Logo';
-import { canStartRanch, googleConfigured, googleIdToken } from '../google';
+import { canStartRanch, googleIdToken } from '../google';
 import { DEFAULT_API_URL, saveDevice, type Device } from '../settings';
 import { colors, fonts, palette, radius, space, touch } from '../theme';
 
@@ -55,10 +55,6 @@ export default function SetupScreen({ onJoined }: { onJoined: (device: Device) =
   }
 
   async function start() {
-    if (!googleConfigured) {
-      setError("This build doesn't have Google sign-in set up (EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID).");
-      return;
-    }
     setBusy(true);
     setError(null);
     try {
