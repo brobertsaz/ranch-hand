@@ -26,7 +26,7 @@ RSpec.describe "Ranch", type: :request do
     let(:owner) { create(:member, role: :owner) }
     let(:ranch) { owner.ranch }
 
-    it "pins it and sharpens about a mile around it" do
+    it "pins it and sharpens 3 miles across around it" do
       expect {
         patch "/api/v1/ranch", params: { headquarters: { lat: 43.0, lng: -89.4 } }, headers: auth_headers(owner), as: :json
       }.to have_enqueued_job(RenderMapAreaJob)
@@ -36,11 +36,26 @@ RSpec.describe "Ranch", type: :request do
       area = ranch.map_areas.sole
       expect(json["map_area_id"]).to eq(area.id.to_s)
       expect(area).to have_attributes(name: "Headquarters", source: "wi-dnr-leaf-off")
-      expect(area.covers?(lng: -89.4, lat: 43.0)).to be(true)
-      expect((area.north - area.south) * MapArea::METERS_PER_DEGREE).to be_within(10).of(2 * (Ranch::HEADQUARTERS_REACH_METERS + MapArea::MARGIN_METERS))
+      expect(area.covers?(west: -89.4, south: 43.0, east: -89.4, north: 43.0)).to be(true)
+      expect((area.north - area.south) * MapArea::METERS_PER_DEGREE).to be_within(10).of(3 * MapArea::METERS_PER_MILE)
     end
 
-    it "doesn't sharpen again when an area already covers the new spot" do
+    it "sharpens 5 miles across when the owner picks it" do
+      patch "/api/v1/ranch", params: { headquarters: { lat: 43.0, lng: -89.4, miles: 5 } }, headers: auth_headers(owner), as: :json
+
+      area = ranch.map_areas.sole
+      expect((area.north - area.south) * MapArea::METERS_PER_DEGREE).to be_within(10).of(5 * MapArea::METERS_PER_MILE)
+    end
+
+    it "still sharpens when an existing area covers the pin but not the whole box" do
+      create(:map_area, ranch:, west: -89.41, south: 42.99, east: -89.39, north: 43.01)
+
+      patch "/api/v1/ranch", params: { headquarters: { lat: 43.0, lng: -89.4 } }, headers: auth_headers(owner), as: :json
+
+      expect(ranch.map_areas.where(name: "Headquarters")).to exist
+    end
+
+    it "doesn't sharpen again when an area already covers the whole box" do
       create(:map_area, ranch:, west: -89.5, south: 42.9, east: -89.3, north: 43.1)
 
       expect {
@@ -65,6 +80,13 @@ RSpec.describe "Ranch", type: :request do
       patch "/api/v1/ranch", params: { headquarters: { lat: 43.0, lng: -89.4 } }, headers: auth_headers(hand), as: :json
 
       expect(response).to have_http_status(:forbidden)
+      expect(ranch.reload.headquarters).to be_nil
+    end
+
+    it "rejects a size that isn't one of the choices" do
+      patch "/api/v1/ranch", params: { headquarters: { lat: 43.0, lng: -89.4, miles: 2 } }, headers: auth_headers(owner), as: :json
+
+      expect(response).to have_http_status(:unprocessable_content)
       expect(ranch.reload.headquarters).to be_nil
     end
 

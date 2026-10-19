@@ -6,6 +6,9 @@ class MapArea < ApplicationRecord
   # About 100,000 acres at zoom 18, and an overnight render
   MAX_TILES = 50_000
   METERS_PER_DEGREE = 111_320.0
+  METERS_PER_MILE = 1609.344
+  # Area 1 (Wisconsin, 1,919 tiles) came to 39 MB on the phone
+  KILOBYTES_PER_TILE = 20
 
   belongs_to :ranch
 
@@ -23,12 +26,15 @@ class MapArea < ApplicationRecord
     { west: west - dlng, south: south - dlat, east: east + dlng, north: north + dlat }
   end
 
+  # A square this many miles across, centered on a point. The margin is already in it.
+  def self.around(lng:, lat:, miles:) = padded(west: lng, south: lat, east: lng, north: lat, margin: miles * METERS_PER_MILE / 2)
+
   # The state imagery the area sits in, or NAIP; picked by its center when it's made
   def self.source_for(west:, south:, east:, north:) = ImagerySource.for(lng: (west + east) / 2, lat: (south + north) / 2)
 
   def bounds = { west:, south:, east:, north: }
 
-  def covers?(lng:, lat:) = lng.between?(west, east) && lat.between?(south, north)
+  def covers?(west:, south:, east:, north:) = west >= self.west && east <= self.east && south >= self.south && north <= self.north
 
   def imagery = ImagerySource.find(source)
 
@@ -37,6 +43,8 @@ class MapArea < ApplicationRecord
   def tiles = NaipTiles.tiles_in(**bounds, zooms: imagery.zooms)
 
   def estimated_tiles = NaipTiles.count_in(**bounds, zooms: imagery.zooms)
+
+  def estimated_megabytes = (estimated_tiles * KILOBYTES_PER_TILE / 1000.0).ceil
 
   def estimated_minutes = [ (estimated_tiles * imagery.seconds_per_tile / 60).ceil, 1 ].max
 

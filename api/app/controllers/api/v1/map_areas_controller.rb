@@ -19,12 +19,19 @@ module Api
         render json: { error: "Bounds must be numbers" }, status: :unprocessable_content
       end
 
-      # What sharpening this box would take, so the app can ask before starting it
+      # What sharpening would take, so the app can ask before starting it: for a box on screen, or for
+      # so many miles around a point (the headquarters screen)
       def new
-        bounds = %i[west south east north].index_with { |side| Float(params.require(side)) }
-        area = MapArea.new(MapArea.padded(**bounds).merge(source: MapArea.source_for(**bounds).key))
+        box =
+          if params.key?(:miles)
+            MapArea.around(lng: Float(params.require(:lng)), lat: Float(params.require(:lat)), miles: Float(params[:miles]))
+          else
+            MapArea.padded(**%i[west south east north].index_with { |side| Float(params.require(side)) })
+          end
+        area = MapArea.new(box.merge(source: MapArea.source_for(**box).key))
         render json: area.slice(:source).merge(
-          source_name: area.imagery.name, max_zoom: area.max_zoom, estimated_tiles: area.estimated_tiles, estimated_minutes: area.estimated_minutes
+          source_name: area.imagery.name, max_zoom: area.max_zoom, estimated_tiles: area.estimated_tiles,
+          estimated_megabytes: area.estimated_megabytes, estimated_minutes: area.estimated_minutes
         )
       rescue ArgumentError, TypeError
         render json: { error: "Bounds must be numbers" }, status: :unprocessable_content
