@@ -5,7 +5,6 @@ import {
   Map,
   Marker,
   OfflineManager,
-  UserLocation,
   type CameraRef,
   type MapRef,
   type OfflinePackStatus,
@@ -21,6 +20,7 @@ import AppButton from '../components/AppButton';
 import Icon, { type IconName } from '../components/Icon';
 import Pin from '../components/Pin';
 import FollowSheet from '../components/FollowSheet';
+import LocationDot from '../components/LocationDot';
 import HelpScreen from './HelpScreen';
 import NameRideSheet from '../components/NameRideSheet';
 import PlaceSheet, { type PlaceFields } from '../components/PlaceSheet';
@@ -594,7 +594,7 @@ export default function MapScreen({ device, onSignOut }: Props) {
         <GeoJSONSource id="wash" data={WORLD}>
           <Layer type="fill" id="wash" afterId={base === 'topo' ? 'topo' : 'aerial-top'} paint={base === 'topo' ? TOPO_WASH : AERIAL_WASH} />
         </GeoJSONSource>
-        <UserLocation accuracy />
+        <LocationDot />
         {shownRide && (
           <GeoJSONSource id="shown-ride" data={lineString(JSON.parse(shownRide.track) as LngLat[])}>
             <Layer type="line" id="shown-ride-line" paint={{ 'line-color': palette.sky, 'line-width': 5, 'line-opacity': 0.9 }} layout={{ 'line-cap': 'round', 'line-join': 'round' }} />

@@ -6,12 +6,11 @@ module Api
         render json: current_ranch.map_areas.order(:created_at).map { |area| area_json(area) }
       end
 
+      # A box on screen (Sharpen this area), or so many miles around a point (a pasture on the headquarters screen)
       def create
-        box = params.require(:map_area).permit(:west, :south, :east, :north)
-        bounds = %i[west south east north].index_with { |side| Float(box.require(side)) }
-        padded = MapArea.padded(**bounds)
+        box = requested_box(params.require(:map_area))
         area = current_ranch.map_areas.create!(
-          name: params.dig(:map_area, :name).presence || default_name, source: MapArea.source_for(**padded).key, **padded
+          name: params.dig(:map_area, :name).to_s.strip.presence || default_name, source: MapArea.source_for(**box).key, **box
         )
         RenderMapAreaJob.perform_later(area)
         render json: area_json(area), status: :created
@@ -22,12 +21,7 @@ module Api
       # What sharpening would take, so the app can ask before starting it: for a box on screen, or for
       # so many miles around a point (the headquarters screen)
       def new
-        box =
-          if params.key?(:miles)
-            MapArea.around(lng: Float(params.require(:lng)), lat: Float(params.require(:lat)), miles: Float(params[:miles]))
-          else
-            MapArea.padded(**%i[west south east north].index_with { |side| Float(params.require(side)) })
-          end
+        box = requested_box(params)
         area = MapArea.new(box.merge(source: MapArea.source_for(**box).key))
         render json: area.slice(:source).merge(
           source_name: area.imagery.name, max_zoom: area.max_zoom, estimated_tiles: area.estimated_tiles,
@@ -44,6 +38,14 @@ module Api
       end
 
       private
+
+      def requested_box(given)
+        if given.key?(:miles)
+          MapArea.around(lng: Float(given.require(:lng)), lat: Float(given.require(:lat)), miles: Float(given.require(:miles)))
+        else
+          MapArea.padded(**%i[west south east north].index_with { |side| Float(given.require(side)) })
+        end
+      end
 
       def default_name = "Area #{current_ranch.map_areas.count + 1}"
 

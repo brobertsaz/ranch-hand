@@ -63,6 +63,11 @@ export function setHeadquarters(device: Device, { lat, lng }: Headquarters, mile
   });
 }
 
+// A named spot, like a pasture a couple of miles from headquarters, sharpened in a square that many miles across
+export function sharpenAround(device: Device, { lat, lng }: Headquarters, miles: number, name: string) {
+  return request<MapArea>(device, '/api/v1/map_areas', { method: 'POST', body: JSON.stringify({ map_area: { name, lat, lng, miles } }) });
+}
+
 export function estimateAround(device: Device, { lat, lng }: Headquarters, miles: number) {
   return request<SharpenEstimate>(device, `/api/v1/map_areas/new?lat=${lat}&lng=${lng}&miles=${miles}`);
 }
