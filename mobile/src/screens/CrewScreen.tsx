@@ -61,6 +61,9 @@ export default function CrewScreen({ device, onOpenSettings }: { device: Device;
     return () => sub.remove();
   }, [device, reload]);
 
+  // The owner isn't a hand, so this matches the free-spot count on the invite card
+  const handCount = crew.filter((m) => m.role === 'hand').length;
+
   function share() {
     if (!inviteCode) return;
     Share.share({
@@ -80,7 +83,7 @@ export default function CrewScreen({ device, onOpenSettings }: { device: Device;
           </Pressable>
         }
         stats={[
-          { value: String(crew.length), label: crew.length === 1 ? 'Hand' : 'Hands' },
+          { value: String(handCount), label: handCount === 1 ? 'Hand' : 'Hands' },
           { value: String(crew.filter((m) => m.lastOut && Date.now() - m.lastOut < 86_400_000).length), label: 'Out today' },
           { value: String(crew.reduce((sum, m) => sum + m.logged, 0)), label: 'Logged' },
         ]}
