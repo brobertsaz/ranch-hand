@@ -32,7 +32,9 @@ class Ranch < ApplicationRecord
     box = MapArea.around(lng:, lat:, miles:)
     area = transaction do
       update!(hq_lat: lat, hq_lng: lng)
-      unless map_areas.where.not(status: :failed).any? { |existing| existing.covers?(**box) }
+      # Every area carries MapArea::MARGIN_METERS of slack, so a pin nudged a few yards doesn't render it all again
+      inner = MapArea.around(lng:, lat:, miles: miles - (2 * MapArea::MARGIN_METERS / MapArea::METERS_PER_MILE))
+      unless map_areas.where.not(status: :failed).any? { |existing| existing.covers?(**inner) }
         map_areas.create!(name: "Headquarters", source: MapArea.source_for(**box).key, **box)
       end
     end
