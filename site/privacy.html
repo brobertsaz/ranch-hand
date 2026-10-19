@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Privacy Policy · Ranch Hand</title>
+<meta name="description" content="What Ranch Hand collects, why, who sees it, and how to get it deleted.">
+<link rel="canonical" href="https://getranchhand.com/privacy">
+<meta name="theme-color" content="#101713">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@800;900&family=Barlow:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+/* Same tokens as index.html, trimmed to what a page of reading needs */
+:root {
+  --pine: #101713;
+  --on-pine: #F5EFE0;
+  --on-pine-muted: rgba(245, 239, 224, 0.72);
+  --bg: #F5EFE0;
+  --surface: #FFFDF7;
+  --ink: #171B18;
+  --muted: #5F665E;
+  --line: rgba(23, 27, 24, 0.16);
+  --trail: #CF4A2E;
+  --harvest: #E3A33B;
+  --focus: #FFB18F;
+  --font-display: "Barlow Condensed", "Arial Narrow", "Helvetica Neue", Arial, sans-serif;
+  --font-body: "Barlow", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #131B16; --surface: #1D2822; --ink: #EEE8D9; --muted: #A7AEA4; --line: rgba(245, 239, 224, 0.14);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #131B16; --surface: #1D2822; --ink: #EEE8D9; --muted: #A7AEA4; --line: rgba(245, 239, 224, 0.14);
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 18px; line-height: 1.6; -webkit-font-smoothing: antialiased; }
+a { color: inherit; }
+:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; border-radius: 4px; }
+.wrap { max-width: 760px; margin: 0 auto; padding-inline: 20px; }
+.brand { display: inline-flex; align-items: center; gap: 12px; font-family: var(--font-display); font-weight: 900; font-size: 1.7rem; text-transform: uppercase; letter-spacing: 0.02em; text-decoration: none; }
+.brand svg { width: 34px; height: 36px; flex: none; }
+
+header.site { background: var(--pine); color: var(--on-pine); }
+header.site .wrap { padding-block: 22px 56px; }
+.eyebrow { font-family: var(--font-mono); font-size: 0.78rem; font-weight: 500; letter-spacing: 0.1em; text-transform: uppercase; color: var(--harvest); margin: 44px 0 14px; }
+h1, h2 { margin: 0; font-family: var(--font-display); text-transform: uppercase; line-height: 0.95; text-wrap: balance; }
+h1 { font-size: clamp(3rem, 9vw, 4.6rem); font-weight: 900; }
+.lede { margin: 18px 0 0; font-size: 1.15rem; color: var(--on-pine-muted); max-width: 46ch; }
+
+main { padding-block: 56px 80px; }
+section + section { margin-top: 44px; padding-top: 36px; border-top: 1px solid var(--line); }
+h2 { font-size: 2rem; font-weight: 800; margin-bottom: 14px; }
+p, ul { margin: 0 0 14px; }
+ul { padding-left: 1.2em; }
+li + li { margin-top: 6px; }
+.muted { color: var(--muted); }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 20px 22px; }
+.card ul { margin: 0; }
+
+footer.site { background: var(--pine); color: var(--on-pine-muted); font-size: 0.92rem; }
+footer.site .wrap { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 14px; padding-block: 30px; max-width: 1120px; }
+footer.site a { color: var(--on-pine); }
+footer.site .brand { font-size: 1.3rem; color: var(--on-pine); }
+footer.site .brand svg { width: 26px; height: 28px; }
+
+@media (max-width: 680px) { body { font-size: 17px; } }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="tag" viewBox="10 8 80 84">
+      <path d="M44 12h12a3 3 0 0 1 3 3v12H41V15a3 3 0 0 1 3-3z" fill="#E3A33B"/>
+      <path d="M27 24h46a10 10 0 0 1 10 10v31a10 10 0 0 1-10 10H60L50 89 40 75H27a10 10 0 0 1-10-10V34a10 10 0 0 1 10-10z" fill="#E3A33B"/>
+      <circle cx="50" cy="19.5" r="3.4" fill="#101713"/>
+      <path d="M33 39.5h4.5v21h-4.5zM42 39.5h4.5v21H42zM52 39.5h4.5v21H52zM61 39.5h4.5v21H61z" fill="#101713" opacity="0.9"/>
+    </symbol>
+  </defs>
+</svg>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/"><svg aria-hidden="true"><use href="#tag"/></svg>Ranch Hand</a>
+    <p class="eyebrow">Last updated October 19, 2026</p>
+    <h1>Privacy Policy</h1>
+    <p class="lede">The short version: we keep what your crew logs so your crew can see it. We don't sell it, we don't show ads, and we don't track you.</p>
+  </div>
+</header>
+
+<main class="wrap">
+  <section>
+    <h2>Who we are</h2>
+    <p>Ranch Hand is a mobile app for working ranches, made by <a href="https://ranchbrandbook.com">Ranch Brand Book</a>. This policy covers the Ranch Hand app and this website. Questions go to <a href="mailto:bob@getranchhand.com">bob@getranchhand.com</a>, and a person answers.</p>
+  </section>
+
+  <section>
+    <h2>What we collect</h2>
+    <div class="card">
+      <ul>
+        <li><strong>Ranch owners who sign in with Google:</strong> your name, email address, and the account ID Google gives us. We use these only to sign you in and to reach you about your ranch. We never read your email, contacts, or anything else in your Google account.</li>
+        <li><strong>Hands who join with an invite code:</strong> the name you type in. No email, no phone number, no account.</li>
+        <li><strong>What you log in the app:</strong> observations (like a sick cow or a broken fence), the photos you take for them, notes, saved places, and where each was made.</li>
+        <li><strong>Ride tracks:</strong> when you start a ride, the app records your location, including in the background with the phone in your pocket, until you stop the ride. It doesn't track you outside a ride.</li>
+        <li><strong>Map areas</strong> an owner chooses to download sharper imagery for.</li>
+        <li><strong>The early-access form on this site:</strong> your name, email, state, herd size and how you ride out, if you choose to give them.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>How we use it</h2>
+    <p>To run the app: to sync what one person logs to the rest of their crew, to show it on the map, and to keep it on your phone so it works with no signal. We use early-access emails to tell you when Ranch Hand is ready for your ranch.</p>
+    <p>We don't sell your information, use it for advertising, or share it with data brokers. The app and this site have no ad trackers or third-party analytics.</p>
+  </section>
+
+  <section>
+    <h2>Who can see it</h2>
+    <ul>
+      <li><strong>Your crew.</strong> Everyone who has joined your ranch sees its observations, photos, places, rides and member names. People on other ranches don't.</li>
+      <li><strong>Map imagery services.</strong> Map pictures come from public government imagery servers, such as the U.S. Geological Survey and state mapping agencies. To draw the map, your phone or our server asks them for the map squares for an area. That tells them which area is being looked at, but nothing about who you are or what you've logged.</li>
+      <li><strong>Google</strong> handles the sign-in itself when an owner taps Continue with Google, under <a href="https://policies.google.com/privacy">Google's privacy policy</a>.</li>
+      <li><strong>The law.</strong> We'd share information if a valid legal process required it, and only what it required.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Where it's kept</h2>
+    <p>On our own server in the United States, and on the phones of your crew so the app works without signal. Traffic between the app and the server is encrypted.</p>
+  </section>
+
+  <section>
+    <h2>Keeping and deleting it</h2>
+    <p>We keep a ranch's records while the ranch uses Ranch Hand. <strong>Leave this ranch</strong> in the app clears that ranch's data from your phone. To delete your account, a hand's records, or a whole ranch from our server, email <a href="mailto:bob@getranchhand.com">bob@getranchhand.com</a> from the owner's address and we'll do it within 30 days. To come off the early-access list, just reply to any email from us.</p>
+  </section>
+
+  <section>
+    <h2>Kids</h2>
+    <p>Ranch Hand is made for ranch crews, not children under 13, and we don't knowingly collect information from them. If you think we have, email us and we'll delete it.</p>
+  </section>
+
+  <section>
+    <h2>Changes</h2>
+    <p class="muted">If we change this policy, we'll update the date at the top. If a change affects what we collect or who sees it, we'll tell ranch owners by email before it takes effect.</p>
+  </section>
+</main>
+
+<footer class="site">
+  <div class="wrap">
+    <a class="brand" href="/"><svg aria-hidden="true"><use href="#tag"/></svg>Ranch Hand</a>
+    <span>Made for working ranches · Field-tested in Wyoming · <a href="mailto:bob@getranchhand.com">bob@getranchhand.com</a></span>
+    <span>Created by <a href="https://ranchbrandbook.com">Ranch Brand Book</a></span>
+  </div>
+</footer>
+</body>
+</html>
