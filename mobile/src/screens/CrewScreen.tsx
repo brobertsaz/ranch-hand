@@ -1,7 +1,7 @@
 import { addDatabaseChangeListener } from 'expo-sqlite';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useState } from 'react';
-import { ScrollView, Share, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 
 import { fetchRanch } from '../api';
 import AppButton from '../components/AppButton';
@@ -12,7 +12,7 @@ import { db, getState, setState, type Member } from '../db';
 import { timeAgo } from '../format';
 import { initials } from '../members';
 import type { Device } from '../settings';
-import { colors, fonts, palette, space } from '../theme';
+import { colors, fonts, palette, space, touch } from '../theme';
 
 type CrewMember = Member & { logged: number; lastOut: number | null };
 
@@ -32,7 +32,7 @@ async function loadCrew(): Promise<CrewMember[]> {
     ORDER BY lastOut DESC, m.name`);
 }
 
-export default function CrewScreen({ device }: { device: Device }) {
+export default function CrewScreen({ device, onOpenSettings }: { device: Device; onOpenSettings: () => void }) {
   const tabBarHeight = useTabBarHeight();
   const [crew, setCrew] = useState<CrewMember[]>([]);
   const [inviteCode, setInviteCode] = useState<string | null>(null);
@@ -74,6 +74,11 @@ export default function CrewScreen({ device }: { device: Device }) {
       <FieldHeader
         eyebrow={device.ranchName.toUpperCase()}
         title="Crew"
+        right={
+          <Pressable onPress={onOpenSettings} accessibilityRole="button" accessibilityLabel="Settings" hitSlop={8} style={styles.settingsButton}>
+            <Icon name="settings" size={24} color={colors.chromeText} strokeWidth={2} />
+          </Pressable>
+        }
         stats={[
           { value: String(crew.length), label: crew.length === 1 ? 'Hand' : 'Hands' },
           { value: String(crew.filter((m) => m.lastOut && Date.now() - m.lastOut < 86_400_000).length), label: 'Out today' },
@@ -136,6 +141,10 @@ const styles = StyleSheet.create({
   screen: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, backgroundColor: colors.background },
   flex: { flex: 1, gap: 2 },
   list: { paddingHorizontal: 14, paddingTop: 16, gap: 12 },
+  settingsButton: {
+    width: touch.round, height: touch.round, borderRadius: touch.round / 2, borderWidth: 1, borderColor: 'rgba(245, 239, 224, 0.3)',
+    alignItems: 'center', justifyContent: 'center',
+  },
   invite: { backgroundColor: palette.harvest, borderRadius: 18, padding: space.lg, gap: space.sm },
   inviteLabel: { fontFamily: fonts.display, fontSize: 16, letterSpacing: 2.4, color: palette.pine },
   code: { fontFamily: fonts.displayBlack, fontSize: 60, lineHeight: 62, letterSpacing: 3, color: palette.pine },
