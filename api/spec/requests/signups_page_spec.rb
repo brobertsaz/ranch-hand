@@ -13,12 +13,12 @@ RSpec.describe "Sign-ups page", type: :request do
 
   it "lists sign-ups newest first for the owner" do
     Signup.create!(name: "Jess", email: "jess@example.com", state: "Wyoming", created_at: 2.days.ago)
-    Signup.create!(name: "Cody", email: "cody@example.com", head_count: "100-499", phone: "android")
+    Signup.create!(name: "Cody", email: "cody@example.com", head_count: "100-499", phone: "android", source: "facebook")
 
     get "/signups", headers: sign_in
 
     expect(response).to have_http_status(:ok)
-    expect(response.body).to include("2 sign-ups", "100-499 head · Android")
+    expect(response.body).to include("2 sign-ups", "100-499 head · Android", "from facebook")
     expect(response.body.index("Cody")).to be < response.body.index("Jess")
   end
 

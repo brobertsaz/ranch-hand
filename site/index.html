@@ -634,6 +634,10 @@ footer.site .brand svg { width: 26px; height: 28px; }
 // Left empty (as in a preview), the form checks the fields and shows the thank-you message without sending anything.
 const WAITLIST_ENDPOINT = "https://ranch.thebob.dev/api/v1/signups";
 
+// Which link brought them here: getranchhand.com/?src=facebook, or a utm_source tag from an ad
+const linkParams = new URLSearchParams(location.search);
+const SIGNUP_SOURCE = linkParams.get("src") || linkParams.get("utm_source") || "";
+
 const form = document.getElementById("waitlist");
 const err = document.getElementById("err");
 const thanks = document.getElementById("thanks");
@@ -654,7 +658,7 @@ form.addEventListener("submit", async (e) => {
       const res = await fetch(WAITLIST_ENDPOINT, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ signup: Object.fromEntries(new FormData(form)) })
+        body: JSON.stringify({ signup: { ...Object.fromEntries(new FormData(form)), source: SIGNUP_SOURCE } })
       });
       if (!res.ok) throw new Error(String(res.status));
     } catch (_) {

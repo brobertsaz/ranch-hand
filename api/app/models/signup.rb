@@ -7,6 +7,8 @@ class Signup < ApplicationRecord
 
   normalizes :email, with: ->(email) { email.strip.downcase }
   normalizes :name, :state, with: ->(value) { value.strip }
+  # Where they came from: the link's ?src= (or utm_source), like "facebook" or "sale-barn-flyer"
+  normalizes :source, with: ->(value) { value.strip.downcase.first(50).presence }
 
   validates :name, presence: true, length: { maximum: 100 }
   validates :email, presence: true, length: { maximum: 254 }, format: { with: URI::MailTo::EMAIL_REGEXP }

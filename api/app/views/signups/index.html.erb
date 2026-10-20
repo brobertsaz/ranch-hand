@@ -34,7 +34,7 @@
         <b><%= signup.name %></b>
         <a href="mailto:<%= signup.email %>"><%= signup.email %></a>
         <small><%= [signup.state.presence, signup.head_count.presence && "#{signup.head_count} head", signup.rides.presence && "rides #{signup.rides}", signup.phone.presence && { "android" => "Android", "iphone" => "iPhone", "both" => "Android and iPhone" }[signup.phone]].compact.join(" · ") %></small>
-        <small><%= signup.created_at.in_time_zone("America/Chicago").strftime("%b %-d, %Y · %-I:%M %p") %></small>
+        <small><%= [signup.source.presence && "from #{signup.source}", signup.created_at.in_time_zone("America/Chicago").strftime("%b %-d, %Y · %-I:%M %p")].compact.join(" · ") %></small>
       </div>
     <% end %>
   </main>
