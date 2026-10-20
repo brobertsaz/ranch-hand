@@ -18,6 +18,13 @@ RSpec.describe "Signups", type: :request do
     expect(Signup.sole.rides).to eq("horse")
   end
 
+  it "records the link they came from, and keeps the first one when they sign up again" do
+    post "/api/v1/signups", params: { signup: answers.merge(source: " Facebook ") }, as: :json
+    post "/api/v1/signups", params: { signup: answers.merge(source: "flyer") }, as: :json
+
+    expect(Signup.sole.source).to eq("facebook")
+  end
+
   it "rejects a sign-up without a working email" do
     post "/api/v1/signups", params: { signup: answers.merge(email: "jess") }, as: :json
 
