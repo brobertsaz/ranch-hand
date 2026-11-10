@@ -6,11 +6,13 @@ class Signup < ApplicationRecord
   PHONES = %w[android iphone both].freeze
 
   normalizes :email, with: ->(email) { email.strip.downcase }
-  normalizes :name, :state, with: ->(value) { value.strip }
+  # The form's first step sends only an email, so a name is optional and a blank one is stored as none
+  normalizes :name, with: ->(value) { value.strip.presence }
+  normalizes :state, with: ->(value) { value.strip }
   # Where they came from: the link's ?src= (or utm_source), like "facebook" or "sale-barn-flyer"
   normalizes :source, with: ->(value) { value.strip.downcase.first(50).presence }
 
-  validates :name, presence: true, length: { maximum: 100 }
+  validates :name, length: { maximum: 100 }
   validates :email, presence: true, length: { maximum: 254 }, format: { with: URI::MailTo::EMAIL_REGEXP }
   validates :state, length: { maximum: 50 }
   validates :head_count, inclusion: { in: HEAD_COUNTS }, allow_blank: true
