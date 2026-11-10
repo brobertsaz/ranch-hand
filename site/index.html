@@ -100,8 +100,16 @@ a { color: inherit; }
 .hero h1 { margin-top: 18px; }
 .hero h1 .tag { color: var(--harvest); }
 .hero .lede { margin-top: 24px; }
-.hero .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 14px 22px; margin-top: 34px; }
-.hero .note { font-size: 0.95rem; color: var(--on-pine-muted); }
+/* Step 1 of signing up: only an email, right under the pitch */
+.quick { display: grid; gap: 8px; max-width: 520px; margin-top: 34px; }
+.quick label { color: var(--on-pine); }
+.quick-row { display: flex; flex-wrap: wrap; gap: 10px; }
+.quick-row input { flex: 1 1 220px; width: auto; background: #F5EFE0; color: #171B18; border-color: transparent; }
+.quick-row .btn { flex: 0 0 auto; }
+.quick .error { color: #F08C7E; }
+.quick-thanks { display: grid; gap: 6px; max-width: 520px; margin-top: 34px; padding: 18px 20px; border-radius: 12px; background: var(--pine-soft); box-shadow: inset 0 0 0 1px var(--pine-line); }
+.quick-thanks a { color: var(--harvest); font-weight: 600; }
+.hero .note { font-size: 0.95rem; color: var(--on-pine-muted); margin-top: 14px; max-width: 48ch; }
 .proof { display: flex; flex-wrap: wrap; gap: 10px 26px; margin-top: 40px; padding-top: 22px; border-top: 1px solid var(--pine-line); font-family: var(--font-mono); font-size: 0.82rem; color: var(--on-pine-muted); }
 .proof b { color: var(--on-pine); font-weight: 500; }
 
@@ -233,12 +241,7 @@ section + section { border-top: 1px solid var(--line); }
 .next .chip { font: 500 0.75rem var(--font-mono); text-transform: uppercase; letter-spacing: 0.08em; background: var(--harvest); color: #171B18; padding: 6px 10px; border-radius: 6px; white-space: nowrap; }
 .next p { color: var(--muted); margin-top: 8px; max-width: 62ch; }
 
-/* Field test + join */
-.test { display: grid; grid-template-columns: auto 1fr; gap: 40px; align-items: center; }
-.test > * { min-width: 0; }
-.date { font-family: var(--font-display); font-weight: 900; font-size: clamp(4rem, 11vw, 7rem); line-height: 0.82; text-transform: uppercase; color: var(--trail-dark); }
-.test p { color: var(--muted); max-width: 54ch; margin-top: 14px; }
-
+/* Who's building this + join */
 .who { display: grid; grid-template-columns: auto 1fr; gap: 40px; align-items: start; }
 .who > * { min-width: 0; }
 .mono { width: 112px; height: 112px; border-radius: 50%; background: var(--pine); border: 2px solid var(--harvest); color: var(--harvest); display: grid; place-items: center; font: 900 2.6rem/1 var(--font-display); letter-spacing: 0.02em; }
@@ -251,7 +254,8 @@ footer.site a { color: var(--on-pine); }
 .join-grid { display: grid; grid-template-columns: 0.8fr 1.2fr; gap: 56px; align-items: start; }
 .join-grid > * { min-width: 0; }
 .join .lede { margin-top: 16px; }
-form { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 28px; }
+.join .price { margin-top: 16px; max-width: 44ch; }
+#waitlist { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 28px; }
 .row { display: grid; gap: 7px; min-width: 0; }
 .row.full { grid-column: 1 / -1; }
 label, legend { font-weight: 600; font-size: 0.98rem; }
@@ -287,11 +291,11 @@ footer.site .brand svg { width: 26px; height: 28px; }
   body { font-size: 17px; }
   section { padding-block: 72px; }
   .flow { grid-template-columns: 1fr; }
-  .test { grid-template-columns: 1fr; gap: 18px; }
+  .quick-row .btn { flex: 1 1 100%; }
   .who { grid-template-columns: 1fr; gap: 22px; }
   .mono { width: 84px; height: 84px; font-size: 2rem; }
   .next { grid-template-columns: 1fr; gap: 14px; padding: 24px; }
-  form { grid-template-columns: 1fr; padding: 22px; }
+  #waitlist { grid-template-columns: 1fr; padding: 22px; }
   .choices { grid-template-columns: 1fr; }
   .compass { width: 124px; top: 8%; padding: 10px; }
   .compass .ring { width: 66px; height: 66px; }
@@ -352,18 +356,27 @@ footer.site .brand svg { width: 26px; height: 28px; }
   <div class="wrap">
     <header class="top">
       <a class="brand" href="#"><svg aria-hidden="true"><use href="#tag"/></svg>Ranch Hand</a>
-      <a class="link" href="#join">Join the beta</a>
+      <a class="link" href="#join">Get early access</a>
     </header>
 
     <div class="hero-grid">
       <div>
-        <p class="eyebrow">Android beta testers wanted</p>
+        <p class="eyebrow">For working cattle ranches</p>
         <h1>Mark it once. <span class="tag">Anyone can find it.</span></h1>
         <p class="lede">Out in the brush you almost have to step on a sick calf to find it again. Snap it and pin it in seconds, even with no signal. Whoever rides out next gets the photo and an arrow straight to it, and the owner sees what the crew found today and what's still open.</p>
-        <div class="actions">
-          <a class="btn" href="#join">Join the Android beta</a>
-          <span class="note"><b>Free for your ranch.</b> One owner and up to three hands, free forever. Need more hands on the crew? $19.99 a month per ranch, any size. Android now, iPhone next.</span>
+        <form class="quick" id="quick" novalidate>
+          <label for="quick-email">Your email</label>
+          <div class="quick-row">
+            <input id="quick-email" name="email" type="email" autocomplete="email" inputmode="email" placeholder="you@example.com" required>
+            <button class="btn" type="submit">Get early access</button>
+          </div>
+          <span id="quick-err" class="error" role="alert" hidden></span>
+        </form>
+        <div id="quick-thanks" class="quick-thanks" role="status" hidden>
+          <b>You're on the list.</b>
+          <span>We'll email you when the beta opens. Got 30 seconds? <a href="#join">Tell us about your crew</a>.</span>
         </div>
+        <p class="note"><b>Free for your ranch.</b> One owner and up to three hands, free forever. Android first, iPhone next.</p>
         <div class="proof">
           <span><b>Under 10 s</b> to pin it</span>
           <span><b>No signal</b> needed in the pasture</span>
@@ -504,25 +517,15 @@ footer.site .brand svg { width: 26px; height: 28px; }
     </div>
   </section>
 
-  <section aria-labelledby="test-h">
-    <div class="wrap test">
-      <div class="date">June<br>2027</div>
-      <div>
-        <p class="eyebrow">Field test</p>
-        <h2 id="test-h" style="margin-top:12px">Out on a working Wyoming ranch</h2>
-        <p>Ranch Hand rides out with working hands in Wyoming in June 2027: real cattle, real feed runs and no cell signal. Ranches on the list get the next spots to try it.</p>
-      </div>
-    </div>
-  </section>
-
   <section aria-labelledby="who-h">
     <div class="wrap who">
       <div class="mono" aria-hidden="true">BR</div>
       <div>
         <p class="eyebrow">Who's building this</p>
-        <h2 id="who-h" style="margin-top:12px">One builder, and the ranches on the list</h2>
-        <p>I'm Bob Roberts, a senior software developer who has spent years building and shipping web apps. Ranch Hand is built for the hardest place to use software: no signal, gloves on, and no time for an app that gets in the way.</p>
-        <p>It's a small, focused tool, offline-first from day one, built on open maps so a ranch's pins aren't locked into anybody's platform. It rides out on a working Wyoming ranch in June 2027, and what the hands there say decides what gets built next.</p>
+        <h2 id="who-h" style="margin-top:12px">Built after a week in the Nebraska Sandhills</h2>
+        <p>I'm Bob Roberts. In the summer of 2026 I spent a week on a working cattle ranch in the Nebraska Sandhills, riding every day, checking cattle and riding along for haying. One problem stuck with me: a hand spots a sick calf or a stuck float where there's no signal, and the next person out can't find it again.</p>
+        <p>I'm not a rancher. I've built software for more than 15 years, and I also run <a href="https://ranchbrandbook.com">Ranch Brand Book</a>, a free directory of working ranches you can visit. Ranch Hand is the tool I wanted that week: offline-first from day one, buttons big enough for gloves, and built on open maps so a ranch's pins aren't locked into anybody's platform.</p>
+        <p>In June 2027 it rides out with working hands on a Wyoming ranch: real cattle, real feed runs and no cell signal. What they say decides what gets built next, and ranches on the list get the next spots to try it.</p>
         <p>If something on your place gets lost between the pasture and the house, I'd like to hear about it. Email comes straight to me.</p>
         <a class="mail" href="mailto:bob@getranchhand.com">bob@getranchhand.com</a>
       </div>
@@ -532,15 +535,16 @@ footer.site .brand svg { width: 26px; height: 28px; }
   <section class="join" id="join" aria-labelledby="join-h">
     <div class="wrap join-grid">
       <div>
-        <p class="eyebrow">Android beta</p>
+        <p class="eyebrow">Early access</p>
         <h2 id="join-h" style="margin-top:12px">Test it on your ranch</h2>
-        <p class="lede">Six quick questions. Android crews get a Play Store test link as soon as the beta opens; iPhone crews hear from us first when it's ready. Founding ranches that need more hands pay $199 a year instead of $19.99 a month, locked for as long as they stay.</p>
+        <p class="lede" id="join-lede">Only your email is needed; the rest helps us build it for your crew. Android crews get a Play Store test link when the beta opens, and iPhone crews hear first when theirs is ready.</p>
+        <p class="fine price">Free for one owner and up to three hands, forever. Bigger crews pay $19.99 a month per ranch, any size. Founding ranches lock in $199 a year for as long as they stay.</p>
       </div>
 
       <div>
         <form id="waitlist" novalidate>
-          <div class="row"><label for="name">Your name</label><input id="name" name="name" autocomplete="name" required></div>
           <div class="row"><label for="email">Email</label><input id="email" name="email" type="email" autocomplete="email" inputmode="email" required></div>
+          <div class="row"><label for="name">Your name</label><input id="name" name="name" autocomplete="name"></div>
           <div class="row"><label for="state">State</label><input id="state" name="state" autocomplete="address-level1" placeholder="Wyoming"></div>
           <div class="row"><label for="head">About how many head?</label>
             <select id="head" name="head_count">
@@ -638,39 +642,77 @@ const WAITLIST_ENDPOINT = "https://ranch.thebob.dev/api/v1/signups";
 const linkParams = new URLSearchParams(location.search);
 const SIGNUP_SOURCE = linkParams.get("src") || linkParams.get("utm_source") || "";
 
+const EMAIL_OK = /^\S+@\S+\.\S+$/;
+
+// Sends the answers; true when the API took them. With no endpoint (a preview) nothing is sent.
+async function sendSignup(answers) {
+  if (!WAITLIST_ENDPOINT) return true;
+  try {
+    const res = await fetch(WAITLIST_ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ signup: { ...answers, source: SIGNUP_SOURCE } })
+    });
+    return res.ok;
+  } catch (_) {
+    return false;
+  }
+}
+
+function showError(el, message) {
+  el.textContent = message;
+  el.hidden = false;
+}
+
 const form = document.getElementById("waitlist");
 const err = document.getElementById("err");
 const thanks = document.getElementById("thanks");
 
+// Step 1, in the hero: only an email. It sends the email alone, so answers given earlier are never blanked.
+const quick = document.getElementById("quick");
+const quickErr = document.getElementById("quick-err");
+
+quick.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  quickErr.hidden = true;
+  const email = quick.elements.email.value.trim();
+  if (!EMAIL_OK.test(email)) {
+    showError(quickErr, "Add a working email so we can reach you.");
+    quick.elements.email.focus();
+    return;
+  }
+  if (!(await sendSignup({ email }))) {
+    showError(quickErr, "That didn't go through. Check your connection and try again.");
+    return;
+  }
+  quick.hidden = true;
+  document.getElementById("quick-thanks").hidden = false;
+  // Step 2 is the form at the bottom, now only the optional crew questions
+  form.elements.email.value = email;
+  document.getElementById("join-h").textContent = "You're on the list. Tell us about your crew";
+  document.getElementById("join-lede").textContent = "All optional. It takes about 30 seconds and tells us which phones to build for first.";
+  form.querySelector("button").textContent = "Send my answers";
+});
+
+// Step 2, or the whole sign-up for someone who scrolled straight to the bottom
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
   err.hidden = true;
-  const name = form.elements.name.value.trim();
-  const email = form.elements.email.value.trim();
-  if (!name || !/^\S+@\S+\.\S+$/.test(email)) {
-    err.textContent = "Add your name and a working email so we can reach you.";
-    err.hidden = false;
-    (name ? form.elements.email : form.elements.name).focus();
+  if (!EMAIL_OK.test(form.elements.email.value.trim())) {
+    showError(err, "Add a working email so we can reach you.");
+    form.elements.email.focus();
     return;
   }
-  if (WAITLIST_ENDPOINT) {
-    try {
-      const res = await fetch(WAITLIST_ENDPOINT, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ signup: { ...Object.fromEntries(new FormData(form)), source: SIGNUP_SOURCE } })
-      });
-      if (!res.ok) throw new Error(String(res.status));
-    } catch (_) {
-      err.textContent = "That didn't go through. Check your connection and try again.";
-      err.hidden = false;
-      return;
-    }
+  if (!(await sendSignup(Object.fromEntries(new FormData(form))))) {
+    showError(err, "That didn't go through. Check your connection and try again.");
+    return;
   }
-  // Android (or both) can test now; iPhone-only crews wait for the iPhone build
-  if (form.elements.phone.value === "iphone") {
-    document.getElementById("thanks-note").textContent = "Thanks. We'll tell you as soon as the iPhone version is ready.";
-  }
+  // Android (or both) can test first; iPhone-only crews wait for the iPhone build
+  const phone = form.elements.phone.value;
+  document.getElementById("thanks-note").textContent =
+    phone === "iphone" ? "Thanks. We'll tell you as soon as the iPhone version is ready."
+    : phone ? "Thanks. We'll email you a Play Store test link for Android when the beta opens."
+    : "Thanks. We'll email you when the beta opens.";
   form.hidden = true;
   thanks.hidden = false;
 });

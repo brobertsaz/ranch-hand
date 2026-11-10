@@ -22,6 +22,14 @@ RSpec.describe "Sign-ups page", type: :request do
     expect(response.body.index("Cody")).to be < response.body.index("Jess")
   end
 
+  it "shows a sign-up that left only an email" do
+    Signup.create!(email: "ty@example.com")
+
+    get "/signups", headers: sign_in
+
+    expect(response.body).to include("No name given", "ty@example.com")
+  end
+
   it "asks for the password, and refuses a wrong one" do
     get "/signups"
     expect(response).to have_http_status(:unauthorized)

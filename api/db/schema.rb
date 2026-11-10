@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_20_210000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_10_120000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -137,7 +137,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_20_210000) do
   end
 
   create_table "signups", force: :cascade do |t|
-    t.string "name", null: false
+    t.string "name"
     t.string "email", null: false
     t.string "state"
     t.string "head_count"

@@ -10,6 +10,17 @@ RSpec.describe "Signups", type: :request do
     expect(Signup.sole).to have_attributes(name: "Jess", email: "jess@example.com", head_count: "100-499", rides: "both", phone: "android")
   end
 
+  it "takes just an email, then fills in the rest when the crew questions come in" do
+    post "/api/v1/signups", params: { signup: { email: "jess@example.com", source: "facebook" } }, as: :json
+
+    expect(response).to have_http_status(:created)
+    expect(Signup.sole).to have_attributes(name: nil, email: "jess@example.com", source: "facebook")
+
+    post "/api/v1/signups", params: { signup: answers.merge(name: " ") }, as: :json
+
+    expect(Signup.sole).to have_attributes(name: nil, state: "Wyoming", phone: "android")
+  end
+
   it "updates the answers when the same email signs up again" do
     post "/api/v1/signups", params: { signup: answers }, as: :json
     post "/api/v1/signups", params: { signup: answers.merge(email: "jess@example.com", rides: "horse") }, as: :json
