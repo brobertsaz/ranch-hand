@@ -1,0 +1,82 @@
+# The same walk on iOS and Android: join, log an observation, add a place, record a ride, relaunch.
+# Needs a release build made with EXPO_PUBLIC_API_URL pointing at a local API (http://localhost:3000 for the
+# iOS simulator, http://10.0.2.2:3000 for the Android emulator), and a brand-new ranch each run, because the
+# counts it checks ("1 open") are the whole ranch's:
+#   CODE=$(cd ../api && bin/rails runner 'puts Ranch.create!(name: "E2E Ranch").invite_code')
+#   maestro test .maestro/smoke.yaml -e INVITE_CODE=$CODE
+appId: dev.ranchhand.spike
+---
+# iOS keeps the sign-in in the Keychain, which outlives the app's own data
+- clearKeychain
+- launchApp:
+    clearState: true
+    permissions:
+      all: allow
+- setLocation:
+    latitude: 41.1400
+    longitude: -104.8202
+
+# Android opens on "start or join"; iOS goes straight to the join form
+- runFlow:
+    when:
+      visible: 'Join a ranch'
+    commands:
+      - tapOn: 'Join a ranch'
+- tapOn:
+    id: 'invite-code'
+- inputText: ${INVITE_CODE}
+- tapOn:
+    id: 'member-name'
+- inputText: 'Maestro'
+# Tapping the heading puts the keyboard away on both platforms
+- tapOn: 'Join your ranch'
+- tapOn: 'Join the crew'
+- extendedWaitUntil:
+    visible: 'Log an observation'
+    timeout: 20000
+
+# An observation with a photo
+- tapOn: 'Log an observation'
+- tapOn: 'Take photo'
+- tapOn: 'Fence'
+- tapOn: 'Wire down'
+- tapOn: 'Drop the pin'
+- extendedWaitUntil:
+    visible: '1 open.*'
+    timeout: 15000
+
+# A place where they're standing
+- tapOn: "Add a place where you're standing"
+- tapOn: 'Save place'
+- assertNotVisible: 'Save place'
+
+# A short ride
+- tapOn: 'Rides'
+- tapOn: 'Start a ride'
+- runFlow:
+    when:
+      visible: 'Change to Always Allow'
+    commands:
+      - tapOn: 'Change to Always Allow'
+- assertVisible: 'RECORDING RIDE'
+- travel:
+    points:
+      - 41.1400,-104.8202
+      - 41.1430,-104.8202
+      - 41.1430,-104.8160
+    speed: 7900
+- longPressOn: 'Hold to stop the ride'
+- runFlow:
+    when:
+      visible: 'Skip'
+    commands:
+      - tapOn: 'Skip'
+- tapOn: 'Rides'
+- assertVisible: '1 Ride'
+
+# Everything is still there after a cold start
+- stopApp
+- launchApp
+- extendedWaitUntil:
+    visible: '1 open.*'
+    timeout: 15000

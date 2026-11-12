@@ -1,18 +1,18 @@
-import { addDatabaseChangeListener } from 'expo-sqlite';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useState } from 'react';
-import { Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 
-import { fetchRanch } from '../api';
+import { errorText, fetchRanch, newInviteCode, removeMember, type Ranch } from '../api';
 import AppButton from '../components/AppButton';
 import FieldHeader from '../components/FieldHeader';
 import Icon from '../components/Icon';
 import { useTabBarHeight } from '../components/TabBar';
-import { db, getState, setState, type Member } from '../db';
+import { db, getState, markMemberRemoved, onDatabaseChange, setState, type Member } from '../db';
 import { timeAgo } from '../format';
-import { initials } from '../members';
+import { initials, useIsOwner } from '../members';
 import type { Device } from '../settings';
 import { colors, fonts, palette, space, touch } from '../theme';
+import { useNow } from '../useNow';
 
 type CrewMember = Member & { logged: number; lastOut: number | null };
 
@@ -20,6 +20,7 @@ type CrewMember = Member & { logged: number; lastOut: number | null };
 const RANCH_KEY = 'ranch';
 
 async function loadCrew(): Promise<CrewMember[]> {
+  // Hands the owner removed leave the list and the counts; their names stay on what they logged.
   // "Last out" is the latest thing they logged or rode, by the time it happened
   return db().getAllAsync<CrewMember>(`
     SELECT m.id, m.name, m.role,
@@ -29,18 +30,41 @@ async function loadCrew(): Promise<CrewMember[]> {
         COALESCE((SELECT MAX(ended_at) FROM rides r WHERE r.member_id = m.id), 0)
       ) AS lastOut
     FROM members m
+    WHERE m.removed = 0
     ORDER BY lastOut DESC, m.name`);
 }
 
+// Free ranches have a cap worth counting against; paid and founding ranches don't
+function spotsLine(ranch: Pick<Ranch, 'hand_count' | 'hand_limit' | 'plan' | 'unlimited_hands'>): string {
+  if (ranch.unlimited_hands) return `${ranch.plan === 'founding' ? 'Founding ranch' : 'Pro'} · no limit on hands`;
+  return ranch.hand_count >= ranch.hand_limit ? `All ${ranch.hand_limit} free spots are taken.` : `${ranch.hand_count} of ${ranch.hand_limit} free spots taken.`;
+}
+
 export default function CrewScreen({ device, onOpenSettings }: { device: Device; onOpenSettings: () => void }) {
+  const now = useNow(60_000);
   const tabBarHeight = useTabBarHeight();
   const [crew, setCrew] = useState<CrewMember[]>([]);
   const [inviteCode, setInviteCode] = useState<string | null>(null);
-  const [hands, setHands] = useState<{ hand_count: number; hand_limit: number } | null>(null);
+  const [hands, setHands] = useState<Pick<Ranch, 'hand_count' | 'hand_limit' | 'plan' | 'unlimited_hands'> | null>(null);
+  // Removing a hand and changing the code are the owner's calls (the server agrees)
+  const isOwner = useIsOwner(device.memberId);
+  const [busy, setBusy] = useState(false);
 
   const reload = useCallback(() => {
     loadCrew().then(setCrew);
   }, []);
+
+  const refreshRanch = useCallback(
+    () =>
+      fetchRanch(device)
+        .then((ranch) => {
+          setInviteCode(ranch.invite_code);
+          setHands(ranch);
+          setState(RANCH_KEY, JSON.stringify(ranch));
+        })
+        .catch(() => {}), // offline: keep the cached code
+    [device],
+  );
 
   useEffect(() => {
     reload();
@@ -50,16 +74,62 @@ export default function CrewScreen({ device, onOpenSettings }: { device: Device;
       setInviteCode(ranch.invite_code);
       if (ranch.hand_limit) setHands(ranch);
     });
-    fetchRanch(device)
-      .then((ranch) => {
-        setInviteCode(ranch.invite_code);
-        setHands(ranch);
-        setState(RANCH_KEY, JSON.stringify(ranch));
-      })
-      .catch(() => {}); // offline: keep the cached code
-    const sub = addDatabaseChangeListener(({ tableName }) => ['members', 'observations', 'rides'].includes(tableName) && reload());
+    refreshRanch();
+    const sub = onDatabaseChange(['members', 'observations', 'rides'], reload);
     return () => sub.remove();
-  }, [device, reload]);
+  }, [refreshRanch, reload]);
+
+  const needsSignal = (error: unknown) => `${errorText(error)} This needs a signal. Try again at the house.`;
+
+  function confirmRemove(member: CrewMember) {
+    Alert.alert(
+      `Remove ${member.name}?`,
+      `Their phone stops syncing with ${device.ranchName} and their spot opens up. What they logged stays on the map. They can join again with the invite code, so get a new code if they shouldn't.`,
+      [
+        { text: 'Keep them', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: async () => {
+            setBusy(true);
+            try {
+              await removeMember(device, member.id);
+              await markMemberRemoved(member.id);
+              refreshRanch();
+            } catch (error) {
+              Alert.alert(`Couldn't remove ${member.name}`, needsSignal(error));
+            } finally {
+              setBusy(false);
+            }
+          },
+        },
+      ],
+    );
+  }
+
+  function confirmNewCode() {
+    Alert.alert('Get a new invite code?', "The old code stops working right away. Hands already on the crew stay; anyone you've sent the old code to needs the new one.", [
+      { text: 'Keep this code', style: 'cancel' },
+      {
+        text: 'New code',
+        style: 'destructive',
+        onPress: async () => {
+          setBusy(true);
+          try {
+            const { invite_code } = await newInviteCode(device);
+            setInviteCode(invite_code);
+            // The cached copy too, so the old code doesn't come back with no signal
+            const cached = await getState(RANCH_KEY);
+            await setState(RANCH_KEY, JSON.stringify({ ...(cached ? JSON.parse(cached) : {}), invite_code }));
+          } catch (error) {
+            Alert.alert("Couldn't change the code", needsSignal(error));
+          } finally {
+            setBusy(false);
+          }
+        },
+      },
+    ]);
+  }
 
   // The owner isn't a hand, so this matches the free-spot count on the invite card
   const handCount = crew.filter((m) => m.role === 'hand').length;
@@ -84,7 +154,7 @@ export default function CrewScreen({ device, onOpenSettings }: { device: Device;
         }
         stats={[
           { value: String(handCount), label: handCount === 1 ? 'Hand' : 'Hands' },
-          { value: String(crew.filter((m) => m.lastOut && Date.now() - m.lastOut < 86_400_000).length), label: 'Out today' },
+          { value: String(crew.filter((m) => m.lastOut && now - m.lastOut < 86_400_000).length), label: 'Out today' },
           { value: String(crew.reduce((sum, m) => sum + m.logged, 0)), label: 'Logged' },
         ]}
       />
@@ -101,12 +171,15 @@ export default function CrewScreen({ device, onOpenSettings }: { device: Device;
           </Text>
           {hands && (
             <Text style={styles.inviteHint}>
-              {hands.hand_count >= hands.hand_limit
-                ? `All ${hands.hand_limit} free spots are taken.`
-                : `${hands.hand_count} of ${hands.hand_limit} free spots taken.`}
+              {spotsLine(hands)}
             </Text>
           )}
           <AppButton title="Share the code" onPress={share} disabled={!inviteCode} variant="secondary" />
+          {isOwner && (
+            <Pressable onPress={confirmNewCode} disabled={busy || !inviteCode} accessibilityRole="button" hitSlop={8} style={styles.newCode}>
+              <Text style={styles.newCodeText}>New code</Text>
+            </Pressable>
+          )}
         </View>
 
         {crew.length === 0 && <Text style={styles.empty}>The crew shows up here after the first sync.</Text>}
@@ -127,11 +200,16 @@ export default function CrewScreen({ device, onOpenSettings }: { device: Device;
                   {member.logged} logged · {member.lastOut ? `last out ${timeAgo(member.lastOut)}` : 'not out yet'}
                 </Text>
               </View>
-              {member.lastOut && Date.now() - member.lastOut < 3 * 3_600_000 ? (
+              {member.lastOut && now - member.lastOut < 3 * 3_600_000 ? (
                 <View accessible accessibilityLabel="Out in the last few hours">
                   <Icon name="rides" size={20} color={palette.sky} />
                 </View>
               ) : null}
+              {isOwner && member.role === 'hand' && !me && (
+                <Pressable onPress={() => confirmRemove(member)} disabled={busy} accessibilityRole="button" accessibilityLabel={`Remove ${member.name}`} hitSlop={8} style={styles.remove}>
+                  <Text style={styles.removeText}>Remove</Text>
+                </Pressable>
+              )}
             </View>
           );
         })}
@@ -152,6 +230,11 @@ const styles = StyleSheet.create({
   inviteLabel: { fontFamily: fonts.display, fontSize: 16, letterSpacing: 2.4, color: palette.pine },
   code: { fontFamily: fonts.displayBlack, fontSize: 60, lineHeight: 62, letterSpacing: 3, color: palette.pine },
   inviteHint: { fontSize: 15, fontWeight: '600', color: palette.pine, marginBottom: space.xs },
+  // Quiet next to Share: it's the rare, careful action
+  newCode: { minHeight: touch.min, alignItems: 'center', justifyContent: 'center' },
+  newCodeText: { fontSize: 15, fontWeight: '800', color: palette.pine, textDecorationLine: 'underline' },
+  remove: { minHeight: touch.min, paddingHorizontal: space.sm, justifyContent: 'center' },
+  removeText: { fontSize: 14, fontWeight: '800', color: colors.danger },
   empty: { fontSize: 15, color: colors.textMuted, paddingHorizontal: 4 },
   member: {
     minHeight: 76, backgroundColor: colors.surface, borderRadius: 16, borderBottomWidth: 2, borderBottomColor: colors.hairline,

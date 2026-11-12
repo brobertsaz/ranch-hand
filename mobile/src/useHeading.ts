@@ -1,4 +1,6 @@
 import * as Location from 'expo-location';
+
+import { GPS_ONLY_OK } from './locate';
 import { useEffect, useRef, useState } from 'react';
 import { Animated, Easing } from 'react-native';
 
@@ -35,8 +37,12 @@ export function useHeading(): Heading {
       const last = await Location.getLastKnownPositionAsync().catch(() => null);
       if (last && !cancelled) setFix(last);
       position = await Location.watchPositionAsync(
-        { accuracy: Location.Accuracy.BestForNavigation, timeInterval: 1000, distanceInterval: 1 },
-        (next) => setFix(next),
+        { accuracy: Location.Accuracy.BestForNavigation, timeInterval: 1000, distanceInterval: 1, ...GPS_ONLY_OK },
+        (next) => {
+          setFix(next);
+          // Fixes are coming again, so the "lost it" message is no longer true
+          setError(null);
+        },
         () => setError('Lost the GPS fix. Step into the open.'),
       );
       heading = await Location.watchHeadingAsync((next) => setCompass(next)).catch(() => null);
@@ -44,7 +50,10 @@ export function useHeading(): Heading {
         position?.remove();
         heading?.remove();
       }
-    })();
+    })().catch(() => {
+      // Location switched off in the phone's settings, most often. Without this the screen waits forever.
+      if (!cancelled) setError("Can't get your position. Check that Location is on for Ranch Hand.");
+    });
 
     return () => {
       cancelled = true;
@@ -68,7 +77,7 @@ export function useHeading(): Heading {
 
 // Spins an arrow to `angle`, turning the short way round so crossing north doesn't spin it a full circle
 export function useArrowRotation(angle: number | null) {
-  const rotation = useRef(new Animated.Value(0)).current;
+  const [rotation] = useState(() => new Animated.Value(0));
   const shown = useRef(0);
   useEffect(() => {
     if (angle === null) return;

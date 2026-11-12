@@ -67,12 +67,12 @@ export function relativeTo(from: LngLat, to: LngLat): string {
   return `${formatDistance(meters)} ${compassPoint(bearingDegrees(from, to))} of you`;
 }
 
-// "1 h 20 m", "12 m", "40 s"
+// "1 h 20 min", "12 min", "40 s". Minutes are spelled out because "1 m" reads as one meter next to a distance.
 export function formatDuration(ms: number): string {
-  const minutes = Math.floor(ms / 60_000);
-  if (minutes < 1) return `${Math.max(0, Math.round(ms / 1000))} s`;
-  if (minutes < 60) return `${minutes} m`;
-  return `${Math.floor(minutes / 60)} h ${minutes % 60} m`;
+  if (ms < 60_000) return `${Math.max(0, Math.round(ms / 1000))} s`;
+  const minutes = Math.round(ms / 60_000);
+  if (minutes < 60) return `${minutes} min`;
+  return `${Math.floor(minutes / 60)} h ${minutes % 60} min`;
 }
 
 // "1:05:09", for a running timer

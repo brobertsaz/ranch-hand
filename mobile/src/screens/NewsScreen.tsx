@@ -1,4 +1,3 @@
-import { addDatabaseChangeListener } from 'expo-sqlite';
 import { StatusBar } from 'expo-status-bar';
 import { Fragment, useCallback, useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -7,12 +6,13 @@ import FieldHeader from '../components/FieldHeader';
 import Icon from '../components/Icon';
 import Stamp from '../components/Stamp';
 import { useTabBarHeight } from '../components/TabBar';
-import { getState } from '../db';
+import { getState, onDatabaseChange } from '../db';
 import { timeAgo } from '../format';
 import { useMemberNames, who } from '../members';
 import { crewNews, dayLabel, isNew, markNewsSeen, newsSeenAt, type NewsItem } from '../news';
 import { colors, fonts, palette, space, touch } from '../theme';
 import type { SyncState } from '../useSync';
+import { useNow } from '../useNow';
 
 type Props = {
   memberId: string;
@@ -42,14 +42,15 @@ export default function NewsScreen({ memberId, ranchName, sync, onOpenObservatio
       markNewsSeen();
     });
     reload();
-    const sub = addDatabaseChangeListener(reload);
+    // sync_state too: that's where the "synced 5 min ago" time lives
+    const sub = onDatabaseChange(['observations', 'rides', 'waypoints', 'sync_state'], reload);
     return () => sub.remove();
   }, [reload]);
 
   const newCount = seenAt === null ? 0 : items.filter((item) => isNew(item, seenAt)).length;
   const waiting = sync.pending.records;
   const openCount = items.filter((item) => item.status === 'open').length;
-  const today = dayLabel(Date.now());
+  const today = dayLabel(useNow(60_000));
   const fixedToday = items.filter((item) => item.status === 'resolved' && dayLabel(item.at) === today).length;
 
   return (

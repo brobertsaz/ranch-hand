@@ -1,16 +1,16 @@
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
-import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import AppButton from '../components/AppButton';
 import Icon from '../components/Icon';
 import MiniMap from '../components/MiniMap';
-import { photosFor, setObservationStatus, type Observation, type ObservationStatus } from '../db';
+import { onDatabaseChange, photosFor, setObservationStatus, type Observation, type ObservationStatus } from '../db';
 import { bearingDegrees, compassPoint, dayAndTime, distanceMeters, clockParts, formatDistance, relativeTo, timeAgo, type LngLat } from '../format';
 import { KIND_INFO, STATUS_LABEL, splitNote } from '../kinds';
 import { useMemberNames, who } from '../members';
-import { photoFile } from '../photoFiles';
+import { onPhotoArrived, photoFile } from '../photoFiles';
 import { colors, fonts, palette, space, sync, touch } from '../theme';
 import GuideScreen, { guideToObservation } from './GuideScreen';
 
@@ -37,20 +37,38 @@ export default function ObservationScreen({ observation, placeName = null, membe
   const names = useMemberNames();
   const author = who(names, observation.member_id, memberId);
   const synced = observation._status === 'synced';
+  const rejected = observation._status === 'rejected';
   const accuracy = `±${Math.round(observation.accuracy ?? 0)} m`;
   const { picks, extra } = splitNote(observation.kind, observation.note);
   const meters = here ? distanceMeters(here, lngLat) : null;
 
   useEffect(() => {
-    photosFor(observation.id).then((photos) => {
-      if (photos.length === 0) return setPhotoUri(undefined);
-      const file = photos.map((p) => photoFile(p.id)).find((f) => f.exists);
-      setPhotoUri(file?.uri ?? null);
-    });
+    let gone = false;
+    const load = () =>
+      photosFor(observation.id).then((photos) => {
+        if (gone) return;
+        if (photos.length === 0) return setPhotoUri(undefined);
+        const file = photos.map((p) => photoFile(p.id)).find((f) => f.exists);
+        setPhotoUri(file?.uri ?? null);
+      });
+    load();
+    // "Photo arrives on the next sync" has to come true while the screen is open: the photo's row can land,
+    // and later its file, which changes no row
+    const sub = onDatabaseChange(['photos'], load);
+    const arrivals = onPhotoArrived(load);
+    return () => {
+      gone = true;
+      sub.remove();
+      arrivals.remove();
+    };
   }, [observation.id]);
 
   async function changeStatus(status: ObservationStatus) {
-    await setObservationStatus(observation.id, status, memberId);
+    try {
+      await setObservationStatus(observation.id, status, memberId);
+    } catch {
+      return Alert.alert("Couldn't save that", 'The phone had trouble saving. Try again.');
+    }
     onChanged();
   }
 
@@ -141,9 +159,9 @@ export default function ObservationScreen({ observation, placeName = null, membe
           )}
 
           <View style={styles.syncRow}>
-            <View style={[styles.dot, { backgroundColor: synced ? sync.synced : sync.pending }]} />
+            <View style={[styles.dot, { backgroundColor: synced ? sync.synced : rejected ? sync.failed : sync.pending }]} />
             <Text style={styles.syncText}>
-              {synced ? 'Synced to the crew' : "Saved on this phone. Sends when you're back in range."}
+              {synced ? 'Synced to the crew' : rejected ? "Only on this phone. The server didn't take it; Settings says why." : "Saved on this phone. Sends when you're back in range."}
             </Text>
           </View>
         </View>

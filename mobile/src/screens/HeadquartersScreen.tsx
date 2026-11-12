@@ -65,7 +65,8 @@ export default function HeadquartersScreen({ device, onDone }: { device: Device;
   useEffect(() => {
     (async () => {
       const { granted } = await Location.requestForegroundPermissionsAsync();
-      const fix = granted ? await locate() : null;
+      // Only where the map opens, so an old last-known position is fine here: the owner moves the map anyway
+      const fix = granted ? ((await locate())?.fix ?? (await Location.getLastKnownPositionAsync().catch(() => null))) : null;
       const at: [number, number] = fix ? [fix.coords.longitude, fix.coords.latitude] : US_CENTER;
       setStart({ center: at, zoom: fix ? 13 : 4 });
       setCenter(at);
@@ -105,7 +106,9 @@ export default function HeadquartersScreen({ device, onDone }: { device: Device;
     } catch (e) {
       setError(
         e instanceof ApiError
-          ? `The server had a problem (${e.status}). Try again, or skip and use Sharpen this area later.`
+          ? e.status === 422 && e.code
+            ? e.code // the server's own sentence, like the cap on sharp areas
+            : `The server had a problem (${e.status}). Try again, or skip and use Sharpen this area later.`
           : "Can't reach the server. Try again with signal, or skip for now.",
       );
     } finally {

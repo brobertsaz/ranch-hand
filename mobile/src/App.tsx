@@ -18,9 +18,18 @@ export default function App() {
   // Only the two weights theme.ts names, so the rest of the family stays out of the bundle
   const [fontsLoaded, fontError] = useFonts({ BarlowCondensed_800ExtraBold, BarlowCondensed_900Black });
 
+  // Why the app is back on the setup screen when it shouldn't be
+  const [notice, setNotice] = useState<string | null>(null);
+
   useEffect(() => {
     db();
-    loadDevice().then(setDevice);
+    // A saved sign-in that can't be read (a corrupt or locked keystore) would leave the spinner up forever
+    loadDevice()
+      .then(setDevice)
+      .catch(() => {
+        setNotice("Couldn't read this phone's saved sign-in. Join again to get back on your ranch.");
+        setDevice(null);
+      });
   }, []);
 
   // The ranch name is saved at join; pick up a rename once there's signal
@@ -50,7 +59,7 @@ export default function App() {
       <StatusBar style={colors.statusBar} />
       {/* Android dark mode otherwise paints the window dark under our dark text */}
       <View style={{ flex: 1, backgroundColor: colors.background }}>
-        {device ? <MapScreen device={device} onSignOut={() => setDevice(null)} /> : <SetupScreen onJoined={setDevice} />}
+        {device ? <MapScreen device={device} onSignOut={() => setDevice(null)} /> : <SetupScreen notice={notice} onJoined={(joined) => { setNotice(null); setDevice(joined); }} />}
       </View>
     </SafeAreaProvider>
   );

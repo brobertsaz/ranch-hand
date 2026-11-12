@@ -1,4 +1,3 @@
-import { addDatabaseChangeListener } from 'expo-sqlite';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -7,10 +6,11 @@ import AppButton from '../components/AppButton';
 import FieldHeader from '../components/FieldHeader';
 import Icon from '../components/Icon';
 import { useTabBarHeight } from '../components/TabBar';
-import { liveRides, type Ride } from '../db';
+import { liveRides, onDatabaseChange, type Ride } from '../db';
 import { dayAndTime, formatDistance, formatDuration } from '../format';
 import { useMemberNames, who } from '../members';
 import { colors, fonts, palette, space } from '../theme';
+import { useNow } from '../useNow';
 
 type Props = {
   memberId: string;
@@ -33,7 +33,7 @@ export default function RidesScreen({ memberId, riding, onStart, onBackToRide, o
 
   useEffect(() => {
     reload();
-    const sub = addDatabaseChangeListener(({ tableName }) => tableName === 'rides' && reload());
+    const sub = onDatabaseChange(['rides'], reload);
     return () => sub.remove();
   }, [reload]);
 
@@ -46,7 +46,7 @@ export default function RidesScreen({ memberId, riding, onStart, onBackToRide, o
     }
   }
 
-  const weekAgo = Date.now() - 7 * 86_400_000;
+  const weekAgo = useNow(60_000) - 7 * 86_400_000;
   const thisWeek = rides.filter((ride) => ride.started_at >= weekAgo);
   const miles = thisWeek.reduce((sum, ride) => sum + ride.distance_meters, 0) / 1609.34;
   const hours = thisWeek.reduce((sum, ride) => sum + (ride.ended_at - ride.started_at), 0) / 3_600_000;

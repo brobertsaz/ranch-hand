@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Animated, Easing, Pressable, StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -6,6 +6,7 @@ import { formatClock, formatDistance, formatDuration, type LngLat } from '../for
 import { lastFix, trackDistance, type ActiveRide } from '../rides';
 import { colors, fonts, palette, radius, space, touch } from '../theme';
 import Icon from './Icon';
+import { useNow } from '../useNow';
 
 // A pocket or a glove can bump a button; stopping takes a deliberate hold
 const HOLD_MS = 1200;
@@ -24,16 +25,11 @@ type Props = {
 // Mockup 6 · the ride in progress, over the map in place of the tab bar
 export default function RideSheet({ ride, track, pinsDropped, onLog, onStop, onLayout }: Props) {
   const insets = useSafeAreaInsets();
-  const [now, setNow] = useState(Date.now());
+  const now = useNow(1000);
   const [fix, setFix] = useState<{ accuracy: number; at: number } | null>(null);
   const [stopping, setStopping] = useState(false);
   const [hint, setHint] = useState(false);
-  const hold = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    const tick = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(tick);
-  }, []);
+  const [hold] = useState(() => new Animated.Value(0));
 
   // track is re-read every few seconds by the map, so a new length means a new fix
   useEffect(() => {
