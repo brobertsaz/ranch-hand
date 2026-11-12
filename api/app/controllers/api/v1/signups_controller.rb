@@ -7,10 +7,17 @@ module Api
 
       def create
         fields = params.expect(signup: %i[name email state head_count rides phone source])
-        signup = Signup.find_or_initialize_by(email: fields[:email].to_s.strip.downcase)
-        # The first link that brought them in keeps the credit when they sign up again
-        fields.delete(:source) if signup.source.present?
-        signup.update!(fields)
+        attempts = 0
+        begin
+          signup = Signup.find_or_initialize_by(email: fields[:email].to_s.strip.downcase)
+          # The first link that brought them in keeps the credit when they sign up again
+          fields.delete(:source) if signup.source.present?
+          signup.update!(fields)
+        rescue ActiveRecord::RecordNotUnique
+          # A double tap: the other request saved this email first, so go round again and update that row
+          retry if (attempts += 1) < 2
+          raise
+        end
         head :created
       end
     end

@@ -26,7 +26,11 @@ class RenderMapAreaJob < ApplicationJob
         Rails.application.executor.wrap do
           while (tile = queue.pop)
             count = rendered.increment
-            break if (count % CHECK_EVERY).zero? && MapArea.where(id: map_area.id).update_all(tile_count: count).zero?
+            if (count % CHECK_EVERY).zero? && MapArea.where(id: map_area.id).update_all(tile_count: count).zero?
+              # Emptying the queue stops the other threads too
+              queue.clear
+              break
+            end
             begin
               render(tile, source)
             rescue StandardError => e
@@ -45,6 +49,11 @@ class RenderMapAreaJob < ApplicationJob
     else
       map_area.update!(status: :failed, error: "#{failures.size} tiles failed, e.g. #{failures.pop}")
     end
+  rescue StandardError => error
+    # Anything outside the per-tile rescue (the database, a source that's gone) would otherwise leave the area
+    # "rendering" for good, with the app's progress bar stuck. update_all so a broken record can still be marked.
+    MapArea.where(id: map_area.id).update_all(status: "failed", error: "Render stopped: #{error.message}".first(250), updated_at: Time.current)
+    Rails.error.report(error, handled: true)
   end
 
   private

@@ -2,6 +2,9 @@ module Api
   module V1
     # Parts of the ranch with sharp aerial tiles. Creating one queues the render.
     class MapAreasController < BaseController
+      # Any hand can sharpen an area (the map offers it), but only the owner can throw one away
+      before_action :require_owner!, only: :destroy
+
       def index
         render json: current_ranch.map_areas.order(:created_at).map { |area| area_json(area) }
       end
@@ -9,9 +12,12 @@ module Api
       # A box on screen (Sharpen this area), or so many miles around a point (a pasture on the headquarters screen)
       def create
         box = requested_box(params.require(:map_area))
-        area = current_ranch.map_areas.create!(
-          name: params.dig(:map_area, :name).to_s.strip.presence || default_name, source: MapArea.source_for(**box).key, **box
-        )
+        # The lock makes the ranch's limits (see MapArea#ranch_has_room) hold when two phones ask at once
+        area = current_ranch.with_lock do
+          current_ranch.map_areas.create!(
+            name: params.dig(:map_area, :name).to_s.strip.presence || default_name, source: MapArea.source_for(**box).key, **box
+          )
+        end
         RenderMapAreaJob.perform_later(area)
         render json: area_json(area), status: :created
       rescue ArgumentError, TypeError
@@ -22,7 +28,10 @@ module Api
       # so many miles around a point (the headquarters screen)
       def new
         box = requested_box(params)
-        area = MapArea.new(box.merge(source: MapArea.source_for(**box).key))
+        area = MapArea.new(box.merge(ranch: current_ranch, name: default_name, source: MapArea.source_for(**box).key))
+        # Its own context: checks the box (a side off the map would break the estimate) but not whether the ranch has room
+        raise ActiveRecord::RecordInvalid, area unless area.valid?(:estimate)
+
         render json: area.slice(:source).merge(
           source_name: area.imagery.name, max_zoom: area.max_zoom, estimated_tiles: area.estimated_tiles,
           estimated_megabytes: area.estimated_megabytes, estimated_minutes: area.estimated_minutes
@@ -31,9 +40,12 @@ module Api
         render json: { error: "Bounds must be numbers" }, status: :unprocessable_content
       end
 
-      # Cancels a render in progress too: the job stops once its area is gone
+      # Cancels a render in progress too: the job stops once its area is gone. Its tiles are cleared out
+      # afterwards, except the ones another area still covers.
       def destroy
-        current_ranch.map_areas.find(params[:id]).destroy!
+        area = current_ranch.map_areas.find(params[:id])
+        area.destroy!
+        RemoveMapAreaTilesJob.perform_later(area.source, area.bounds)
         head :no_content
       end
 

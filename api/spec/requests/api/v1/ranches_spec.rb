@@ -12,7 +12,7 @@ RSpec.describe "Ranch", type: :request do
     expect(response).to have_http_status(:ok)
     expect(json).to eq(
       "id" => member.ranch_id.to_s, "name" => "Bob's Ranch", "invite_code" => "BOBSRANCH",
-      "hand_count" => 1, "hand_limit" => 3, "headquarters" => nil
+      "hand_count" => 1, "hand_limit" => 3, "plan" => "free", "unlimited_hands" => false, "headquarters" => nil
     )
   end
 
@@ -20,6 +20,40 @@ RSpec.describe "Ranch", type: :request do
     get "/api/v1/ranch"
 
     expect(response).to have_http_status(:unauthorized)
+  end
+
+  describe "a new invite code" do
+    let(:owner) { create(:member, role: :owner, ranch: create(:ranch, invite_code: "OLDCODE")) }
+
+    it "replaces the old one, which stops working" do
+      post "/api/v1/ranch/invite_code", headers: auth_headers(owner)
+
+      expect(response).to have_http_status(:ok)
+      code = owner.ranch.reload.invite_code
+      expect(code).to match(/\A[A-Z2-9]{6}\z/)
+      expect(json).to eq("invite_code" => code)
+
+      post "/api/v1/devices", params: { invite_code: "OLDCODE", name: "Jess" }, as: :json
+      expect(response).to have_http_status(:not_found)
+      post "/api/v1/devices", params: { invite_code: code, name: "Jess" }, as: :json
+      expect(response).to have_http_status(:created)
+    end
+
+    it "keeps the hands who already joined" do
+      hand = create(:member, ranch: owner.ranch)
+
+      post "/api/v1/ranch/invite_code", headers: auth_headers(owner)
+
+      get "/api/v1/ranch", headers: auth_headers(hand)
+      expect(response).to have_http_status(:ok)
+    end
+
+    it "is for the owner only" do
+      post "/api/v1/ranch/invite_code", headers: auth_headers(create(:member, ranch: owner.ranch))
+
+      expect(response).to have_http_status(:forbidden)
+      expect(owner.ranch.reload.invite_code).to eq("OLDCODE")
+    end
   end
 
   describe "setting headquarters" do

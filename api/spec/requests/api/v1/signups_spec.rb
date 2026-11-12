@@ -52,4 +52,22 @@ RSpec.describe "Signups", type: :request do
     preflight.call("https://example.com")
     expect(response.headers["Access-Control-Allow-Origin"]).to be_nil
   end
+
+  it "updates the row the other request just saved, on a double tap" do
+    # Both requests looked before either saved; this one then runs into the unique index
+    Signup.create!(email: "jess@example.com", source: "facebook")
+    lookups = 0
+    allow(Signup).to receive(:find_or_initialize_by).and_wrap_original do |original, **attributes|
+      (lookups += 1) == 1 ? Signup.new(**attributes) : original.call(**attributes)
+    end
+    allow_any_instance_of(Signup).to receive(:update!).and_wrap_original do |original, *args|
+      raise ActiveRecord::RecordNotUnique if original.receiver.new_record?
+      original.call(*args)
+    end
+
+    post "/api/v1/signups", params: { signup: answers.merge(source: "flyer") }, as: :json
+
+    expect(response).to have_http_status(:created)
+    expect(Signup.sole).to have_attributes(name: "Jess", state: "Wyoming", source: "facebook")
+  end
 end

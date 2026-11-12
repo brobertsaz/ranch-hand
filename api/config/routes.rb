@@ -5,10 +5,17 @@ Rails.application.routes.draw do
   namespace :api do
     namespace :v1 do
       resources :devices, only: :create
+      # The phone's own membership: deleting it leaves the ranch
+      resource :device, only: :destroy
+      resources :members, only: :destroy
+      # Deleting your account: a hand is forgotten, an owner takes the ranch with them
+      resource :account, only: :destroy
       resources :owners, only: :create
       resources :signups, only: :create
       resource :sync, only: %i[show create]
-      resource :ranch, only: %i[show update]
+      resource :ranch, only: %i[show update] do
+        post :invite_code
+      end
       resources :photos, only: [] do
         resource :file, only: %i[show update], controller: :photo_files
       end

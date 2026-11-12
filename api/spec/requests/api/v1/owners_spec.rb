@@ -52,4 +52,27 @@ RSpec.describe "Owners", type: :request do
 
     expect(response).to have_http_status(:unauthorized)
   end
+
+  it "signs in the owner the other request just made, on a double tap" do
+    owner = create(:member, role: :owner, google_sub: "google-123")
+    owners = Member.owner
+    # This request looked before the other one saved, then ran into the unique index
+    allow(Member).to receive(:owner).and_return(Member.none, owners)
+    allow(Ranch).to receive(:transaction).and_raise(ActiveRecord::RecordNotUnique)
+
+    post "/api/v1/owners", params: { id_token: "good-token" }, as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(json["token"]).to eq(owner.device_token)
+    expect(Ranch.count).to eq(1)
+  end
+
+  it "shortens a Google name too long for a pin" do
+    payload["name"] = "Bartholomew #{"x" * 80}"
+
+    post "/api/v1/owners", params: { id_token: "good-token" }, as: :json
+
+    expect(response).to have_http_status(:created)
+    expect(Member.sole.name.length).to eq(Member::NAME_LIMIT)
+  end
 end

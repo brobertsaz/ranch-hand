@@ -14,7 +14,7 @@ module Api
         # The app puts its token in the style URL (MapLibre won't send our header on Android) so the style can
         # add the ranch's sharp areas. Without one, the plain style.
         token = params[:token].presence || authenticate_with_http_token { |header_token| header_token }
-        @current_member = token && Member.find_by(device_token: token)
+        @current_member = token && Member.active.find_by(device_token: token)
         areas = current_member ? current_ranch.map_areas.ready.order(:id) : MapArea.none
 
         # Rails' default must-revalidate makes MapLibre refuse the copy stored in an offline pack

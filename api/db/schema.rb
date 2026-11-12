@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_10_120000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_12_130000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -68,6 +68,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_10_120000) do
     t.datetime "updated_at", null: false
     t.string "email"
     t.string "google_sub"
+    t.datetime "removed_at"
     t.index ["device_token"], name: "index_members_on_device_token", unique: true
     t.index ["google_sub"], name: "index_members_on_google_sub", unique: true
     t.index ["ranch_id"], name: "index_members_on_ranch_id"
@@ -117,6 +118,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_10_120000) do
     t.integer "hand_limit", default: 3, null: false
     t.float "hq_lat"
     t.float "hq_lng"
+    t.string "plan", default: "free", null: false
+    t.datetime "pro_until"
     t.index ["invite_code"], name: "index_ranches_on_invite_code", unique: true
   end
 

@@ -53,6 +53,12 @@ RSpec.describe NaipTiles do
       expect(described_class).to have_received(:http_get).with(satisfy { |uri| uri.host == "gisservice.mt.gov" && uri.path.end_with?("/ImageServer/exportImage") })
     end
 
+    it "won't keep a 200 from Planetary Computer that isn't an image" do
+      allow(described_class).to receive(:http_get).and_return(response(Net::HTTPOK, "<html>Sign in</html>", "text/html"))
+
+      expect { described_class.fetch(18, 1, 2) }.to raise_error(/Planetary Computer sent "text\/html", not an image/)
+    end
+
     it "raises on a Planetary Computer error so the render job retries" do
       allow(described_class).to receive(:http_get).and_return(response(Net::HTTPInternalServerError))
 
