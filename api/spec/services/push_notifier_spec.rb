@@ -3,9 +3,14 @@ require "rails_helper"
 RSpec.describe PushNotifier do
   let(:author) { create(:member, name: "Jess") }
   let(:ranch) { author.ranch }
-  let!(:android) { create(:member, ranch: ranch, name: "Sam", push_platform: "android", push_token: "fcm-sam") }
-  let!(:iphone) { create(:member, ranch: ranch, name: "Bob", push_platform: "ios", push_token: "apns-bob") }
+  let!(:android) { phone(create(:member, ranch: ranch, name: "Sam"), "android", "fcm-sam") }
+  let!(:iphone) { phone(create(:member, ranch: ranch, name: "Bob"), "ios", "apns-bob") }
   let(:sick) { create(:observation, member: author, tag_number: "1147", note: "Off feed — by the creek") }
+
+  # A phone signed in as that member, with notifications on
+  def phone(member, platform, token)
+    member.sign_in!.tap { |device| device.register_push!(platform: platform, token: token) }
+  end
 
   before do
     allow(Push::Fcm).to receive_messages(configured?: true, deliver: nil)
@@ -13,16 +18,26 @@ RSpec.describe PushNotifier do
   end
 
   it "tells every other phone on the crew what was logged, by whom" do
-    author.update!(push_platform: "android", push_token: "fcm-jess")
+    phone(author, "android", "fcm-jess")
     create(:member, ranch: ranch, name: "No phone")
-    create(:member, push_platform: "android", push_token: "fcm-other-ranch")
-    create(:member, ranch: ranch, removed_at: 1.day.ago, push_platform: "android", push_token: "fcm-gone")
+    create(:member, ranch: ranch, name: "Notifications off").sign_in!
+    phone(create(:member), "android", "fcm-other-ranch")
+    phone(create(:member, ranch: ranch, removed_at: 1.day.ago), "android", "fcm-gone")
 
     described_class.logged(author: author, observations: [ sick ])
 
     message = described_class::Message.new(title: "Sick animal · Tag 1147 · Jess", body: "Off feed — by the creek", data: { observation_id: sick.id })
     expect(Push::Fcm).to have_received(:deliver).once.with("fcm-sam", message)
     expect(Push::Apns).to have_received(:deliver).once.with("apns-bob", message)
+  end
+
+  it "reaches both of an owner's phones" do
+    phone(iphone.member, "android", "fcm-bob-tablet")
+
+    described_class.logged(author: author, observations: [ sick ])
+
+    expect(Push::Fcm).to have_received(:deliver).with("fcm-bob-tablet", anything)
+    expect(Push::Apns).to have_received(:deliver).with("apns-bob", anything)
   end
 
   it "names the place when there's no tag, and the ranch when there's no note" do

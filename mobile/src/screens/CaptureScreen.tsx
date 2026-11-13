@@ -8,11 +8,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import AppButton from '../components/AppButton';
 import Icon from '../components/Icon';
-import { createObservation, liveWaypoints, newId, type Kind, type PlaceChoice, type Waypoint } from '../db';
+import { createObservation, liveWaypoints, newId, normalizeTag, type Kind, type PlaceChoice, type Waypoint } from '../db';
 import { clockParts, formatDistance } from '../format';
 import { composeNote, initialStatus, nearestPlace, nextPlaceName, PLACE_KIND, WAYPOINT_INFO } from '../kinds';
 import { locate, type Located } from '../locate';
 import { keepPhoto, photoFile, shrinkPhoto } from '../photoFiles';
+import { tagHint } from '../tags';
 import { colors, fonts, palette, sync, touch } from '../theme';
 import TagScreen, { type Fix, type PlaceMode } from './TagScreen';
 import { useNow } from '../useNow';
@@ -42,6 +43,15 @@ export default function CaptureScreen({ memberId, onDone, ref }: Props) {
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
   const [waypoints, setWaypoints] = useState<Waypoint[]>([]);
+  // "Logged 3 times before": this animal has a history, worth knowing before riding off
+  const [tagSeen, setTagSeen] = useState<string | null>(null);
+  useEffect(() => {
+    let stale = false;
+    tagHint(tagNumber).then((text) => !stale && setTagSeen(text));
+    return () => {
+      stale = true;
+    };
+  }, [tagNumber]);
   // null: let the app decide (join a place nearby, else save a new one)
   const [placeMode, setPlaceMode] = useState<PlaceMode | null>(null);
 
@@ -165,7 +175,7 @@ export default function CaptureScreen({ memberId, onDone, ref }: Props) {
           // eslint-disable-next-line react-hooks/purity -- save runs on the Save tap, never during render
           observed_at: Date.now(),
           // Tag numbers only mean something on an animal
-          tag_number: kind === 'sick_animal' ? tagNumber.trim() || null : null,
+          tag_number: kind === 'sick_animal' ? normalizeTag(tagNumber) : null,
           note: composeNote(picks, note),
           status: initialStatus(kind, picks),
         },
@@ -212,6 +222,7 @@ export default function CaptureScreen({ memberId, onDone, ref }: Props) {
         onTogglePick={(pick) => setPicks((current) => (current.includes(pick) ? current.filter((p) => p !== pick) : [...current, pick]))}
         tagNumber={tagNumber}
         onTagNumber={setTagNumber}
+        tagHint={tagSeen}
         note={note}
         onNote={setNote}
         saving={saving}

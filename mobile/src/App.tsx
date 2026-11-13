@@ -37,8 +37,10 @@ export default function App() {
     if (!device) return;
     fetchRanch(device)
       .then((ranch) => {
-        if (ranch.name === device.ranchName) return;
-        const next = { ...device, ranchName: ranch.name };
+        // The map key too: a phone that joined before map keys has none, and without it the map loses its sharp areas
+        const mapKey = ranch.map_key ?? device.mapKey;
+        if (ranch.name === device.ranchName && mapKey === device.mapKey) return;
+        const next = { ...device, ranchName: ranch.name, mapKey };
         saveDevice(next);
         setDevice(next);
       })

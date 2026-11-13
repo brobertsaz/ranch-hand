@@ -16,7 +16,10 @@ RSpec.describe "Owners", type: :request do
     expect(owner).to have_attributes(role: "owner", name: "Bob Roberts", email: "bob@example.com", google_sub: "google-123")
     expect(owner.ranch).to have_attributes(name: "Bar T", hand_limit: 3)
     expect(owner.ranch.invite_code).to match(/\A[A-Z2-9]{6}\z/)
-    expect(json).to eq("token" => owner.device_token, "member_id" => owner.id.to_s, "ranch" => { "id" => owner.ranch_id.to_s, "name" => "Bar T", "headquarters" => nil })
+    expect(json).to eq(
+      "token" => owner.devices.sole.token, "member_id" => owner.id.to_s,
+      "ranch" => { "id" => owner.ranch_id.to_s, "name" => "Bar T", "headquarters" => nil, "map_key" => owner.ranch.map_key }
+    )
   end
 
   it "names the ranch after the owner when they leave it blank" do
@@ -25,14 +28,28 @@ RSpec.describe "Owners", type: :request do
     expect(Ranch.sole.name).to eq("Bob's Ranch")
   end
 
-  it "signs a returning owner back in to the same ranch" do
+  it "signs a returning owner back in to the same ranch, with a token for this phone alone" do
     owner = create(:member, role: :owner, google_sub: "google-123")
+    first_phone = owner.sign_in!
 
     post "/api/v1/owners", params: { id_token: "good-token", ranch_name: "Another" }, as: :json
 
     expect(response).to have_http_status(:ok)
-    expect(json["token"]).to eq(owner.device_token)
+    expect(json["member_id"]).to eq(owner.id.to_s)
+    expect(owner.devices.pluck(:token)).to contain_exactly(first_phone.token, json["token"])
     expect(Ranch.count).to eq(1)
+  end
+
+  it "signs out the phone seen longest ago once an owner has more than five" do
+    owner = create(:member, role: :owner, google_sub: "google-123")
+    oldest = owner.sign_in!.tap { |device| device.update!(last_seen_at: 1.year.ago) }
+    4.times { owner.sign_in! }
+
+    post "/api/v1/owners", params: { id_token: "good-token" }, as: :json
+
+    expect(owner.devices.count).to eq(5)
+    expect(Device.exists?(oldest.id)).to be(false)
+    expect(owner.devices.pluck(:token)).to include(json["token"])
   end
 
   it "rejects an email Google hasn't verified" do
@@ -63,7 +80,7 @@ RSpec.describe "Owners", type: :request do
     post "/api/v1/owners", params: { id_token: "good-token" }, as: :json
 
     expect(response).to have_http_status(:ok)
-    expect(json["token"]).to eq(owner.device_token)
+    expect(json["token"]).to eq(owner.devices.sole.token)
     expect(Ranch.count).to eq(1)
   end
 
@@ -87,7 +104,7 @@ RSpec.describe "Owners", type: :request do
       post "/api/v1/owners", params: { apple_identity_token: "apple-token" }, as: :json
 
       expect(response).to have_http_status(:ok)
-      expect(json["token"]).to eq(owner.device_token)
+      expect(json["token"]).to eq(owner.devices.sole.token)
       expect(owner.reload.name).to eq("Jess")
     end
 

@@ -17,6 +17,9 @@ class Ranch < ApplicationRecord
   # founding: the first ranches, any number of hands for good.
   enum :plan, { free: "free", pro: "pro", founding: "founding" }, validate: true
 
+  # What the app puts in the map style URL to get this ranch's sharp areas (see MapStylesController)
+  has_secure_token :map_key
+
   before_validation :assign_invite_code, on: :create
 
   validates :name, :invite_code, presence: true
@@ -76,6 +79,7 @@ class Ranch < ApplicationRecord
 
       attachments.delete_all
       # In the order the foreign keys allow: photos, then what they hang off, members last
+      Device.where(member_id: members.select(:id)).delete_all
       [ Photo, Observation, Ride, Waypoint, MapArea, Member ].each { |model| model.where(ranch_id: id).delete_all }
       delete
     end

@@ -77,6 +77,14 @@ export const HELP: HelpSection[] = [
         body: "Open the pin and tap Mark resolved once it's doctored or fixed. Everyone sees it change on the next sync. Tap Reopen if it wasn't really fixed.",
       },
       {
+        title: 'Fix a pin that was logged wrong',
+        body: "Open the pin and tap the pencil in the top corner. Change what it is, what's ticked, the tag or the note, then Save changes. If you logged it, or you're the owner, you can also delete it there.",
+      },
+      {
+        title: "See an animal's history",
+        body: 'Open any pin with an ear tag and tap its Tag history. Every time that tag was logged is there, newest first. Tags with letters work too: tap ABC next to the tag box.',
+      },
+      {
         title: 'Record a ride, or follow one',
         steps: [
           'On the Rides tab, tap Start a ride. Your track draws on the map as you go.',

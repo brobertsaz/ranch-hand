@@ -10,12 +10,12 @@ module Api
         token = params.require(:token).to_s
         return head :unprocessable_content if token.length > TOKEN_LIMIT
 
-        current_member.register_push!(platform: params.require(:platform).to_s, token: token)
+        current_device.register_push!(platform: params.require(:platform).to_s, token: token)
         head :no_content
       end
 
       def destroy
-        current_member.forget_push!
+        current_device.forget_push!
         head :no_content
       end
     end

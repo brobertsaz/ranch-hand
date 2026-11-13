@@ -3,8 +3,7 @@ class Member < ApplicationRecord
   has_many :observations, dependent: :restrict_with_error
   has_many :waypoints, dependent: :restrict_with_error
   has_many :rides, dependent: :restrict_with_error
-
-  has_secure_token :device_token
+  has_many :devices, dependent: :delete_all
 
   enum :role, { owner: "owner", hand: "hand" }, validate: true
 
@@ -14,10 +13,14 @@ class Member < ApplicationRecord
 
   validates :name, presence: true, length: { maximum: NAME_LIMIT }
   validates :google_sub, :apple_sub, uniqueness: true, allow_nil: true
-  validates :push_platform, inclusion: { in: PushNotifier::PLATFORMS }, allow_nil: true
 
   # Still on the crew. A removed member's row stays so their old pins and rides keep their name.
   scope :active, -> { where(removed_at: nil) }
+  # How a hand on a new phone is matched to who they already are: by name, whatever the capitals or spaces
+  scope :named, ->(name) { where("LOWER(TRIM(name)) = ?", name.to_s.strip.downcase) }
+
+  # An owner's phones, each with its own token. Past this many the one seen longest ago is signed out.
+  DEVICE_LIMIT = 5
 
   def removed? = removed_at?
 
@@ -28,7 +31,8 @@ class Member < ApplicationRecord
 
     transaction do
       Observation.release_claims_of(self)
-      update!(removed_at: Time.current, push_token: nil, push_platform: nil)
+      forget_push!
+      update!(removed_at: Time.current)
     end
   end
 
@@ -37,31 +41,33 @@ class Member < ApplicationRecord
   def erase!
     transaction do
       Observation.release_claims_of(self)
-      update!(
-        name: ERASED_NAME, email: nil, google_sub: nil, apple_sub: nil, push_token: nil, push_platform: nil,
-        removed_at: removed_at || Time.current
-      )
+      forget_push!
+      update!(name: ERASED_NAME, email: nil, google_sub: nil, apple_sub: nil, removed_at: removed_at || Time.current)
     end
   end
 
-  # One phone per member gets the crew's news.
-  # shortcut: an owner signed in on two phones shares one member, so only the phone that registered last is
-  # notified, upgrade to a push_devices table when owners ask for it on both
-  def register_push!(platform:, token:)
+  # A phone signing in as this member gets a token of its own. `only: true` is a hand on a new phone or a
+  # reinstall: they have one phone, so the old one is signed out.
+  def sign_in!(only: false)
     transaction do
-      # A phone handed from one hand to the next keeps its token; it now belongs to whoever is signed in
-      Member.where(push_token: token).where.not(id: id).update_all(push_token: nil, push_platform: nil)
-      update!(push_platform: platform, push_token: token)
+      devices.delete_all if only
+      device = devices.create!(last_seen_at: Time.current)
+      devices.where.not(id: devices.order(Arel.sql("COALESCE(last_seen_at, created_at) DESC"), id: :desc).limit(DEVICE_LIMIT)).delete_all
+      device
     end
   end
 
+  # The phones stay signed in (a removed hand's still gets told it was removed) but hear no more of the crew's news
   def forget_push!
-    update!(push_token: nil, push_platform: nil)
+    devices.update_all(push_token: nil, push_platform: nil)
   end
 
   # What a phone keeps after joining or signing in: its token, who it is, and which ranch
-  def device_json
-    { token: device_token, member_id: id.to_s, ranch: { id: ranch.id.to_s, name: ranch.name, headquarters: ranch.headquarters } }
+  def device_json(device)
+    {
+      token: device.token, member_id: id.to_s,
+      ranch: { id: ranch.id.to_s, name: ranch.name, headquarters: ranch.headquarters, map_key: ranch.map_key }
+    }
   end
 
   # Read-only on the phone: names for "Jess logged this", never pushed back.

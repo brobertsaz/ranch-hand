@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_13_150759) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_13_210001) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -42,6 +42,18 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_13_150759) do
     t.index ["blob_id", "variation_digest"], name: "index_active_storage_variant_records_uniqueness", unique: true
   end
 
+  create_table "devices", force: :cascade do |t|
+    t.bigint "member_id", null: false
+    t.string "token", null: false
+    t.string "push_token"
+    t.string "push_platform"
+    t.datetime "last_seen_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["member_id"], name: "index_devices_on_member_id"
+    t.index ["token"], name: "index_devices_on_token", unique: true
+  end
+
   create_table "map_areas", force: :cascade do |t|
     t.bigint "ranch_id", null: false
     t.string "name", null: false
@@ -63,17 +75,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_13_150759) do
     t.bigint "ranch_id", null: false
     t.string "name", null: false
     t.string "role", default: "hand", null: false
-    t.string "device_token", null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.string "email"
     t.string "google_sub"
     t.datetime "removed_at"
-    t.string "push_token"
-    t.string "push_platform"
     t.string "apple_sub"
     t.index ["apple_sub"], name: "index_members_on_apple_sub", unique: true
-    t.index ["device_token"], name: "index_members_on_device_token", unique: true
     t.index ["google_sub"], name: "index_members_on_google_sub", unique: true
     t.index ["ranch_id"], name: "index_members_on_ranch_id"
   end
@@ -127,7 +135,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_13_150759) do
     t.float "hq_lng"
     t.string "plan", default: "free", null: false
     t.datetime "pro_until"
+    t.string "map_key", null: false
     t.index ["invite_code"], name: "index_ranches_on_invite_code", unique: true
+    t.index ["map_key"], name: "index_ranches_on_map_key", unique: true
   end
 
   create_table "rides", id: :string, force: :cascade do |t|
@@ -177,6 +187,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_13_150759) do
 
   add_foreign_key "active_storage_attachments", "active_storage_blobs", column: "blob_id"
   add_foreign_key "active_storage_variant_records", "active_storage_blobs", column: "blob_id"
+  add_foreign_key "devices", "members"
   add_foreign_key "map_areas", "ranches"
   add_foreign_key "members", "ranches"
   add_foreign_key "observations", "members"

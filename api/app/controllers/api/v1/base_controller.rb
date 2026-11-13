@@ -12,16 +12,19 @@ module Api
 
       private
 
-      attr_reader :current_member
+      attr_reader :current_member, :current_device
 
       def current_ranch = current_member.ranch
 
       def authenticate_member!
-        @current_member = authenticate_with_http_token { |token| Member.find_by(device_token: token) }
-        return head :unauthorized unless @current_member
+        @current_device = authenticate_with_http_token { |token| Device.includes(:member).find_by(token: token) }
+        return head :unauthorized unless @current_device
 
+        @current_member = @current_device.member
         # A body, unlike an unknown token's bare 401, so the app can tell the hand they're off the crew
-        render json: { error: "removed" }, status: :unauthorized if @current_member.removed?
+        return render json: { error: "removed" }, status: :unauthorized if @current_member.removed?
+
+        @current_device.seen!
       end
 
       def require_owner!

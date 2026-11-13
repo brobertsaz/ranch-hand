@@ -8,13 +8,13 @@ RSpec.describe "Devices", type: :request do
 
     expect(response).to have_http_status(:created)
     member = ranch.members.sole
-    expect(json).to include("token" => member.device_token, "member_id" => member.id.to_s)
-    expect(json["ranch"]).to eq("id" => ranch.id.to_s, "name" => "Bob's Ranch", "headquarters" => nil)
+    expect(json).to include("token" => member.devices.sole.token, "member_id" => member.id.to_s)
+    expect(json["ranch"]).to eq("id" => ranch.id.to_s, "name" => "Bob's Ranch", "headquarters" => nil, "map_key" => ranch.map_key)
   end
 
   it "turns away a fourth hand on the free plan" do
     create(:member, ranch: ranch, role: :owner)
-    create_list(:member, 3, ranch: ranch)
+    create_list(:member, 3, ranch: ranch, name: "Sam")
 
     post "/api/v1/devices", params: { invite_code: "BOBSRANCH", name: "Jess" }, as: :json
 
@@ -24,7 +24,7 @@ RSpec.describe "Devices", type: :request do
   end
 
   it "lets a fourth hand join a Pro ranch and a founding ranch" do
-    create_list(:member, 3, ranch: ranch)
+    create_list(:member, 3, ranch: ranch, name: "Sam")
 
     ranch.update!(plan: :pro)
     post "/api/v1/devices", params: { invite_code: "BOBSRANCH", name: "Jess" }, as: :json
@@ -37,7 +37,7 @@ RSpec.describe "Devices", type: :request do
   end
 
   it "keeps the crew of a Pro ranch that stopped paying but takes no new hands" do
-    create_list(:member, 5, ranch: ranch)
+    create_list(:member, 5, ranch: ranch, name: "Sam")
     ranch.update!(plan: :pro, pro_until: 1.day.ago)
 
     post "/api/v1/devices", params: { invite_code: "BOBSRANCH", name: "Jess" }, as: :json
@@ -55,7 +55,7 @@ RSpec.describe "Devices", type: :request do
   end
 
   it "lets a new hand take the spot of one who left" do
-    create_list(:member, 2, ranch: ranch)
+    create_list(:member, 2, ranch: ranch, name: "Sam")
     create(:member, ranch: ranch, removed_at: 1.day.ago)
 
     post "/api/v1/devices", params: { invite_code: "BOBSRANCH", name: "Jess" }, as: :json
@@ -105,14 +105,16 @@ RSpec.describe "Devices", type: :request do
       expect(observation.reload).to have_attributes(member: hand, deleted_at: nil)
     end
 
-    it "won't let the owner leave" do
+    it "keeps the owner on the ranch and only signs that phone out" do
       owner = create(:member, ranch: ranch, role: :owner)
+      other_phone = owner.sign_in!
+      this_phone = owner.sign_in!
 
-      delete "/api/v1/device", headers: auth_headers(owner)
+      delete "/api/v1/device", headers: { "Authorization" => "Bearer #{this_phone.token}" }
 
-      expect(response).to have_http_status(:unprocessable_content)
-      expect(json).to eq("error" => "owner")
+      expect(response).to have_http_status(:no_content)
       expect(owner.reload).not_to be_removed
+      expect(owner.devices).to contain_exactly(other_phone)
     end
 
     it "needs a device token" do
@@ -150,13 +152,77 @@ RSpec.describe "Devices", type: :request do
       expect(response.body).to be_empty
     end
 
-    it "gets the plain map style, without the ranch's sharp areas" do
+    it "can't get the ranch's sharp areas by putting its token in the map style URL" do
       create(:map_area, ranch: ranch, status: :ready)
 
-      get "/api/v1/map/style", params: { token: removed.device_token }
+      get "/api/v1/map/style", params: { token: device_of(removed).token }
 
       expect(response).to have_http_status(:ok)
       expect(json["sources"].keys).to eq(%w[imagery topo])
+    end
+  end
+
+  describe "a hand who already joined, on a new phone or after a reinstall" do
+    let!(:sam) { create(:member, ranch: ranch, name: "Sam Rowe") }
+    let!(:old_phone) { sam.sign_in! }
+
+    def join(name, **extra)
+      post "/api/v1/devices", params: { invite_code: "BOBSRANCH", name: name, **extra }, as: :json
+    end
+
+    it "is asked whether that's them before anything changes" do
+      join(" sam rowe ")
+
+      expect(response).to have_http_status(:conflict)
+      expect(json).to eq("error" => "name_taken", "name" => "Sam Rowe", "joined_at" => sam.created_at.iso8601)
+      expect(ranch.members.count).to eq(1)
+      expect(sam.devices.sole).to eq(old_phone)
+    end
+
+    it "gets their own spot back, with a new token, and the old phone is signed out" do
+      old_phone.register_push!(platform: "android", token: "fcm-old")
+      mine = create(:observation, member: sam)
+
+      join("SAM ROWE", rejoin: true)
+
+      expect(response).to have_http_status(:ok)
+      expect(json).to include("member_id" => sam.id.to_s, "token" => sam.devices.sole.token)
+      expect(json["token"]).not_to eq(old_phone.token)
+      expect(ranch.members.count).to eq(1)
+      expect(mine.reload.member).to eq(sam)
+
+      get "/api/v1/ranch", headers: { "Authorization" => "Bearer #{old_phone.token}" }
+      expect(response).to have_http_status(:unauthorized)
+      expect(response.body).to be_empty
+    end
+
+    it "gets back in even when the ranch is full" do
+      create_list(:member, 2, ranch: ranch, name: "Cody")
+
+      join("Sam Rowe", rejoin: true)
+
+      expect(response).to have_http_status(:ok)
+      expect(ranch.hand_count).to eq(3)
+    end
+
+    it "joins as a second hand of the same name when they say it isn't them" do
+      join("Sam Rowe", rejoin: false)
+
+      expect(response).to have_http_status(:created)
+      expect(ranch.members.named("Sam Rowe").count).to eq(2)
+      expect(sam.devices.sole).to eq(old_phone)
+    end
+
+    it "doesn't match a hand who was removed, or the owner" do
+      sam.remove!
+      create(:member, ranch: ranch, role: :owner, name: "Bob")
+
+      join("Sam Rowe")
+      expect(response).to have_http_status(:created)
+
+      join("Bob")
+      expect(response).to have_http_status(:created)
+      expect(ranch.members.owner.sole.devices).to be_empty
     end
   end
 end

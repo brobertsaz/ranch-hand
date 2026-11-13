@@ -1,7 +1,7 @@
 module Api
   module V1
     # An owner signs in with Google (Android) or Apple (iPhone). The first time starts their ranch; after that
-    # (a new phone, a reinstall) it finds the same owner and hands back their device token.
+    # (a new phone, a reinstall) it finds the same owner and signs this phone in with a token of its own.
     #
     # shortcut: an owner who signs in with Google on one phone and Apple on another gets two ranches, since
     # nothing ties the two accounts together (Apple can hide the email), upgrade to linking them from Settings
@@ -15,7 +15,7 @@ module Api
         column, identity = identify
         owner = Member.owner.find_by(column => identity.sub) || start_ranch(column, identity)
 
-        render json: owner.device_json, status: owner.previously_new_record? ? :created : :ok
+        render json: owner.device_json(owner.sign_in!), status: owner.previously_new_record? ? :created : :ok
       end
 
       private
