@@ -16,7 +16,7 @@ RSpec.describe "Map style", type: :request do
     expect(response.headers["Cache-Control"]).to eq("max-age=3600, public")
   end
 
-  context "with the app's token" do
+  context "with the ranch's map key" do
     let(:member) { create(:member) }
 
     it "adds a sharp layer for each ready area, between the USGS imagery and Topo" do
@@ -24,7 +24,7 @@ RSpec.describe "Map style", type: :request do
       create(:map_area, ranch: member.ranch, status: :rendering)
       create(:map_area, status: :ready)
 
-      get "/api/v1/map/style", headers: auth_headers(member)
+      get "/api/v1/map/style", params: { key: member.ranch.map_key }
 
       expect(json["layers"].pluck("id")).to eq([ "background", "imagery", "naip-#{area.id}", "aerial-top" ])
       expect(json.dig("sources", "naip-#{area.id}")).to include(
@@ -38,7 +38,7 @@ RSpec.describe "Map style", type: :request do
     it "points a state-imagery area at its own tiles and zooms" do
       area = create(:map_area, ranch: member.ranch, status: :ready, source: "mt-naip-2025")
 
-      get "/api/v1/map/style", headers: auth_headers(member)
+      get "/api/v1/map/style", params: { key: member.ranch.map_key }
 
       expect(json.dig("sources", "naip-#{area.id}")).to include(
         "tiles" => [ "http://www.example.com/api/v1/map/tiles/mt-naip-2025/{z}/{x}/{y}.jpg" ],
@@ -47,24 +47,24 @@ RSpec.describe "Map style", type: :request do
       )
     end
 
-    it "takes the token from the style URL, which is how the app sends it" do
-      area = create(:map_area, ranch: member.ranch, status: :ready)
-
-      get "/api/v1/map/style", params: { token: member.device_token }
-
-      expect(json["layers"].pluck("id")).to include("naip-#{area.id}")
-    end
-
-    it "gives a bad token the plain style" do
+    it "gives a phone's sign-in token nothing, in the URL or the header: only the map key belongs there" do
       create(:map_area, ranch: member.ranch, status: :ready)
 
-      get "/api/v1/map/style", params: { token: "nope" }
+      get "/api/v1/map/style", params: { token: device_of(member).token }, headers: auth_headers(member)
+
+      expect(json["layers"].pluck("id")).to eq(%w[background imagery aerial-top])
+    end
+
+    it "gives a bad key the plain style" do
+      create(:map_area, ranch: member.ranch, status: :ready)
+
+      get "/api/v1/map/style", params: { key: "nope" }
 
       expect(json["layers"].pluck("id")).to eq(%w[background imagery aerial-top])
     end
 
     it "keeps one ranch's style out of shared caches, and fresh enough for a new area" do
-      get "/api/v1/map/style", headers: auth_headers(member)
+      get "/api/v1/map/style", params: { key: member.ranch.map_key }
 
       expect(response.headers["Cache-Control"]).to eq("max-age=0, private")
     end

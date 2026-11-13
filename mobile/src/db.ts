@@ -336,6 +336,57 @@ export async function claimObservation(id: string, memberId: string | null): Pro
   );
 }
 
+// Putting right what was logged wrong: the kind, the tag, the picks and the note. A check that now reads
+// differently ("Full" corrected to "Low") changes status with it, unless someone has already resolved it.
+export type ObservationFix = Pick<Observation, 'kind' | 'tag_number' | 'note' | 'status' | 'waypoint_id'>;
+
+export async function updateObservation(id: string, changes: Partial<ObservationFix>): Promise<void> {
+  const columns = Object.keys(changes) as (keyof ObservationFix)[];
+  if (columns.length === 0) return;
+  await write((conn) =>
+    conn.runAsync(
+      `UPDATE observations SET ${columns.map((c) => `${c} = ?`).join(', ')}, ${touch(columns)} WHERE id = ?`,
+      ...columns.map((c) => changes[c] ?? null), id,
+    ),
+  );
+}
+
+// A pin logged by mistake. One the server never saw just goes, with its photo; otherwise the delete syncs
+// up, and the server takes the photos with it. Photo files are removed by the caller's sync, or here when
+// the photo never left this phone.
+export async function deleteObservation(id: string): Promise<void> {
+  await transaction(async (conn) => {
+    const unsent = `(_status = 'created' OR (_status = 'rejected' AND _rejected_was = 'created'))`;
+    const photos = await conn.getAllAsync<{ id: string }>('SELECT id FROM photos WHERE observation_id = ?', id);
+    for (const photo of photos) {
+      if (pushing.has(`photos:${photo.id}`)) continue;
+      const gone = await conn.runAsync(`DELETE FROM photos WHERE id = ? AND ${unsent}`, photo.id);
+      const file = photoFile(photo.id);
+      if (gone.changes > 0 && file.exists) file.delete();
+    }
+    if (!pushing.has(`observations:${id}`)) {
+      await conn.runAsync(`DELETE FROM observations WHERE id = ? AND ${unsent}`, id);
+    }
+    await conn.runAsync(
+      `UPDATE observations SET _status = 'deleted', _changed = _changed + 1, _rejected_reason = NULL, _rejected_was = NULL WHERE id = ?`,
+      id,
+    );
+  });
+}
+
+// "y123 " and "Y123" are the same ear tag
+export function normalizeTag(tag: string | null | undefined): string | null {
+  return tag?.trim().toUpperCase() || null;
+}
+
+// Every time that tag was logged, newest first: an animal's history on this ranch
+export function observationsOfTag(tag: string) {
+  return db().getAllAsync<Observation>(
+    `SELECT * FROM observations WHERE UPPER(TRIM(tag_number)) = ? AND _status != 'deleted' ORDER BY observed_at DESC`,
+    normalizeTag(tag),
+  );
+}
+
 // A place marked on its own, not as part of a check: a gate or tank mapped from the saddle or the house
 export async function createWaypoint(
   waypoint: Pick<Waypoint, 'kind' | 'name' | 'latitude' | 'longitude' | 'note'>,

@@ -12,7 +12,8 @@ RSpec.describe "Ranch", type: :request do
     expect(response).to have_http_status(:ok)
     expect(json).to eq(
       "id" => member.ranch_id.to_s, "name" => "Bob's Ranch", "invite_code" => "BOBSRANCH",
-      "hand_count" => 1, "hand_limit" => 3, "plan" => "free", "unlimited_hands" => false, "headquarters" => nil
+      "hand_count" => 1, "hand_limit" => 3, "plan" => "free", "unlimited_hands" => false, "headquarters" => nil,
+      "map_key" => member.ranch.map_key
     )
   end
 

@@ -97,13 +97,16 @@ export function errorText(error: unknown): string {
 
 export type Headquarters = { lat: number; lng: number };
 
-export type Joined = { token: string; member_id: string; ranch: { id: string; name: string; headquarters: Headquarters | null } };
+export type Joined = { token: string; member_id: string; ranch: { id: string; name: string; headquarters: Headquarters | null; map_key?: string } };
 
-// 403 means the ranch already has as many hands as its plan allows; 429 means too many tries in a row
-export function joinRanch(apiUrl: string, inviteCode: string, name: string) {
+// 403 means the ranch already has as many hands as its plan allows; 429 means too many tries in a row.
+// 409 "name_taken" means the crew already has a hand by that name, and the server wants to know whether this
+// is them on a new phone (rejoin true: they get their spot back and the old phone is signed out) or someone
+// else of the same name (rejoin false). Leave rejoin out to ask.
+export function joinRanch(apiUrl: string, inviteCode: string, name: string, rejoin?: boolean) {
   return request<Joined>({ apiUrl }, '/api/v1/devices', {
     method: 'POST',
-    body: JSON.stringify({ invite_code: inviteCode, name }),
+    body: JSON.stringify({ invite_code: inviteCode, name, ...(rejoin === undefined ? {} : { rejoin }) }),
   });
 }
 
@@ -152,7 +155,8 @@ export function pushChanges(device: Device, changes: Changes, signal?: AbortSign
   });
 }
 
-// The hand on this phone leaves the crew, which frees their spot. Owners get 422: a ranch keeps its owner.
+// The hand on this phone leaves the crew, which frees their spot. A ranch keeps its owner, so for an owner
+// this only signs this phone out.
 // Short timeout: leaving shouldn't hang on a weak signal.
 export function leaveCrew(device: Device) {
   return request<void>(device, '/api/v1/device', { method: 'DELETE', timeoutMs: 8000 });
@@ -182,6 +186,7 @@ export type Ranch = {
   hand_count: number;
   hand_limit: number;
   headquarters: Headquarters | null;
+  map_key?: string;
   plan?: 'free' | 'pro' | 'founding';
   unlimited_hands?: boolean;
 };

@@ -6,13 +6,15 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AppButton from '../components/AppButton';
 import Icon from '../components/Icon';
 import MiniMap from '../components/MiniMap';
-import { claimObservation, onDatabaseChange, photosFor, setObservationStatus, type Observation, type ObservationStatus } from '../db';
+import { claimObservation, observationsOfTag, onDatabaseChange, photosFor, setObservationStatus, type Observation, type ObservationStatus } from '../db';
 import { bearingDegrees, compassPoint, dayAndTime, distanceMeters, clockParts, formatDistance, relativeTo, timeAgo, type LngLat } from '../format';
 import { KIND_INFO, STATUS_LABEL, splitNote } from '../kinds';
 import { useMemberNames, who } from '../members';
 import { onPhotoArrived, photoFile } from '../photoFiles';
 import { colors, fonts, palette, space, sync, touch } from '../theme';
+import EditObservationScreen from './EditObservationScreen';
 import GuideScreen, { guideToObservation } from './GuideScreen';
+import TagHistoryScreen from './TagHistoryScreen';
 
 type Props = {
   observation: Observation;
@@ -23,13 +25,17 @@ type Props = {
   here: LngLat | null;
   // Brings down a photo that syncs leave on the server (an old, settled observation). False when it can't right now.
   fetchPhoto: (photoId: string) => Promise<boolean>;
+  // The hand who logged it, or the owner: the only ones who can delete it
+  canDelete: boolean;
+  // Another sighting of the same tag, picked from its history
+  onOpenObservation: (id: string) => void;
   onBack: () => void;
   // After a local edit, so it can sync straight away when there's signal
   onChanged: () => void;
 };
 
 // Mockup 4 · Observation
-export default function ObservationScreen({ observation, placeName = null, memberId, mapStyle, here, fetchPhoto, onBack, onChanged }: Props) {
+export default function ObservationScreen({ observation, placeName = null, memberId, mapStyle, here, fetchPhoto, canDelete, onOpenObservation, onBack, onChanged }: Props) {
   const insets = useSafeAreaInsets();
   // undefined: no photo was taken; null: there is one, but it hasn't downloaded to this phone yet
   const [photoUri, setPhotoUri] = useState<string | null | undefined>(undefined);
@@ -37,6 +43,10 @@ export default function ObservationScreen({ observation, placeName = null, membe
   // or the phone that took it hasn't sent it up
   const [photoWait, setPhotoWait] = useState<'fetching' | 'unreachable' | 'not-sent'>('not-sent');
   const [guiding, setGuiding] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [showingTag, setShowingTag] = useState(false);
+  // How many times this tag has been logged, this pin included
+  const [sightings, setSightings] = useState(0);
   const info = KIND_INFO[observation.kind];
   const lngLat: LngLat = [observation.longitude, observation.latitude];
   const names = useMemberNames();
@@ -80,6 +90,15 @@ export default function ObservationScreen({ observation, placeName = null, membe
     // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchPhoto is a new function on every render of the map
   }, [observation.id]);
 
+  const tag = observation.tag_number;
+  useEffect(() => {
+    if (!tag) return;
+    const load = () => observationsOfTag(tag).then((all) => setSightings(all.length));
+    load();
+    const sub = onDatabaseChange(['observations'], load);
+    return () => sub.remove();
+  }, [tag]);
+
   // "I've got it", letting it go (null), or taking it over from another hand
   async function claim(by: string | null) {
     try {
@@ -100,6 +119,35 @@ export default function ObservationScreen({ observation, placeName = null, membe
   }
 
   if (guiding) return <GuideScreen target={guideToObservation(observation)} onBack={() => setGuiding(false)} />;
+  if (editing) {
+    return (
+      <EditObservationScreen
+        observation={observation}
+        canDelete={canDelete}
+        onDone={(outcome) => {
+          setEditing(false);
+          if (outcome === 'cancelled') return;
+          onChanged();
+          // The pin is gone, so there's nothing left here to show
+          if (outcome === 'deleted') onBack();
+        }}
+      />
+    );
+  }
+  if (showingTag && tag) {
+    return (
+      <TagHistoryScreen
+        tag={tag}
+        memberId={memberId}
+        currentId={observation.id}
+        onBack={() => setShowingTag(false)}
+        onOpen={(sighting) => {
+          setShowingTag(false);
+          if (sighting.id !== observation.id) onOpenObservation(sighting.id);
+        }}
+      />
+    );
+  }
 
   return (
     <View style={styles.screen}>
@@ -133,6 +181,14 @@ export default function ObservationScreen({ observation, placeName = null, membe
             style={[styles.back, { top: insets.top + 8 }]}
           >
             <Icon name="back" size={22} color={colors.chromeText} strokeWidth={2.4} />
+          </Pressable>
+          <Pressable
+            onPress={() => setEditing(true)}
+            accessibilityRole="button"
+            accessibilityLabel="Fix this pin"
+            style={[styles.back, styles.edit, { top: insets.top + 8 }]}
+          >
+            <Icon name="edit" size={20} color={colors.chromeText} strokeWidth={2.2} />
           </Pressable>
           <View style={styles.heroText}>
             <View style={styles.badges}>
@@ -183,6 +239,16 @@ export default function ObservationScreen({ observation, placeName = null, membe
             </View>
           </View>
 
+          {tag && (
+            <Pressable onPress={() => setShowingTag(true)} accessibilityRole="button" style={({ pressed }) => [styles.card, styles.cardRow, pressed && styles.pressed]}>
+              <Icon name="history" size={22} color={colors.text} strokeWidth={2.2} />
+              <View style={styles.where}>
+                <Text style={styles.cardTitle}>Tag {tag} history</Text>
+                <Text style={styles.cardMeta}>{sightings > 1 ? `Logged ${sightings} times on this ranch` : 'This is the only time it’s been logged'}</Text>
+              </View>
+              <Icon name="chevronRight" size={20} color={colors.textMuted} strokeWidth={2.2} />
+            </Pressable>
+          )}
           {observation.status === 'open' && (
             // So two hands don't both ride out to the same heifer
             <View style={[styles.card, styles.claim]}>
@@ -259,6 +325,8 @@ const styles = StyleSheet.create({
     position: 'absolute', left: 12, width: touch.round, height: touch.round, borderRadius: touch.round / 2,
     backgroundColor: 'rgba(16, 23, 19, 0.75)', alignItems: 'center', justifyContent: 'center',
   },
+  edit: { left: undefined, right: 12 },
+  pressed: { opacity: 0.7 },
   heroText: { paddingHorizontal: space.lg, paddingBottom: space.lg, gap: 6 },
   badges: { flexDirection: 'row', gap: space.sm },
   badge: { fontFamily: fonts.display, fontSize: 15, letterSpacing: 1.6, borderRadius: 4, overflow: 'hidden', paddingVertical: 2, paddingHorizontal: 8 },

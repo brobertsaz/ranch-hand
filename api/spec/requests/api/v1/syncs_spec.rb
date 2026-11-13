@@ -129,6 +129,32 @@ RSpec.describe "Sync", type: :request do
       expect(observation.reload.deleted_at).to be_present
     end
 
+    it "lets the owner delete a hand's pin, but not one hand another's: that one comes back on their next pull" do
+      owner = create(:member, ranch: ranch, role: :owner)
+      teammate = create(:member, ranch: ranch, name: "Sam")
+      mine = create(:observation, member: member, updated_at: 1.hour.ago)
+      also_mine = create(:observation, member: member)
+
+      push({ observations: { created: [], updated: [], deleted: [ mine.id ] } }, as: teammate)
+      expect(rejected).to eq([])
+      expect(mine.reload.deleted_at).to be_nil
+      expect(mine.updated_at).to be_within(5.seconds).of(Time.current)
+
+      push({ observations: { created: [], updated: [], deleted: [ also_mine.id ] } }, as: owner)
+      expect(also_mine.reload.deleted_at).to be_present
+    end
+
+    it "corrects a wrong kind or tag, and leaves what the phone didn't change alone" do
+      observation = create(:observation, member: member, kind: "sick_animal", tag_number: "1147", note: "Off feed", status: "resolved")
+      teammate = create(:member, ranch: ranch, name: "Sam")
+
+      fix = raw_observation(observation.id, kind: "fence_issue", tag_number: "Y123", note: "stale", status: "open", _changed: %w[kind tag_number])
+      push({ observations: { created: [], updated: [ fix ], deleted: [] } }, as: teammate)
+
+      expect(rejected).to eq([])
+      expect(observation.reload).to have_attributes(kind: "fence_issue", tag_number: "Y123", note: "Off feed", status: "resolved", member: member)
+    end
+
     it "creates photo records for an observation in the same push" do
       push({
         observations: { created: [ raw_observation("abc123") ], updated: [], deleted: [] },

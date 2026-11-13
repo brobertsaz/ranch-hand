@@ -2,7 +2,7 @@ import { isErrorWithCode, statusCodes } from '@react-native-google-signin/google
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
 import * as AppleAuthentication from 'expo-apple-authentication';
-import { BackHandler, KeyboardAvoidingView, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, BackHandler, KeyboardAvoidingView, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
 
@@ -56,7 +56,7 @@ export default function SetupScreen({ notice = null, onJoined }: { notice?: stri
   }
 
   function toDevice(url: string, result: Joined): Device {
-    return { apiUrl: url, token: result.token, memberId: result.member_id, ranchName: result.ranch.name };
+    return { apiUrl: url, token: result.token, memberId: result.member_id, ranchName: result.ranch.name, mapKey: result.ranch.map_key };
   }
 
   async function finish(device: Device) {
@@ -97,13 +97,15 @@ export default function SetupScreen({ notice = null, onJoined }: { notice?: stri
     }
   }
 
-  async function join() {
+  // rejoin: the answer to "is that you?", once the server has said the crew already has a hand by this name
+  async function join(rejoin?: boolean) {
     setBusy(true);
     setError(null);
     try {
       const url = serverUrl();
-      await finish(toDevice(url, await joinRanch(url, inviteCode, name.trim())));
+      await finish(toDevice(url, await joinRanch(url, inviteCode, name.trim(), rejoin)));
     } catch (e) {
+      if (e instanceof ApiError && e.status === 409 && e.code === 'name_taken') return askIfReturning();
       setError(
         e instanceof ApiError
           ? e.status === 404
@@ -118,6 +120,19 @@ export default function SetupScreen({ notice = null, onJoined }: { notice?: stri
     } finally {
       setBusy(false);
     }
+  }
+
+  // A new phone or a reinstall: the hand gets their own spot and their old pins back, not a second spot
+  function askIfReturning() {
+    Alert.alert(
+      `${name.trim()} is already on this crew`,
+      "Is that you, on a new phone or after reinstalling? You'll get your spot back, and the old phone will be signed out.",
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: "No, I'm new", onPress: () => join(false) },
+        { text: "Yes, that's me", onPress: () => join(true) },
+      ],
+    );
   }
 
   if (placing) return <HeadquartersScreen device={placing} onDone={() => finish(placing)} />;
@@ -256,7 +271,7 @@ export default function SetupScreen({ notice = null, onJoined }: { notice?: stri
               <AppButton
                 size="large"
                 title={busy ? 'Joining…' : 'Join the crew'}
-                onPress={join}
+                onPress={() => join()}
                 disabled={busy || !inviteCode || !name.trim()}
                 style={{ marginTop: space.md }}
               />

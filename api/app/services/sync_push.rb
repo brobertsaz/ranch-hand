@@ -178,9 +178,14 @@ class SyncPush
     raise Rejected, "id is already in use" unless record.ranch_id == @ranch.id
   end
 
-  # Only an owner can remove a place, so the crew's gate list can't vanish by accident
+  # Only an owner can remove a place, so the crew's gate list can't vanish by accident. A pin logged by
+  # mistake goes when the hand who logged it, or the owner, says so; nobody else's can be thrown away.
   def deletable?(record)
-    !record.is_a?(Waypoint) || @member.owner?
+    case record
+    when Waypoint then @member.owner?
+    when Observation then @member.owner? || record.member_id == @member.id
+    else true
+    end
   end
 
   # Whoever pushes the change that resolves it gets the credit, whatever the phone says; reopening clears it

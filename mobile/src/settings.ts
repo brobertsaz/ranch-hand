@@ -5,6 +5,8 @@ export type Device = {
   token: string;
   memberId: string;
   ranchName: string;
+  // Opens the ranch's sharp areas in the map style. Missing on a phone that joined before map keys.
+  mapKey?: string;
 };
 
 const KEY = 'device';
@@ -25,9 +27,11 @@ export async function forgetDevice(): Promise<void> {
   await SecureStore.deleteItemAsync(KEY);
 }
 
-// The token rides in the style URL so the style includes the ranch's sharp areas. MapLibre's request
-// header hook (TransformRequestManager) never reached the style request on Android, so the live map got
-// the plain style and only offline packs had the sharp tiles. Packs are keyed by this URL too.
+// The ranch's map key rides in the style URL so the style includes the ranch's sharp areas. MapLibre's
+// request header hook (TransformRequestManager) never reached the style request on Android, so the live map
+// got the plain style and only offline packs had the sharp tiles. Packs are keyed by this URL too.
+// The key opens nothing but the style; the phone's sign-in token never goes in a URL.
 export function mapStyleUrl(device: Device): string {
-  return `${device.apiUrl}/api/v1/map/style?token=${encodeURIComponent(device.token)}`;
+  const key = device.mapKey ? `?key=${encodeURIComponent(device.mapKey)}` : '';
+  return `${device.apiUrl}/api/v1/map/style${key}`;
 }

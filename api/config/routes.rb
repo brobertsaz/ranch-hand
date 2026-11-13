@@ -5,7 +5,7 @@ Rails.application.routes.draw do
   namespace :api do
     namespace :v1 do
       resources :devices, only: :create
-      # The phone's own membership: deleting it leaves the ranch
+      # The phone's own membership: deleting it leaves the ranch (a hand) or signs this phone out (an owner)
       resource :device, only: :destroy
       # Where to send this phone the crew's news
       resource :push_token, only: %i[update destroy]

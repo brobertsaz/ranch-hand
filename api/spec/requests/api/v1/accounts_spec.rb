@@ -112,10 +112,13 @@ RSpec.describe "Account", type: :request do
       fill(ranch, hand)
       removed = create(:member, ranch: ranch, removed_at: 1.day.ago)
 
+      headers = [ owner, hand, removed ].map { |member| auth_headers(member) }
+
       delete_account(as: owner)
 
-      [ owner, hand, removed ].each do |member|
-        get "/api/v1/sync", headers: auth_headers(member)
+      expect(Device.count).to eq(0)
+      headers.each do |header|
+        get "/api/v1/sync", headers: header
 
         expect(response).to have_http_status(:unauthorized)
         expect(response.body).to be_empty

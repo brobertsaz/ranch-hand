@@ -32,7 +32,8 @@
 ## Data model (first pass)
 
 - **Ranch:** name, boundary (GeoJSON, optional)
-- **Member:** ranch, name, role (owner / hand), device token
+- **Member:** ranch, name, role (owner / hand)
+- **Device:** a phone signed in as a member, with its own token. A hand has one; an owner can have several. A hand who joins again under the same name (a new phone, a reinstall) gets their spot back
 - **Waypoint:** ranch, kind (feed, water, gate, fence, other), lat/lng, name, note. These are *persistent* places.
 - **Observation:** ranch, member, kind (sick animal, feed check, fence issue, other), lat/lng, accuracy, observed_at, tag_number (optional), note, status (open / resolved), optional waypoint. These are *events*.
 - **Photo:** observation, local URI, remote attachment, upload state
@@ -98,7 +99,7 @@ If all five pass, the architecture works.
 
 ## Later ideas (not before the field test)
 - **Reading the tag from the photo** with on-device text recognition, which suggests the tag number for a person to confirm. Muddy or partial tags mean it has to stay editable.
-- Herd or animal history: every observation for tag 1234
+- Herd history across animals (tag history, every observation for one tag, is built: open a pin with a tag and tap its history)
 - Pasture boundaries and grazing rotation
 - Export to CSV or PDF for the vet or the owner
 

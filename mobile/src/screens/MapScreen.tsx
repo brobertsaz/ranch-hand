@@ -1,23 +1,17 @@
-import {
-  Camera,
-  GeoJSONSource,
-  Layer,
-  Map,
-  Marker,
-  OfflineManager,
-  type CameraRef,
-  type MapRef,
-  type OfflinePackStatus,
-} from '@maplibre/maplibre-react-native';
+import { Camera, GeoJSONSource, Layer, Map, Marker, type CameraRef, type MapRef } from '@maplibre/maplibre-react-native';
 import * as Location from 'expo-location';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Image, Modal, PanResponder, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import AppButton from '../components/AppButton';
 import Icon, { type IconName } from '../components/Icon';
+import Chip from '../components/Chip';
+import LayersSheet from '../components/LayersSheet';
+import { PEEK_HEIGHT, PeekCard, PlacePeekCard } from '../components/PeekCard';
 import Pin from '../components/Pin';
+import SyncPill from '../components/SyncPill';
 import FollowSheet from '../components/FollowSheet';
 import LocationDot from '../components/LocationDot';
 import HelpScreen from './HelpScreen';
@@ -25,22 +19,23 @@ import NameRideSheet from '../components/NameRideSheet';
 import PlaceSheet, { type PlaceFields } from '../components/PlaceSheet';
 import RideSheet, { ModePill } from '../components/RideSheet';
 import TabBar, { useTabBarHeight, type Tab } from '../components/TabBar';
-import { clearRanchData, createWaypoint, getState, KINDS, onDatabaseChange, updateWaypoint, liveObservations, liveRides, liveWaypoints, observationsAt, photosFor, renameRide, setState, type Kind, type Observation, type Ride, type Waypoint } from '../db';
-import { dayAndTime, distanceMeters, formatDistance, formatDuration, relativeTo, timeAgo, type LngLat } from '../format';
+import { clearRanchData, createWaypoint, getState, KINDS, onDatabaseChange, updateWaypoint, liveObservations, liveRides, liveWaypoints, observationsAt, photosFor, setState, type Kind, type Observation, type Ride, type Waypoint } from '../db';
+import { dayAndTime, distanceMeters, formatDistance, formatDuration, type LngLat } from '../format';
+import { endPoint, lineString } from '../geojson';
 import { useIsOwner, useMemberNames, who } from '../members';
 import { crewNews, isNew, newsSeenAt } from '../news';
-import { activeRide, resumeRideIfNeeded, ridePoints, startRide, stopRide, type ActiveRide } from '../rides';
 import { KIND_INFO, nextPlaceName, WAYPOINT_INFO } from '../kinds';
 import { GPS_ONLY_OK, locate, type Located } from '../locate';
-import { estimateTiles, expandBounds, MIN_PACK_SPAN_KM, PACK_MAX_ZOOM, PACK_MIN_ZOOM, TILE_LIMIT, VIEW_USGS_LIMIT } from '../offline';
-import { deleteAccount, errorText, estimateSharpening, fetchMapAreas, leaveCrew, removeMapArea, sharpenArea, type MapArea } from '../api';
+import { deleteAccount, errorText, leaveCrew, type MapArea } from '../api';
 import { deleteAllPhotos, photoFile } from '../photoFiles';
 import { unregisterFromPush, usePush } from '../push';
 import { fetchPhoto, stopSync } from '../sync';
 import { cumulative, placesOnTrail } from '../trail';
 import { forgetDevice, mapStyleUrl, type Device } from '../settings';
-import { colors, fonts, isDark, palette, radius, space, sync, touch } from '../theme';
-import { signedOutText, useSync, type SyncState } from '../useSync';
+import { colors, fonts, isDark, palette, radius, shadow, space, touch } from '../theme';
+import { areaBounds, areaOutlines, deleteOfflinePacks, useOfflineMaps } from '../useOfflineMaps';
+import { useRideState } from '../useRideState';
+import { signedOutText, useSync } from '../useSync';
 import CaptureScreen, { type CaptureHandle } from './CaptureScreen';
 import ObservationScreen from './ObservationScreen';
 import CrewScreen from './CrewScreen';
@@ -50,12 +45,8 @@ import RidesScreen from './RidesScreen';
 import WaypointScreen from './WaypointScreen';
 
 const BASE_KEY = 'map_base';
-// The ranch's sharp areas as last fetched, so area downloads and estimates work with no signal
-const AREAS_KEY = 'map_areas';
 // Pins closer than this overlap on screen at field zoom levels
 const ALSO_HERE_METERS = 30;
-// 72 photo + 2 × 10 padding
-const PEEK_HEIGHT = 92;
 
 // Roughly Sundance, WY, until the phone has a fix
 const START: [number, number] = [-104.376, 44.406];
@@ -72,17 +63,8 @@ export default function MapScreen({ device, onSignOut }: Props) {
   const [observations, setObservations] = useState<Observation[]>([]);
   const [waypoints, setWaypoints] = useState<Waypoint[]>([]);
   const [rides, setRides] = useState<Ride[]>([]);
-  // The ride picked from the Rides tab, drawn on the map until closed
-  const [shownRideId, setShownRideId] = useState<string | null>(null);
-  // The ride in progress and its track, re-read every few seconds
-  const [ride, setRide] = useState<ActiveRide | null>(null);
-  const [liveTrack, setLiveTrack] = useState<LngLat[]>([]);
   // The ride sheet or follow sheet, whichever is up, sits where the tab bar was
   const [sheetHeight, setSheetHeight] = useState(0);
-  // A saved ride someone is following, track and all
-  const [followRideId, setFollowRideId] = useState<string | null>(null);
-  // The ride being named: right after it stops, or from its card
-  const [naming, setNaming] = useState<{ id: string; track: LngLat[]; name: string } | null>(null);
   const names = useMemberNames();
   // Only the owner can remove a sharp area (the server agrees)
   const isOwner = useIsOwner(device.memberId);
@@ -105,17 +87,9 @@ export default function MapScreen({ device, onSignOut }: Props) {
   const [layersOpen, setLayersOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  // Dragging the Map sheet's header down closes it, like a pull-down on any bottom sheet
-  const closeOnSwipeDown = useMemo(
-    () => PanResponder.create({
-      onMoveShouldSetPanResponder: (_, g) => g.dy > 8 && Math.abs(g.dy) > Math.abs(g.dx),
-      onPanResponderRelease: (_, g) => { if (g.dy > 60 || g.vy > 0.8) setLayersOpen(false); },
-    }),
-    [],
-  );
+  const closeLayers = useCallback(() => setLayersOpen(false), []);
   // Aerial photos, or USGS Topo (contours, creeks, section lines). Both are in every offline download.
   const [base, setBase] = useState<'aerial' | 'topo'>('aerial');
-  const [pack, setPack] = useState<string>('No offline area yet');
   // Where the map opens: the phone's last fix, or START for a phone that has never had one
   const [start, setStart] = useState<[number, number] | null>(null);
   // MapLibre reads the style (which lists the ready sharp areas) once, when the map mounts. Bumping mapKey remounts
@@ -130,16 +104,7 @@ export default function MapScreen({ device, onSignOut }: Props) {
     if (Platform.OS !== 'ios' || !start || loadedKey !== mapKey) return;
     camera.current?.jumpTo(view ?? { center: start, zoom: 14 });
   }, [start, view, loadedKey, mapKey]);
-  const readyKey = useRef<string | null>(null);
   const [here, setHere] = useState<LngLat | null>(null);
-  const [downloading, setDownloading] = useState<number | null>(null);
-  // What's downloading ('view' or a sharp area's id), so the progress shows on the button that was tapped
-  const [downloadTarget, setDownloadTarget] = useState<string | null>(null);
-  // Sharp areas already saved on this phone, by savedKey, read back from the offline packs.
-  // The key includes when the area was rendered, so an area redone since (new imagery) shows as not saved.
-  const [savedAreas, setSavedAreas] = useState<Set<string>>(new Set());
-  const [areas, setAreas] = useState<MapArea[]>([]);
-  const [sharpening, setSharpening] = useState(false);
   // Putting a place under the crosshair: a new one, or an existing one being moved
   const [placing, setPlacing] = useState<{ move: Waypoint | null } | null>(null);
   // The add-a-place sheet. A place from GPS waits for its fix; one set on the map already has its spot.
@@ -152,27 +117,15 @@ export default function MapScreen({ device, onSignOut }: Props) {
   // Counts selections, so a slow photo lookup for one pin can't land on the card of the pin tapped after it
   const selection = useRef(0);
 
+  const rideState = useRideState(device.memberId, rides);
+  const { ride, liveTrack, shownRide, followRide, followTrack, naming } = rideState;
+
   const reload = useCallback(() => {
     liveObservations().then(setObservations);
     liveWaypoints().then(setWaypoints);
     liveRides().then(setRides);
     Promise.all([crewNews(device.memberId), newsSeenAt()]).then(([items, seenAt]) => setNewsCount(items.filter((i) => isNew(i, seenAt)).length));
   }, [device.memberId]);
-
-  useEffect(() => {
-    const refresh = async () => {
-      const active = await activeRide();
-      setRide(active);
-      setLiveTrack(active ? await ridePoints(active.id) : []);
-    };
-    // The ride is still on screen as recording, so say so if it isn't
-    resumeRideIfNeeded().catch((error) =>
-      Alert.alert("Your ride isn't recording", `${errorText(error)} Hold Stop to save what was recorded so far, then start a new ride.`),
-    );
-    refresh();
-    const timer = setInterval(refresh, 5000);
-    return () => clearInterval(timer);
-  }, []);
 
   useEffect(() => {
     reload();
@@ -192,21 +145,16 @@ export default function MapScreen({ device, onSignOut }: Props) {
         setStart(newest ? [newest.longitude, newest.latitude] : START);
       });
     getState(BASE_KEY).then((saved) => saved === 'topo' && setBase('topo'));
-    getState(AREAS_KEY).then((saved) => {
-      if (!saved) return;
-      const list = JSON.parse(saved) as MapArea[];
-      // The map is loading the style for these same areas, so this isn't a change that needs a reload
-      readyKey.current = readyKeyOf(list);
-      setAreas(list);
-    });
-    OfflineManager.setTileCountLimit(TILE_LIMIT);
-    OfflineManager.getPacks().then(async (packs) => {
-      const last = packs.at(-1);
-      if (last) setPack(describePack(await last.status()));
-      setSavedAreas(new Set(packs.map((p) => p.metadata?.savedKey).filter((key): key is string => typeof key === 'string')));
-    });
     return () => sub.remove();
   }, [reload]);
+
+  // MapLibre only reads the style when the map mounts, so remount it where it was
+  const reloadStyle = useCallback(async () => {
+    const [center, zoom] = await Promise.all([map.current?.getCenter(), map.current?.getZoom()]);
+    if (center && zoom !== undefined) setView({ center: center as [number, number], zoom });
+    setMapKey((k) => k + 1);
+  }, []);
+  const offline = useOfflineMaps({ device, map, sheetOpen: layersOpen, online: syncState.online, onReadyAreasChanged: reloadStyle });
 
   const placeIds = useMemo(() => new Set(waypoints.map((w) => w.id)), [waypoints]);
   // A check made at a place shows through the place's pin, not a pin of its own
@@ -280,9 +228,6 @@ export default function MapScreen({ device, onSignOut }: Props) {
   // resolved_at is stamped on the phone that resolved it, so this matches across the crew
   const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
   const resolvedCount = observations.filter((o) => o.status === 'resolved' && (o.resolved_at ?? 0) >= weekAgo).length;
-  const shownRide = rides.find((r) => r.id === shownRideId) ?? null;
-  const followRide = rides.find((r) => r.id === followRideId) ?? null;
-  const followTrack = useMemo(() => (followRide ? (JSON.parse(followRide.track) as LngLat[]) : []), [followRide]);
   // While riding or following, a sheet takes the tab bar's place on the map
   const riding = !!ride && tab === 'map';
   const following = !riding && !!followRide && tab === 'map';
@@ -331,7 +276,7 @@ export default function MapScreen({ device, onSignOut }: Props) {
 
   function showRide(rideId: string) {
     const ride = rides.find((r) => r.id === rideId);
-    setShownRideId(rideId);
+    rideState.show(rideId);
     setSelectedId(null);
     setTab('map');
     if (ride) fitTrack(JSON.parse(ride.track) as LngLat[]);
@@ -363,65 +308,30 @@ export default function MapScreen({ device, onSignOut }: Props) {
     return r.name ?? (r.member_id === device.memberId ? 'Your ride' : `${who(names, r.member_id, device.memberId)}'s ride`);
   }
 
-  async function beginRide() {
-    try {
-      const started = await startRide();
-      setRide(started);
-      setLiveTrack([]);
-      setShownRideId(null);
+  function beginRide() {
+    return rideState.begin(() => {
       setSelectedId(null);
       setTab('map');
       centerOnMe();
-    } catch (error) {
-      Alert.alert("Couldn't start the ride", (error as Error).message);
-    }
+    });
   }
 
-  async function endRide() {
-    const track = liveTrack;
-    let saved;
-    try {
-      saved = await stopRide(device.memberId);
-    } catch {
-      // stopRide turns location updates off before it saves. If the save failed the ride is still on screen
-      // as recording, so make that true again, or say plainly that it isn't.
-      const recording = await resumeRideIfNeeded().then(() => true, () => false);
-      Alert.alert(
-        "Couldn't save the ride",
-        recording ? "It's still recording. Hold Stop to try again." : "It has stopped recording, but what was recorded is still on this phone. Hold Stop to try saving it again.",
-      );
-      return;
-    }
-    setRide(null);
-    setLiveTrack([]);
-    if (!saved) {
-      Alert.alert('Nothing to save', "The phone didn't get enough GPS fixes to draw a track.");
-      return;
-    }
-    syncState.syncNow();
-    // Leave the finished ride on the map, with its card, and offer to name it
-    setShownRideId(saved.id);
-    fitTrack(track);
-    setNaming({ id: saved.id, track, name: '' });
+  function endRide() {
+    return rideState.end((track) => {
+      syncState.syncNow();
+      fitTrack(track);
+    });
   }
 
   function startFollowing(rideId: string) {
-    setFollowRideId(rideId);
-    setShownRideId(null);
+    rideState.follow(rideId);
+    rideState.show(null);
     setSelectedId(null);
     setTab('map');
     centerOnMe();
   }
 
-  async function saveRideName(name: string) {
-    try {
-      if (naming) await renameRide(naming.id, name);
-    } catch {
-      return Alert.alert("Couldn't save the name", 'The phone had trouble saving it. Try again.');
-    }
-    setNaming(null);
-    syncState.syncNow();
-  }
+  const saveRideName = (name: string) => rideState.saveName(name, syncState.syncNow);
 
   async function centerOnMe() {
     try {
@@ -498,175 +408,6 @@ export default function MapScreen({ device, onSignOut }: Props) {
     if (adding.at && adding.stale) return `No fresh GPS fix. This is the phone's last known spot, ±${Math.round(adding.accuracy ?? 0)} m. Check it on the map.`;
     if (adding.at) return `Where you're standing · ±${Math.round(adding.accuracy ?? 0)} m`;
     return adding.noFix ? 'No GPS fix. Set it on the map instead.' : 'Getting a GPS fix…';
-  }
-
-  const refreshAreas = useCallback(
-    () =>
-      fetchMapAreas(device)
-        .then((list) => {
-          setAreas(list);
-          setState(AREAS_KEY, JSON.stringify(list));
-        })
-        .catch(() => {}), // no signal: keep the saved list
-    [device],
-  );
-
-  // Once when the map opens, since the owner may have just added areas on the headquarters screen
-  useEffect(() => {
-    refreshAreas();
-  }, [refreshAreas]);
-
-  // The sheet shows each area's render progress, so refetch when it opens and every few seconds while one is rendering
-  const rendering = areas.some((a) => a.status === 'pending' || a.status === 'rendering');
-  useEffect(() => {
-    if (!layersOpen) return;
-    const refresh = refreshAreas;
-    refresh();
-    if (!rendering) return;
-    const timer = setInterval(refresh, 5000);
-    return () => clearInterval(timer);
-  }, [layersOpen, refreshAreas, rendering]);
-
-  // An area that turned Ready, or was re-rendered, isn't in the style the map loaded, so reload it
-  useEffect(() => {
-    const key = readyKeyOf(areas);
-    const previous = readyKey.current;
-    readyKey.current = key;
-    if (previous === null || previous === key) return;
-    (async () => {
-      const [center, zoom] = await Promise.all([map.current?.getCenter(), map.current?.getZoom()]);
-      if (center && zoom !== undefined) setView({ center: center as [number, number], zoom });
-      setMapKey((k) => k + 1);
-    })();
-  }, [areas]);
-
-  const sharpBoxes = areas.filter((a) => a.status === 'ready').map((a) => ({ box: areaBounds(a), maxZoom: a.max_zoom ?? 18 }));
-
-  async function downloadArea() {
-    const visibleBounds = await map.current?.getBounds();
-    if (!visibleBounds) return;
-    const bounds = expandBounds(visibleBounds);
-    const tiles = estimateTiles(bounds, sharpBoxes);
-    if (tiles.usgs > VIEW_USGS_LIMIT) {
-      Alert.alert('Area too big', `About ${tiles.usgs} tiles. Zoom in until it's under ${VIEW_USGS_LIMIT}.`);
-      return;
-    }
-    savePack(bounds, tiles.total, `At least ${MIN_PACK_SPAN_KM} km across around this view.`);
-  }
-
-  function downloadSharpArea(area: MapArea) {
-    const bounds = areaBounds(area);
-    const maxZoom = area.max_zoom ?? 18;
-    savePack(bounds, estimateTiles(bounds, [{ box: bounds, maxZoom }]).total, `${area.name}, sharp to zoom ${maxZoom}.`, area);
-  }
-
-  // Asks first, since a big view can take a while to render
-  async function sharpenView() {
-    const visibleBounds = await map.current?.getBounds();
-    if (!visibleBounds) return;
-    let estimate;
-    try {
-      estimate = await estimateSharpening(device, visibleBounds);
-    } catch (error) {
-      Alert.alert("Couldn't sharpen", syncState.online ? errorText(error) : 'This needs a signal. Try again at the house.');
-      return;
-    }
-    Alert.alert(
-      'Sharpen this area?',
-      `${estimate.source_name} imagery, close up to zoom ${estimate.max_zoom}. It takes about ${estimate.estimated_minutes} min. When it says Ready here, download it to have it with no signal.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Sharpen', onPress: () => startSharpen(visibleBounds) },
-      ],
-    );
-  }
-
-  async function startSharpen(visibleBounds: [number, number, number, number]) {
-    setSharpening(true);
-    try {
-      const area = await sharpenArea(device, visibleBounds);
-      setAreas((list) => [...list, area]);
-    } catch (error) {
-      Alert.alert("Couldn't sharpen", syncState.online ? errorText(error) : 'This needs a signal. Try again at the house.');
-    } finally {
-      setSharpening(false);
-    }
-  }
-
-  function confirmRemoveArea(area: MapArea) {
-    const busy = area.status === 'pending' || area.status === 'rendering';
-    Alert.alert(busy ? `Stop sharpening ${area.name}?` : `Remove ${area.name}?`, busy ? 'It stops now and leaves the list.' : 'It leaves the list. Maps you already downloaded stay on this phone.', [
-      { text: 'Keep it', style: 'cancel' },
-      {
-        text: busy ? 'Stop' : 'Remove',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            await removeMapArea(device, area.id);
-            setAreas((list) => list.filter((a) => a.id !== area.id));
-          } catch (error) {
-            Alert.alert("Couldn't remove it", syncState.online ? errorText(error) : 'This needs a signal. Try again at the house.');
-          }
-        },
-      },
-    ]);
-  }
-
-  async function savePack(bounds: [number, number, number, number], tiles: number, saved: string, area?: MapArea) {
-    const key = area ? savedKey(area) : undefined;
-    setDownloading(0);
-    setDownloadTarget(area?.id ?? 'view');
-    let finished = false;
-    const finish = (title: string, message: string, newPackId: string | null = null) => {
-      if (finished) return;
-      finished = true;
-      setDownloading(null);
-      setDownloadTarget(null);
-      if (newPackId && area && key) {
-        dropOlderPacks(area, newPackId);
-        setSavedAreas((keys) => new Set([...keys].filter((k) => !k.startsWith(`${area.id}@`))).add(key));
-      }
-      Alert.alert(title, message);
-    };
-
-    try {
-      await OfflineManager.createPack(
-        {
-          mapStyle: mapStyleUrl(device),
-          bounds,
-          minZoom: PACK_MIN_ZOOM,
-          maxZoom: PACK_MAX_ZOOM,
-          metadata: { name: `Area ${new Date().toISOString()}`, estimatedTiles: tiles, ...(key ? { savedKey: key } : {}) },
-        },
-        (pack, status) => {
-          setPack(describePack(status));
-          setDownloading(status.percentage);
-          if (status.state === 'complete') {
-            finish('Saved for offline', `${saved} ${describePack(status)}`, pack.id);
-          }
-        },
-        (_pack, error) => {
-          setPack(`Download failed: ${error.message}`);
-          finish('Download failed', error.message);
-        },
-      );
-    } catch (error) {
-      finish('Download failed', (error as Error).message);
-    }
-  }
-
-  // "Update" on a sharp area downloads a whole new pack. Once it's in, the area's older packs only take up space.
-  // Only after the new one finishes, so a failed update never leaves the area with no map.
-  async function dropOlderPacks(area: MapArea, keepPackId: string) {
-    try {
-      const packs = await OfflineManager.getPacks();
-      for (const old of packs) {
-        const oldKey = old.metadata?.savedKey;
-        if (old.id !== keepPackId && typeof oldKey === 'string' && oldKey.startsWith(`${area.id}@`)) await OfflineManager.deletePack(old.id);
-      }
-    } catch {
-      // The old pack stays; it's wasted space, not a broken map
-    }
   }
 
   function chooseBase(next: 'aerial' | 'topo') {
@@ -801,10 +542,10 @@ export default function MapScreen({ device, onSignOut }: Props) {
           <Layer type="fill" id="wash" afterId={base === 'topo' ? 'topo' : 'aerial-top'} paint={base === 'topo' ? TOPO_WASH : AERIAL_WASH} />
         </GeoJSONSource>
         {/* Where each sharp area is: a faint dashed outline, with its name on the top edge */}
-        <GeoJSONSource id="sharp-areas" data={areaOutlines(areas)}>
+        <GeoJSONSource id="sharp-areas" data={areaOutlines(offline.areas)}>
           <Layer type="line" id="sharp-areas-line" paint={{ 'line-color': palette.canvas, 'line-width': 1.5, 'line-opacity': 0.7, 'line-dasharray': [3, 2] }} />
         </GeoJSONSource>
-        {areas.map((area) => (
+        {offline.areas.map((area) => (
           <Marker key={`area:${area.id}`} id={`area:${area.id}`} lngLat={[(area.west + area.east) / 2, area.north]} anchor="center" onPress={() => showArea(area)}>
             <View style={styles.areaLabel} accessibilityLabel={`${area.name} sharp area`}>
               <Text style={styles.areaLabelText} numberOfLines={1}>{area.name}</Text>
@@ -1010,8 +751,8 @@ export default function MapScreen({ device, onSignOut }: Props) {
       {shownRide && tab === 'map' && !placing && !riding && !following && !selected && !selectedPlace && (
         <View style={[styles.rideCard, { bottom: bottomInset + 20 }]}>
           <View style={styles.rideCardText}>
-            <Text style={styles.peekTitle} numberOfLines={2}>{rideTitle(shownRide)}</Text>
-            <Text style={styles.peekSmall}>
+            <Text style={styles.rideCardTitle} numberOfLines={2}>{rideTitle(shownRide)}</Text>
+            <Text style={styles.rideCardSmall}>
               {shownRide.name ? `${who(names, shownRide.member_id, device.memberId)} · ` : ''}
               {dayAndTime(shownRide.started_at)} · {formatDistance(shownRide.distance_meters)} · {formatDuration(shownRide.ended_at - shownRide.started_at)}
             </Text>
@@ -1025,12 +766,12 @@ export default function MapScreen({ device, onSignOut }: Props) {
                 <AppButton
                   variant="ghost"
                   title={shownRide.name ? 'Rename' : 'Name it'}
-                  onPress={() => setNaming({ id: shownRide.id, track: JSON.parse(shownRide.track) as LngLat[], name: shownRide.name ?? '' })}
+                  onPress={() => rideState.setNaming({ id: shownRide.id, track: JSON.parse(shownRide.track) as LngLat[], name: shownRide.name ?? '' })}
                 />
               )}
             </View>
           </View>
-          <Pressable onPress={() => setShownRideId(null)} accessibilityRole="button" accessibilityLabel="Hide this ride" style={styles.rideCardClose}>
+          <Pressable onPress={() => rideState.show(null)} accessibilityRole="button" accessibilityLabel="Hide this ride" style={styles.rideCardClose}>
             <Icon name="close" size={20} color={colors.text} strokeWidth={2.4} />
           </Pressable>
         </View>
@@ -1059,7 +800,7 @@ export default function MapScreen({ device, onSignOut }: Props) {
           title={rideTitle(followRide)}
           track={followTrack}
           waypoints={waypoints}
-          onStop={() => setFollowRideId(null)}
+          onStop={() => rideState.follow(null)}
           onLog={() => setCapturing(true)}
           onLayout={(e) => setSheetHeight(e.nativeEvent.layout.height)}
         />
@@ -1105,6 +846,8 @@ export default function MapScreen({ device, onSignOut }: Props) {
               mapStyle={mapStyleUrl(device)}
               here={here}
               fetchPhoto={(photoId) => fetchPhoto(device, photoId)}
+              canDelete={isOwner || detail.member_id === device.memberId}
+              onOpenObservation={openDetail}
               onBack={closeDetail}
               onChanged={syncState.syncNow}
             />
@@ -1151,7 +894,7 @@ export default function MapScreen({ device, onSignOut }: Props) {
         initialName={naming?.name ?? ''}
         suggestions={nameSuggestions}
         onSave={saveRideName}
-        onSkip={() => setNaming(null)}
+        onSkip={() => rideState.setNaming(null)}
       />
 
       <Modal visible={settingsOpen} animationType="slide" statusBarTranslucent navigationBarTranslucent onRequestClose={() => setSettingsOpen(false)}>
@@ -1173,129 +916,8 @@ export default function MapScreen({ device, onSignOut }: Props) {
         <HelpScreen onClose={() => setHelpOpen(false)} />
       </Modal>
 
-      <Modal visible={layersOpen} transparent animationType="fade" statusBarTranslucent onRequestClose={() => setLayersOpen(false)}>
-        {/* The tap-off area sits behind the sheet, not around it, so it can't swallow the sheet's scrolling */}
-        <View style={[styles.backdrop, { paddingTop: insets.top + space.xl }]}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={() => setLayersOpen(false)} accessibilityLabel="Close" />
-          <View style={[styles.sheet, styles.sheetShrink]}>
-            <View style={styles.sheetHeader} {...closeOnSwipeDown.panHandlers}>
-              <View style={styles.grabber} />
-              <Text style={styles.sheetTitle} accessibilityRole="header">Map</Text>
-              <Pressable onPress={() => setLayersOpen(false)} accessibilityRole="button" accessibilityLabel="Close" hitSlop={8} style={styles.sheetClose}>
-                <Icon name="close" size={24} color={colors.text} strokeWidth={2.4} />
-              </Pressable>
-            </View>
-            {/* Once a ranch has a few sharp areas the sheet outgrows the screen, so the header stays put and the rest scrolls */}
-            <ScrollView style={styles.sheetScroll} persistentScrollbar contentContainerStyle={[styles.sheetBody, { paddingBottom: insets.bottom + space.xl }]}>
-            <View style={styles.baseRow}>
-              {(['aerial', 'topo'] as const).map((b) => (
-                <Pressable
-                  key={b}
-                  onPress={() => chooseBase(b)}
-                  accessibilityRole="radio"
-                  accessibilityState={{ selected: base === b }}
-                  style={[styles.baseChoice, base === b && styles.baseChoiceOn]}
-                >
-                  <Icon name={b === 'aerial' ? 'map' : 'layers'} size={22} color={base === b ? palette.white : colors.text} />
-                  <Text style={[styles.baseText, base === b && styles.baseTextOn]}>{b === 'aerial' ? 'Aerial' : 'Topo'}</Text>
-                </Pressable>
-              ))}
-            </View>
-            <Text style={styles.sheetHint}>
-              {base === 'topo' ? 'Contour lines, creeks, draws and section lines.' : 'Aerial photos of the ground.'} Offline areas saved before today need saving again to have Topo.
-            </Text>
-
-            <View style={styles.sheetDivider} />
-            <Text style={styles.sheetTitle}>Offline map</Text>
-            <Text style={styles.sheetText}>{pack}</Text>
-            <AppButton
-              title={downloading !== null && downloadTarget === 'view' ? `Downloading ${Math.round(downloading)}%` : 'Download this area'}
-              onPress={downloadArea}
-              disabled={downloading !== null}
-              icon={<Icon name="download" size={20} color={palette.white} strokeWidth={2.4} />}
-            />
-            <Text style={styles.sheetHint}>Saves aerial and topo maps at least {MIN_PACK_SPAN_KM} km across around the current view.</Text>
-
-            <View style={styles.sheetDivider} />
-            <Text style={styles.sheetTitle}>Sharp areas</Text>
-            {areas.map((area) => (
-              <View key={area.id} style={styles.areaRow}>
-                <Pressable onPress={() => showArea(area)} accessibilityRole="button" accessibilityHint="Shows it on the map" style={{ flex: 1 }}>
-                  <Text style={[styles.sheetText, styles.areaName]}>{area.name}</Text>
-                  <Text style={styles.sheetHint}>
-                    {describeArea(area)}
-                    {savedAreas.has(savedKey(area)) ? ' · saved on this phone' : ''}
-                  </Text>
-                  {area.status === 'rendering' && (
-                    <View style={styles.progressTrack}>
-                      <View style={[styles.progressFill, { width: `${Math.min(100, (area.tile_count / Math.max(1, area.estimated_tiles)) * 100)}%` }]} />
-                    </View>
-                  )}
-                </Pressable>
-                {area.status === 'ready' && (
-                  <AppButton
-                    variant="secondary"
-                    title={downloading !== null && downloadTarget === area.id ? `${Math.round(downloading)}%` : savedAreas.has(savedKey(area)) ? 'Update' : 'Download'}
-                    onPress={() => downloadSharpArea(area)}
-                    disabled={downloading !== null}
-                    icon={<Icon name="download" size={20} color={palette.white} strokeWidth={2.4} />}
-                  />
-                )}
-                {isOwner && (
-                  <Pressable onPress={() => confirmRemoveArea(area)} accessibilityRole="button" accessibilityLabel={`Remove ${area.name}`} style={styles.sheetClose}>
-                    <Icon name="close" size={20} color={colors.textMuted} strokeWidth={2.4} />
-                  </Pressable>
-                )}
-              </View>
-            ))}
-            <AppButton
-              variant="secondary"
-              title={sharpening ? 'Sending…' : 'Sharpen this area'}
-              onPress={sharpenView}
-              disabled={sharpening}
-              icon={<Icon name="plus" size={20} color={palette.white} strokeWidth={2.4} />}
-            />
-            <Text style={styles.sheetHint}>Gets close-up aerial photos for the current view plus a quarter mile, from the state&apos;s own imagery where it&apos;s sharper. Do it once per pasture, with signal.</Text>
-
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
+      <LayersSheet visible={layersOpen} onClose={closeLayers} base={base} onBase={chooseBase} offline={offline} isOwner={isOwner} onShowArea={showArea} />
     </View>
-  );
-}
-
-function SyncPill({ state, unsynced, onPress }: { state: SyncState; unsynced: number; onPress: () => void }) {
-  const photos = state.pending.uploads;
-  const turnedDown = state.problems.length;
-  // A failed run only shows with signal: with none, "Offline" is the truer word for why nothing went up
-  const pill = state.syncing
-    ? { icon: 'refresh' as const, color: colors.chromeText, label: 'Syncing…', look: null, hint: 'Sync now' }
-    : state.signedOut
-      ? { icon: 'cloudOff' as const, color: palette.white, label: 'Signed out', look: styles.syncPillFailed, hint: 'See why' }
-      : state.online && state.error
-        ? { icon: 'cloudOff' as const, color: palette.white, label: 'Sync failed', look: styles.syncPillFailed, hint: 'See why' }
-        : unsynced > 0
-          ? { icon: 'cloudOff' as const, color: palette.harvest, label: `${unsynced} waiting`, look: styles.syncPillWarn, hint: 'Sync now' }
-          : photos > 0
-            ? { icon: 'cloudOff' as const, color: palette.harvest, label: `${photos} photo${photos === 1 ? '' : 's'} waiting`, look: styles.syncPillWarn, hint: 'Sync now' }
-            : !state.online
-              ? { icon: 'cloudOff' as const, color: palette.harvest, label: 'Offline', look: styles.syncPillWarn, hint: 'Sync now' }
-              : turnedDown > 0
-                ? { icon: 'cloudOff' as const, color: palette.harvest, label: `${turnedDown} not sent`, look: styles.syncPillWarn, hint: 'See why in Settings' }
-                : { icon: 'check' as const, color: sync.synced, label: 'Synced', look: null, hint: 'Sync now' };
-
-  return (
-    <Pressable
-      onPress={onPress}
-      disabled={state.syncing}
-      accessibilityRole="button"
-      accessibilityLabel={`${pill.label}. ${pill.hint}`}
-      style={[styles.syncPill, pill.look]}
-    >
-      <Icon name={pill.icon} size={18} color={pill.color} strokeWidth={2.2} />
-      <Text style={styles.syncPillText}>{pill.label}</Text>
-    </Pressable>
   );
 }
 
@@ -1311,135 +933,6 @@ function FilterOption({ label, icon, color, onColor, on, onPress }: { label: str
   );
 }
 
-function Chip({ label, color, on, onPress }: { label: string; color?: string; on: boolean; onPress: () => void }) {
-  return (
-    <Pressable onPress={onPress} accessibilityRole="button" accessibilityState={{ selected: on }} style={[styles.chip, on && styles.chipOn]}>
-      {color && <View style={[styles.chipDot, { backgroundColor: color }]} />}
-      <Text style={[styles.chipText, on && styles.chipTextOn]} numberOfLines={1}>{label}</Text>
-    </Pressable>
-  );
-}
-
-// claimedBy: "Sam" or "You", when someone has said they've got it
-type PeekProps = { observation: Observation; photoUri: string | null; author: string; claimedBy: string | null; here: LngLat | null; bottom: number; onPress: () => void };
-
-function PeekCard({ observation, photoUri, author, claimedBy, here, bottom, onPress }: PeekProps) {
-  const info = KIND_INFO[observation.kind];
-  const title = [observation.tag_number && `Tag ${observation.tag_number}`, observation.note].filter(Boolean).join(' · ') || info.label;
-  const where = here ? relativeTo(here, [observation.longitude, observation.latitude]) : `±${Math.round(observation.accuracy ?? 0)} m`;
-
-  return (
-    <Pressable onPress={onPress} accessibilityRole="button" accessibilityHint="Opens the observation" style={[styles.peek, { bottom }]}>
-      <View style={styles.peekPhoto}>
-        {photoUri ? <Image source={{ uri: photoUri }} style={StyleSheet.absoluteFill} /> : <Icon name={info.icon} size={28} color={colors.chromeTextMuted} />}
-      </View>
-      <View style={styles.peekText}>
-        <View style={styles.peekMeta}>
-          <Text style={[styles.peekBadge, { backgroundColor: info.badgeColor, color: info.onColor }]}>{info.short.toUpperCase()}</Text>
-          <Text style={styles.peekSmall}>
-            {timeAgo(observation.observed_at)} · {author}
-          </Text>
-        </View>
-        <Text style={styles.peekTitle} numberOfLines={1}>{title}</Text>
-        <Text style={styles.peekSmall} numberOfLines={1}>
-          {claimedBy ? `${claimedBy === 'You' ? "You've" : `${claimedBy} has`} got it · ` : ''}
-          {where}
-          {observation._status !== 'synced' ? ' · on this phone' : ''}
-        </Text>
-      </View>
-      <Icon name="chevronRight" size={22} color={colors.textMuted} strokeWidth={2.2} />
-    </Pressable>
-  );
-}
-
-type PlacePeekProps = {
-  waypoint: Waypoint;
-  latest: Observation | null;
-  photoUri: string | null;
-  author: string;
-  here: LngLat | null;
-  bottom: number;
-  onPress: () => void;
-};
-
-function PlacePeekCard({ waypoint, latest, photoUri, author, here, bottom, onPress }: PlacePeekProps) {
-  const info = WAYPOINT_INFO[waypoint.kind];
-  const where = here ? relativeTo(here, [waypoint.longitude, waypoint.latitude]) : 'Fixed place';
-  const status = latest
-    ? [latest.note ?? 'Checked', latest.status === 'resolved' && 'resolved', timeAgo(latest.observed_at), author]
-        .filter(Boolean)
-        .join(' · ')
-    : 'No checks yet';
-
-  return (
-    <Pressable onPress={onPress} accessibilityRole="button" accessibilityHint="Opens the place" style={[styles.peek, { bottom }]}>
-      <View style={[styles.peekPhoto, styles.peekPlace]}>
-        {photoUri ? <Image source={{ uri: photoUri }} style={StyleSheet.absoluteFill} /> : <Icon name={info.icon} size={28} color={colors.chromeTextMuted} />}
-      </View>
-      <View style={styles.peekText}>
-        <View style={styles.peekMeta}>
-          <Text style={[styles.peekBadge, { backgroundColor: info.badgeColor, color: info.onColor }]}>{info.label.toUpperCase()}</Text>
-          <Text style={styles.peekSmall}>{where}</Text>
-        </View>
-        <Text style={styles.peekTitle} numberOfLines={1}>{waypoint.name}</Text>
-        <Text style={styles.peekSmall} numberOfLines={1}>{status}</Text>
-      </View>
-      <Icon name="chevronRight" size={22} color={colors.textMuted} strokeWidth={2.2} />
-    </Pressable>
-  );
-}
-
-// Packs are keyed by the style URL, which carries this membership's token, so after leaving they can never
-// be used again. Best effort: a pack that won't delete is wasted space, not a reason to stay signed in.
-async function deleteOfflinePacks(): Promise<void> {
-  try {
-    for (const old of await OfflineManager.getPacks()) await OfflineManager.deletePack(old.id).catch(() => {});
-  } catch {
-    // nothing to do
-  }
-}
-
-function areaOutlines(areas: MapArea[]): GeoJSON.FeatureCollection<GeoJSON.LineString> {
-  return {
-    type: 'FeatureCollection',
-    features: areas.map(({ west, south, east, north }) =>
-      lineString([[west, south], [east, south], [east, north], [west, north], [west, south]]),
-    ),
-  };
-}
-
-function lineString(coordinates: LngLat[]): GeoJSON.Feature<GeoJSON.LineString> {
-  return { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates } };
-}
-
-function endPoint(coordinates: LngLat, end: 'start' | 'end'): GeoJSON.Feature<GeoJSON.Point> {
-  return { type: 'Feature', properties: { end }, geometry: { type: 'Point', coordinates } };
-}
-
-function readyKeyOf(areas: MapArea[]): string {
-  return areas.filter((a) => a.status === 'ready').map(savedKey).sort().join(',');
-}
-
-function savedKey(area: MapArea): string {
-  return `${area.id}@${area.rendered_at}`;
-}
-
-function areaBounds(area: MapArea): [number, number, number, number] {
-  return [area.west, area.south, area.east, area.north];
-}
-
-function describeArea(area: MapArea): string {
-  if (area.status === 'ready') return `Ready · ${area.source_name ?? 'NAIP'} · ${area.tile_count} tiles`;
-  if (area.status === 'failed') return 'Failed. Tap Sharpen this area to try again.';
-  if (area.status === 'rendering') return `Sharpening · ${area.tile_count} of ${area.estimated_tiles} tiles`;
-  return `Waiting to start · about ${area.estimated_tiles} tiles`;
-}
-
-function describePack(status: OfflinePackStatus): string {
-  const mb = (status.completedTileSize / 1_000_000).toFixed(1);
-  return `${status.state} ${Math.round(status.percentage)}% · ${status.completedTileCount} tiles · ${mb} MB`;
-}
-
 // Covers the whole map for the wash layer
 const WORLD = { type: 'Feature' as const, properties: {}, geometry: { type: 'Polygon' as const, coordinates: [[[-180, -85], [180, -85], [180, 85], [-180, 85], [-180, -85]]] } };
 // Topo is white and blue out of the box; pull it toward canvas and leather
@@ -1450,7 +943,6 @@ const TOPO_PAINT = isDark
 const TOPO_WASH = { 'fill-color': isDark ? palette.pine : palette.leather, 'fill-opacity': isDark ? 0.25 : 0.16 };
 // Aerial just gets warmer and a touch darker, like late-afternoon light, so white pins and labels pop
 const AERIAL_WASH = { 'fill-color': isDark ? palette.pine : '#4A3418', 'fill-opacity': isDark ? 0.3 : 0.14 };
-const shadow = { elevation: 8, shadowColor: '#0A100C', shadowOpacity: 0.35, shadowRadius: 12, shadowOffset: { width: 0, height: 6 } };
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.chrome },
@@ -1462,24 +954,7 @@ const styles = StyleSheet.create({
   headerText: { flex: 1, gap: 1 },
   ranch: { fontFamily: fonts.display, fontSize: 26, lineHeight: 28, color: colors.chromeText },
   counts: { fontSize: 13, color: colors.chromeTextMuted },
-  syncPill: {
-    height: touch.round, paddingHorizontal: 16, borderRadius: radius.pill, flexDirection: 'row', alignItems: 'center', gap: 8,
-    borderWidth: 1, borderColor: 'rgba(245, 239, 224, 0.2)', backgroundColor: colors.chromeRaised,
-  },
-  syncPillWarn: { borderColor: 'rgba(227, 163, 59, 0.5)', backgroundColor: 'rgba(227, 163, 59, 0.14)' },
-  // Its own look, so a failed sync can't be mistaken for "waiting for signal"
-  syncPillFailed: { borderColor: sync.failed, backgroundColor: sync.failed },
-  syncPillText: { color: colors.chromeText, fontSize: 15, fontWeight: '700' },
   chips: { gap: space.sm },
-  chip: {
-    ...shadow, height: 48, paddingHorizontal: 16, borderRadius: radius.pill, backgroundColor: 'rgba(16, 23, 19, 0.88)',
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-  },
-  // Same size on and off, so picking a filter doesn't nudge the row
-  chipOn: { backgroundColor: palette.canvas },
-  chipDot: { width: 12, height: 12, borderRadius: 6, borderWidth: 1.5, borderColor: palette.white },
-  chipText: { color: colors.chromeText, fontSize: 15, fontWeight: '700' },
-  chipTextOn: { color: palette.pine },
   controls: { position: 'absolute', right: 12, gap: space.sm },
   controlBadge: {
     position: 'absolute', right: 8, bottom: 8, width: 18, height: 18, borderRadius: 9, backgroundColor: colors.primary,
@@ -1502,23 +977,10 @@ const styles = StyleSheet.create({
   filterLabel: { color: colors.chromeText, fontSize: 17, fontWeight: '700' },
   filterLabelOn: { color: palette.pine, fontWeight: '800' },
   control: { width: touch.min, height: touch.min, borderRadius: 14, backgroundColor: colors.chrome, alignItems: 'center', justifyContent: 'center' },
-  peek: {
-    ...shadow, position: 'absolute', left: 12, right: 12, backgroundColor: colors.surface, borderRadius: 16, padding: 10,
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-  },
-  peekPhoto: {
-    width: 72, height: 72, borderRadius: 10, overflow: 'hidden', backgroundColor: colors.chromeRaised,
-    alignItems: 'center', justifyContent: 'center',
-  },
   alsoHere: { position: 'absolute', left: 12, right: 12 },
   alsoHereLabel: { alignSelf: 'center', color: palette.white, fontSize: 13, fontWeight: '800', textShadowColor: 'rgba(0, 0, 0, 0.7)', textShadowRadius: 4 },
-  // Square, like the place's pin
-  peekPlace: { borderRadius: 6 },
-  peekText: { flex: 1, gap: 3, minWidth: 0 },
-  peekMeta: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
-  peekBadge: { fontSize: 12, fontWeight: '800', letterSpacing: 0.3, borderRadius: 4, overflow: 'hidden', paddingVertical: 2, paddingHorizontal: 7 },
-  peekTitle: { fontFamily: fonts.display, fontSize: 24, lineHeight: 25, color: colors.text },
-  peekSmall: { fontSize: 13, color: colors.textMuted },
+  rideCardTitle: { fontFamily: fonts.display, fontSize: 24, lineHeight: 25, color: colors.text },
+  rideCardSmall: { fontSize: 13, color: colors.textMuted },
   rideCard: {
     ...shadow, position: 'absolute', left: 12, right: 12, backgroundColor: colors.surface, borderRadius: 16,
     paddingVertical: 12, paddingLeft: 16, paddingRight: 8, flexDirection: 'row', alignItems: 'flex-start', gap: 8,
@@ -1526,33 +988,6 @@ const styles = StyleSheet.create({
   rideCardText: { flex: 1, gap: 2 },
   rideCardActions: { flexDirection: 'row', alignItems: 'center', gap: space.sm, marginTop: 6 },
   rideCardClose: { width: touch.min, height: touch.min, alignItems: 'center', justifyContent: 'center' },
-  backdrop: { flex: 1, backgroundColor: colors.scrim, justifyContent: 'flex-end' },
-  sheet: {
-    backgroundColor: colors.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20,
-    paddingTop: space.xl, paddingHorizontal: space.lg, gap: 10,
-  },
-  sheetShrink: { flexShrink: 1, paddingBottom: 0 },
-  sheetScroll: { flexShrink: 1 },
-  sheetBody: { gap: 10, paddingTop: 10 },
-  sheetHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: -space.md },
-  grabber: { position: 'absolute', top: -space.sm, alignSelf: 'center', left: '50%', marginLeft: -20, width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border },
-  sheetClose: { width: touch.min, height: touch.min, marginRight: -space.md, alignItems: 'center', justifyContent: 'center' },
-  sheetTitle: { fontFamily: fonts.display, fontSize: 26, color: colors.text },
-  sheetText: { fontSize: 15, color: colors.text },
-  areaName: { fontWeight: '700', textDecorationLine: 'underline' },
   areaLabel: { backgroundColor: 'rgba(16, 23, 19, 0.82)', borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 4, maxWidth: 180 },
   areaLabelText: { color: palette.canvas, fontSize: 13, fontWeight: '700' },
-  sheetHint: { fontSize: 13, color: colors.textMuted },
-  baseRow: { flexDirection: 'row', gap: 10 },
-  baseChoice: {
-    flex: 1, minHeight: 56, borderRadius: radius.md, borderWidth: 2, borderColor: colors.border,
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-  },
-  baseChoiceOn: { backgroundColor: palette.sky, borderColor: palette.sky },
-  baseText: { fontSize: 17, fontWeight: '800', color: colors.text },
-  baseTextOn: { color: palette.white },
-  sheetDivider: { height: 1, backgroundColor: colors.border, marginVertical: 6 },
-  progressTrack: { height: 6, borderRadius: 3, backgroundColor: colors.surfaceSunken, overflow: 'hidden', marginTop: 4 },
-  progressFill: { height: 6, borderRadius: 3, backgroundColor: palette.sky },
-  areaRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
 });

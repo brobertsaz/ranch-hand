@@ -1,5 +1,6 @@
 import type * as Location from 'expo-location';
 import { StatusBar } from 'expo-status-bar';
+import { useState } from 'react';
 import { Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -39,20 +40,28 @@ type Props = {
   onTagNumber: (value: string) => void;
   note: string;
   onNote: (value: string) => void;
+  // "Seen 3 times, last 2 days ago", when this tag has been logged before
+  tagHint?: string | null;
   saving: boolean;
   onSave: () => void;
   onCancel: () => void;
-  onRetake: () => void;
+  // Missing when the pin already exists: its photo and its spot are what they are
+  onRetake?: () => void;
+  // Set when fixing a pin that's already logged, not dropping a new one
+  editing?: { where: string; onDelete?: () => void };
 };
 
-// Mockup 3 · Tag it & save
+// Mockup 3 · Tag it & save. Also how a pin logged wrong is put right (see EditObservationScreen).
 export default function TagScreen(props: Props) {
-  const { photoUri, fix, staleFix = false, kind, onKind, place, picks, onTogglePick, tagNumber, onTagNumber, note, onNote, saving, onSave, onCancel, onRetake } = props;
+  const { photoUri, fix, staleFix = false, kind, onKind, place, picks, onTogglePick, tagNumber, onTagNumber, note, onNote, tagHint = null, saving, onSave, onCancel, onRetake, editing } = props;
   const conditions = CONDITIONS[kind];
   const insets = useSafeAreaInsets();
+  // Most tags are numbers, and the number pad's keys are the ones a gloved thumb can hit. ABC is for "Y123".
+  const [letters, setLetters] = useState(() => /[^0-9]/.test(tagNumber));
 
-  const where =
-    fix === 'pending'
+  const where = editing
+    ? { label: editing.where, color: sync.synced }
+    : fix === 'pending'
       ? { label: 'Finding GPS…', color: sync.pending }
       : fix
         ? {
@@ -77,9 +86,11 @@ export default function TagScreen(props: Props) {
           <Pressable onPress={onCancel} accessibilityRole="button" accessibilityLabel="Cancel" style={styles.roundButton}>
             <Icon name="close" size={20} color={colors.chromeText} strokeWidth={2.4} />
           </Pressable>
-          <Pressable onPress={onRetake} accessibilityRole="button" style={styles.retake}>
-            <Text style={styles.retakeText}>{photoUri ? 'Retake' : 'Add photo'}</Text>
-          </Pressable>
+          {onRetake && (
+            <Pressable onPress={onRetake} accessibilityRole="button" style={styles.retake}>
+              <Text style={styles.retakeText}>{photoUri ? 'Retake' : 'Add photo'}</Text>
+            </Pressable>
+          )}
         </View>
         <View style={styles.coords}>
           <View style={[styles.dot, { backgroundColor: where.color }]} />
@@ -88,7 +99,7 @@ export default function TagScreen(props: Props) {
       </View>
 
       <ScrollView style={styles.form} contentContainerStyle={styles.formContent} keyboardShouldPersistTaps="handled">
-        <Text style={styles.heading} accessibilityRole="header">What did you see?</Text>
+        <Text style={styles.heading} accessibilityRole="header">{editing ? 'Fix this pin' : 'What did you see?'}</Text>
         <View style={styles.kinds}>
           {KINDS.map((k) => {
             const info = KIND_INFO[k];
@@ -134,13 +145,27 @@ export default function TagScreen(props: Props) {
         <View style={styles.fields}>
           {kind === 'sick_animal' && (
             <View style={styles.tagField}>
-              <Text style={styles.label} nativeID="tagLabel">Tag #</Text>
+              <View style={styles.tagLabelRow}>
+                <Text style={styles.label} nativeID="tagLabel">Tag #</Text>
+                <Pressable
+                  onPress={() => setLetters((on) => !on)}
+                  accessibilityRole="button"
+                  accessibilityLabel={letters ? 'Switch to the number pad' : 'Switch to letters, for a tag like Y123'}
+                  hitSlop={10}
+                >
+                  <Text style={styles.keys}>{letters ? '123' : 'ABC'}</Text>
+                </Pressable>
+              </View>
               <TextInput
                 accessibilityLabelledBy="tagLabel"
                 style={styles.tagInput}
                 value={tagNumber}
-                onChangeText={onTagNumber}
-                keyboardType="number-pad"
+                // Kept in capitals so "y123" and "Y123" are one animal in the tag's history
+                onChangeText={(text) => onTagNumber(text.toUpperCase())}
+                keyboardType={letters ? 'default' : 'number-pad'}
+                autoCapitalize="characters"
+                autoCorrect={false}
+                maxLength={40}
                 placeholder="—"
                 placeholderTextColor={colors.textMuted}
               />
@@ -160,17 +185,26 @@ export default function TagScreen(props: Props) {
             />
           </View>
         </View>
+        {kind === 'sick_animal' && tagHint ? <Text style={styles.tagHint}>{tagHint}</Text> : null}
+        {editing?.onDelete && (
+          <Pressable onPress={editing.onDelete} accessibilityRole="button" style={styles.delete}>
+            <Icon name="trash" size={18} color={sync.failed} strokeWidth={2.2} />
+            <Text style={styles.deleteText}>Delete this pin</Text>
+          </Pressable>
+        )}
       </ScrollView>
 
       <View style={[styles.saveBar, { paddingBottom: insets.bottom + space.lg }]}>
         <AppButton
           size="large"
-          title={saving ? 'Waiting for GPS…' : 'Drop the pin'}
+          title={editing ? 'Save changes' : saving ? 'Waiting for GPS…' : 'Drop the pin'}
           onPress={onSave}
           disabled={saving}
           icon={saving ? undefined : <Icon name="check" size={26} color={palette.white} strokeWidth={2.8} />}
         />
-        <Text style={styles.caption}>Saved on this phone now. Sends to the crew when you&apos;re back in range.</Text>
+        <Text style={styles.caption}>
+          {editing ? 'Changed on this phone now. The crew sees it when you’re back in range.' : 'Saved on this phone now. Sends to the crew when you’re back in range.'}
+        </Text>
       </View>
     </KeyboardAvoidingView>
   );
@@ -270,6 +304,11 @@ const styles = StyleSheet.create({
   tagField: { width: 132, gap: 6 },
   noteField: { flex: 1, gap: 6 },
   label: { fontSize: 14, fontWeight: '700', color: colors.text },
+  tagLabelRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  keys: { fontSize: 13, fontWeight: '800', letterSpacing: 0.8, color: colors.primary },
+  tagHint: { fontSize: 14, fontWeight: '600', color: colors.textMuted, marginTop: -8 },
+  delete: { minHeight: touch.min, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  deleteText: { fontSize: 16, fontWeight: '700', color: sync.failed },
   optional: { fontWeight: '500', color: colors.textMuted },
   tagInput: {
     height: 56, borderRadius: 10, borderWidth: 2, borderColor: colors.chrome, backgroundColor: colors.surface,

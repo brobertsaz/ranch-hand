@@ -94,3 +94,88 @@ it('clears the ranch but keeps what belongs to the phone', async () => {
   expect(await db.getState('last_pulled_at')).toBeNull();
   expect(await db.getState('map_base')).toBe('topo');
 });
+
+describe('fixing a pin', () => {
+  const settle = (id: string) => db.write((conn) => conn.runAsync(`UPDATE observations SET _status = 'synced', _edited = '|', _changed = 0 WHERE id = ?`, id));
+  const row = (id: string) => db.db().getFirstAsync<{ _status: string; _edited: string }>('SELECT _status, _edited FROM observations WHERE id = ?', id);
+
+  it('changes only what was put right, and names those fields for the server to merge', async () => {
+    const id = await log();
+    await settle(id);
+
+    await db.updateObservation(id, { kind: 'fence_issue', tag_number: null });
+
+    expect(await find(id)).toMatchObject({ kind: 'fence_issue', tag_number: null, note: 'Limping', status: 'open', _status: 'updated' });
+    expect(db.editedFields((await row(id))!._edited)).toEqual(['kind', 'tag_number']);
+  });
+
+  it('does nothing when nothing changed', async () => {
+    const id = await log();
+    await settle(id);
+
+    await db.updateObservation(id, {});
+
+    expect(await row(id)).toEqual({ _status: 'synced', _edited: '|' });
+  });
+
+  it('throws away a pin the server never saw, with its photo', async () => {
+    const id = await db.createObservation(
+      { kind: 'sick_animal', latitude: 44.4, longitude: -104.3, accuracy: 5, observed_at: 1, tag_number: null, note: null, status: 'open' },
+      'photo1',
+      'me',
+    );
+
+    await db.deleteObservation(id);
+
+    expect(await db.liveObservations()).toEqual([]);
+    expect(await db.photosFor(id)).toEqual([]);
+    expect(await db.pendingCounts()).toEqual({ records: 0, uploads: 0 });
+  });
+
+  it('sends the delete up when the crew already has the pin, or a push is carrying it there now', async () => {
+    const synced = await log();
+    await settle(synced);
+    const inFlight = await log();
+    db.pushing.add(`observations:${inFlight}`);
+
+    await db.deleteObservation(synced);
+    await db.deleteObservation(inFlight);
+
+    expect(await db.liveObservations()).toEqual([]);
+    expect((await row(synced))!._status).toBe('deleted');
+    expect((await row(inFlight))!._status).toBe('deleted');
+  });
+});
+
+describe('tag history', () => {
+  it('finds every sighting of a tag whatever the capitals or spaces, newest first, and no other tag', async () => {
+    const first = await log({ tag_number: 'Y123', observed_at: 1000 });
+    const second = await log({ tag_number: ' y123 ', observed_at: 2000 });
+    await log({ tag_number: 'Y1234', observed_at: 3000 });
+    const gone = await log({ tag_number: 'Y123', observed_at: 4000 });
+    await db.deleteObservation(gone);
+
+    expect((await db.observationsOfTag('y123')).map((o) => o.id)).toEqual([second, first]);
+    expect(await db.observationsOfTag('')).toEqual([]);
+  });
+
+  it('reads a tag the same way it is saved', () => {
+    expect(db.normalizeTag(' y123 ')).toBe('Y123');
+    expect(db.normalizeTag('  ')).toBeNull();
+    expect(db.normalizeTag(null)).toBeNull();
+  });
+
+  it('says how often a tag was logged before, leaving out the pin in hand', async () => {
+    /* eslint-disable-next-line @typescript-eslint/no-require-imports -- after resetModules, so it shares this test's database */
+    const tags = require('../tags') as typeof import('../tags');
+    const now = Date.now();
+    const old = await log({ tag_number: '1147', observed_at: now - 3 * 86_400_000 });
+    const current = await log({ tag_number: '1147', observed_at: now });
+
+    expect(await tags.tagHint('1147', current)).toMatch(/^Logged once before, last /);
+    expect(await tags.tagHint('1147')).toMatch(/^Logged 2 times before, last /);
+    expect(await tags.tagHint('9999')).toBeNull();
+    expect(await tags.tagHint('  ')).toBeNull();
+    expect(old).not.toBe(current);
+  });
+});

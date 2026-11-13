@@ -13,6 +13,9 @@ const PATHS = {
   back: ['M15 5l-7 7 7 7'],
   close: ['M6 6l12 12M18 6L6 18'],
   plus: ['M12 6v12M6 12h12'],
+  edit: ['M4 20h4L19 9l-4-4L4 16z', 'M13.5 6.5l4 4'],
+  trash: ['M5 7h14M10 7V4h4v3M7 7l1 13h8l1-13'],
+  history: ['M4 12a8 8 0 1 0 2.6-5.9L4 8', 'M4 3v5h5', 'M12 8v4.5l3 2'],
   // "All" in the map filter
   all: [],
   // The map's filter button

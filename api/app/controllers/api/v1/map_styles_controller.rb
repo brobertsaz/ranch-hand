@@ -11,17 +11,17 @@ module Api
       DEFAULT_TOPO_TILE_URL = "https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/tile/{z}/{y}/{x}".freeze
 
       def show
-        # The app puts its token in the style URL (MapLibre won't send our header on Android) so the style can
-        # add the ranch's sharp areas. Without one, the plain style.
-        token = params[:token].presence || authenticate_with_http_token { |header_token| header_token }
-        @current_member = token && Member.active.find_by(device_token: token)
-        areas = current_member ? current_ranch.map_areas.ready.order(:id) : MapArea.none
+        # The app puts its ranch's map key in the style URL (MapLibre won't send our header on Android) so the
+        # style can add the ranch's sharp areas. Without one, the plain style. The key opens nothing else: the
+        # tiles themselves are public, and a phone's sign-in token never goes in a URL.
+        ranch = params[:key].present? ? Ranch.find_by(map_key: params[:key].to_s) : nil
+        areas = ranch ? ranch.map_areas.ready.order(:id) : MapArea.none
 
         # Rails' default must-revalidate makes MapLibre refuse the copy stored in an offline pack
         # when there's no network, so a cold start offline shows no map.
         # A ranch's style is fetched fresh every time, so an area that just turned Ready shows on the next load.
         # max-age 0 without must-revalidate still lets MapLibre use its stored copy when offline.
-        if current_member
+        if ranch
           expires_in 0, public: false
         else
           expires_in 1.hour, public: true

@@ -1,5 +1,5 @@
 # Tells the rest of the crew's phones what a hand just logged, so the handoff doesn't wait for someone to
-# open the app. Each phone registers its own FCM (Android) or APNs (iPhone) token; see Member#register_push!.
+# open the app. Each phone registers its own FCM (Android) or APNs (iPhone) token; see Device#register_push!.
 class PushNotifier
   PLATFORMS = %w[android ios].freeze
   SENDERS = { "android" => Push::Fcm, "ios" => Push::Apns }.freeze
@@ -31,18 +31,18 @@ class PushNotifier
   end
 
   def deliver(message, except: nil)
-    recipients = @ranch.members.active.where.not(push_token: nil).where.not(id: except&.id)
-    recipients.find_each do |member|
-      sender = SENDERS.fetch(member.push_platform)
+    members = @ranch.members.active.where.not(id: except&.id)
+    Device.with_push.where(member_id: members.select(:id)).find_each do |device|
+      sender = SENDERS.fetch(device.push_platform)
       # Not set up on this server (no Firebase or Apple key yet): nothing to send with
       next unless sender.configured?
 
-      sender.deliver(member.push_token, message)
+      sender.deliver(device.push_token, message)
     rescue TokenGone
-      member.forget_push!
+      device.forget_push!
     rescue StandardError => error
       # One phone's trouble (a timeout, a bad key) doesn't keep the rest of the crew from hearing
-      Rails.error.report(error, handled: true, context: { member_id: member.id, platform: member.push_platform })
+      Rails.error.report(error, handled: true, context: { member_id: device.member_id, platform: device.push_platform })
     end
   end
 end

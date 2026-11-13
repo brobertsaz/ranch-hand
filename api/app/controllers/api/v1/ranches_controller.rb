@@ -30,7 +30,7 @@ module Api
           id: current_ranch.id.to_s, name: current_ranch.name, invite_code: current_ranch.invite_code,
           hand_count: current_ranch.hand_count, hand_limit: current_ranch.hand_limit,
           plan: current_ranch.plan, unlimited_hands: current_ranch.unlimited_hands?,
-          headquarters: current_ranch.headquarters
+          headquarters: current_ranch.headquarters, map_key: current_ranch.map_key
         }
       end
     end

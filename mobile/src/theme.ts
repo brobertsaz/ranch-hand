@@ -135,6 +135,9 @@ export const space = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32 } as const;
 // Gloves and sunlight: big targets, heavy type. Nothing tappable under `min`; the main action on a screen is `primary`.
 export const touch = { min: 56, primary: 64, shutter: 88, round: 52 } as const;
 
+// Under anything that floats over the map: cards, chips, the header
+export const shadow = { elevation: 8, shadowColor: '#0A100C', shadowOpacity: 0.35, shadowRadius: 12, shadowOffset: { width: 0, height: 6 } };
+
 export const fonts = {
   // Condensed display face, like the Ranch Atlas headings. Load with @expo-google-fonts/barlow-condensed
   display: 'BarlowCondensed_800ExtraBold',
