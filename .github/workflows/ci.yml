@@ -37,7 +37,8 @@ jobs:
           bundler-cache: true
       - run: bin/rubocop
       - run: bin/brakeman --quiet --no-pager --exit-on-warn --exit-on-error
-      - run: bin/rails db:prepare
+      # Not db:prepare: it seeds a new database, and the specs expect an empty one
+      - run: bin/rails db:create db:schema:load
       - run: bundle exec rspec
 
   mobile:
