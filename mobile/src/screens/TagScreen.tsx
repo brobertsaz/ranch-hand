@@ -28,6 +28,8 @@ type PlaceProps = {
 type Props = {
   photoUri: string | null;
   fix: Fix;
+  // The fix is the phone's last known position (recent, but not fresh)
+  staleFix?: boolean;
   kind: Kind;
   onKind: (kind: Kind) => void;
   place: PlaceProps | null;
@@ -45,7 +47,7 @@ type Props = {
 
 // Mockup 3 · Tag it & save
 export default function TagScreen(props: Props) {
-  const { photoUri, fix, kind, onKind, place, picks, onTogglePick, tagNumber, onTagNumber, note, onNote, saving, onSave, onCancel, onRetake } = props;
+  const { photoUri, fix, staleFix = false, kind, onKind, place, picks, onTogglePick, tagNumber, onTagNumber, note, onNote, saving, onSave, onCancel, onRetake } = props;
   const conditions = CONDITIONS[kind];
   const insets = useSafeAreaInsets();
 
@@ -53,7 +55,10 @@ export default function TagScreen(props: Props) {
     fix === 'pending'
       ? { label: 'Finding GPS…', color: sync.pending }
       : fix
-        ? { label: `${formatCoords(fix.coords.latitude, fix.coords.longitude)} · ±${Math.round(fix.coords.accuracy ?? 0)} m`, color: sync.synced }
+        ? {
+            label: `${formatCoords(fix.coords.latitude, fix.coords.longitude)} · ±${Math.round(fix.coords.accuracy ?? 0)} m${staleFix ? ' · last known' : ''}`,
+            color: staleFix ? sync.pending : sync.synced,
+          }
         : { label: 'No GPS fix yet', color: sync.failed };
 
   return (
@@ -165,7 +170,7 @@ export default function TagScreen(props: Props) {
           disabled={saving}
           icon={saving ? undefined : <Icon name="check" size={26} color={palette.white} strokeWidth={2.8} />}
         />
-        <Text style={styles.caption}>Saved on this phone now. Sends to the crew when you're back in range.</Text>
+        <Text style={styles.caption}>Saved on this phone now. Sends to the crew when you&apos;re back in range.</Text>
       </View>
     </KeyboardAvoidingView>
   );

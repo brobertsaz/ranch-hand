@@ -1,7 +1,6 @@
-import { addDatabaseChangeListener } from 'expo-sqlite';
 import { useEffect, useState } from 'react';
 
-import { memberNames, memberRole } from './db';
+import { memberNames, memberRole, onDatabaseChange } from './db';
 
 // The crew's names by member id, kept current as syncs bring new members in
 export function useMemberNames(): Record<string, string> {
@@ -10,7 +9,7 @@ export function useMemberNames(): Record<string, string> {
   useEffect(() => {
     const load = () => memberNames().then(setNames);
     load();
-    const sub = addDatabaseChangeListener(({ tableName }) => tableName === 'members' && load());
+    const sub = onDatabaseChange(['members'], load);
     return () => sub.remove();
   }, []);
 
@@ -24,7 +23,7 @@ export function useIsOwner(memberId: string): boolean {
   useEffect(() => {
     const load = () => memberRole(memberId).then((role) => setOwner(role === 'owner'));
     load();
-    const sub = addDatabaseChangeListener(({ tableName }) => tableName === 'members' && load());
+    const sub = onDatabaseChange(['members'], load);
     return () => sub.remove();
   }, [memberId]);
 

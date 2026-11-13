@@ -17,10 +17,13 @@ class Observation < ApplicationRecord
   validates :latitude, numericality: { in: -90..90 }
   validates :longitude, numericality: { in: -180..180 }
   validates :observed_at, presence: true
+  validates :tag_number, length: { maximum: 40 }
+  validates :note, length: { maximum: Syncable::NOTE_LIMIT }
   validate :waypoint_on_same_ranch
   validate :resolver_on_same_ranch
 
-  CLIENT_FIELDS = %w[kind latitude longitude accuracy tag_number note status waypoint_id resolved_by_id].freeze
+  # resolved_by_id isn't here: the server credits whoever pushed the change (see SyncPush)
+  CLIENT_FIELDS = %w[kind latitude longitude accuracy tag_number note status waypoint_id].freeze
 
   def self.attributes_from_raw(raw)
     raw.slice(*CLIENT_FIELDS).merge(
@@ -47,6 +50,14 @@ class Observation < ApplicationRecord
     }
   end
 
+  # Its photos go with it, so other phones stop pulling them
+  def soft_delete!
+    transaction do
+      super
+      photos.live.find_each(&:soft_delete!)
+    end
+  end
+
   private
 
   def resolver_on_same_ranch
@@ -54,6 +65,9 @@ class Observation < ApplicationRecord
   end
 
   def waypoint_on_same_ranch
-    errors.add(:waypoint, "belongs to another ranch") if waypoint && waypoint.ranch_id != ranch_id
+    return if waypoint_id.blank?
+    # Without this an id the server has never seen would hit the foreign key and raise
+    return errors.add(:waypoint, "isn't a place the server knows") unless waypoint
+    errors.add(:waypoint, "belongs to another ranch") if waypoint.ranch_id != ranch_id
   end
 end

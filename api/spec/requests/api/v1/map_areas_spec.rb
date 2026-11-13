@@ -85,19 +85,115 @@ RSpec.describe "Map areas", type: :request do
     expect(response).to have_http_status(:unprocessable_content)
   end
 
-  it "removes an area, which stops its render" do
-    area = create(:map_area, ranch: member.ranch)
+  it "refuses bounds off the map or without end, for an estimate or for real" do
+    [
+      { west: -89.46, south: 43.0, east: -89.45, north: 95 },
+      { west: -189.46, south: 43.0, east: -89.45, north: 43.01 },
+      { west: -89.46, south: 43.0, east: "Infinity", north: 43.01 },
+      { west: -89.46, south: 43.0, east: "1e999", north: 43.01 },
+      { west: -89.46, south: "NaN", east: -89.45, north: 43.01 },
+      { west: -89.45, south: 43.0, east: -89.46, north: 43.01 },
+      { lat: 89.9999, lng: -89.4, miles: 5 },
+      { lat: 43.0, lng: -89.4, miles: "-Infinity" },
+      { west: [ 1 ], south: 43.0, east: -89.45, north: 43.01 }
+    ].each do |box|
+      get "/api/v1/map_areas/new", params: box, headers: auth_headers(member)
+      expect(response).to have_http_status(:unprocessable_content), "estimate for #{box} gave #{response.status}"
+      expect(json["error"]).to be_present
 
-    delete "/api/v1/map_areas/#{area.id}", headers: auth_headers(member)
+      post "/api/v1/map_areas", params: { map_area: box }, headers: auth_headers(member)
+      expect(response).to have_http_status(:unprocessable_content), "create for #{box} gave #{response.status}"
+    end
+    expect(MapArea.count).to eq(0)
+  end
 
-    expect(response).to have_http_status(:no_content)
-    expect(MapArea.exists?(area.id)).to be(false)
+  describe "limits per ranch" do
+    let(:box) { { west: -89.46, south: 43.0, east: -89.45, north: 43.01 } }
+
+    it "stops at so many areas, and says to remove one" do
+      stub_const("MapArea::MAX_PER_RANCH", 2)
+      create_list(:map_area, 2, ranch: member.ranch, status: :ready)
+      create_list(:map_area, 2, status: :ready) # another ranch's don't count
+
+      expect {
+        post "/api/v1/map_areas", params: { map_area: box }, headers: auth_headers(member)
+      }.not_to have_enqueued_job(RenderMapAreaJob)
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(json["error"]).to eq("This ranch already has 2 sharp areas. Remove one before adding another.")
+      expect(member.ranch.map_areas.count).to eq(2)
+    end
+
+    it "stops at two renders at a time, and says to wait" do
+      create(:map_area, ranch: member.ranch, status: :pending)
+      create(:map_area, ranch: member.ranch, status: :rendering)
+
+      post "/api/v1/map_areas", params: { map_area: box }, headers: auth_headers(member)
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(json["error"]).to eq("2 areas are still being sharpened. Wait for one to finish before adding another.")
+    end
+
+    it "takes another once a render has finished or failed" do
+      create(:map_area, ranch: member.ranch, status: :ready)
+      create(:map_area, ranch: member.ranch, status: :failed)
+      create(:map_area, ranch: member.ranch, status: :rendering)
+
+      post "/api/v1/map_areas", params: { map_area: box }, headers: auth_headers(member)
+
+      expect(response).to have_http_status(:created)
+    end
+
+    it "still gives an estimate when the ranch is at its limit" do
+      create_list(:map_area, 2, ranch: member.ranch, status: :rendering)
+
+      get "/api/v1/map_areas/new", params: box, headers: auth_headers(member)
+
+      expect(response).to have_http_status(:ok)
+    end
+
+    it "holds for the headquarters pin too, which then stays where it was" do
+      owner = create(:member, ranch: member.ranch, role: :owner)
+      create_list(:map_area, 2, ranch: member.ranch, status: :rendering)
+
+      patch "/api/v1/ranch", params: { headquarters: { lat: 43.0, lng: -89.4 } }, headers: auth_headers(owner), as: :json
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(json["error"]).to start_with("2 areas are still being sharpened")
+      expect(member.ranch.reload.headquarters).to be_nil
+    end
+  end
+
+  describe "removing an area" do
+    let(:owner) { create(:member, ranch: member.ranch, role: :owner) }
+
+    it "is the owner's call, and stops its render" do
+      area = create(:map_area, ranch: member.ranch)
+
+      expect {
+        delete "/api/v1/map_areas/#{area.id}", headers: auth_headers(owner)
+      }.to have_enqueued_job(RemoveMapAreaTilesJob).with(area.source, area.bounds)
+
+      expect(response).to have_http_status(:no_content)
+      expect(MapArea.exists?(area.id)).to be(false)
+    end
+
+    it "isn't open to a hand" do
+      area = create(:map_area, ranch: member.ranch)
+
+      expect {
+        delete "/api/v1/map_areas/#{area.id}", headers: auth_headers(member)
+      }.not_to have_enqueued_job(RemoveMapAreaTilesJob)
+
+      expect(response).to have_http_status(:forbidden)
+      expect(MapArea.exists?(area.id)).to be(true)
+    end
   end
 
   it "won't remove another ranch's area" do
     area = create(:map_area)
 
-    delete "/api/v1/map_areas/#{area.id}", headers: auth_headers(member)
+    delete "/api/v1/map_areas/#{area.id}", headers: auth_headers(create(:member, ranch: member.ranch, role: :owner))
 
     expect(response).to have_http_status(:not_found)
     expect(MapArea.exists?(area.id)).to be(true)

@@ -1,8 +1,11 @@
 import * as SQLite from 'expo-sqlite';
 
+import { photoFile } from './photoFiles';
+
 // Every write lands here first. _status follows WatermelonDB's convention so the
 // sync client knows what still has to go up: synced | created | updated | deleted.
-export type SyncStatus = 'synced' | 'created' | 'updated' | 'deleted';
+// rejected is ours: the server turned the record down, so it stays on this phone and stops being sent.
+export type SyncStatus = 'synced' | 'created' | 'updated' | 'deleted' | 'rejected';
 
 // Same order as the canvas's kind grid
 export const KINDS = ['sick_animal', 'feed_check', 'water_check', 'fence_issue', 'gate_issue', 'other'] as const;
@@ -43,8 +46,9 @@ export type Observation = {
   _status: SyncStatus;
 };
 
-// Read-only on the phone: the crew's names, pulled from the server
-export type Member = { id: string; name: string; role: string | null };
+// Read-only on the phone: the crew's names, pulled from the server. A removed member (1) stays as a row
+// so old records still carry their name, but leaves the Crew list.
+export type Member = { id: string; name: string; role: string | null; removed?: number };
 
 // A finished ride. track is JSON text: [[lng, lat], ...]
 export type Ride = {
@@ -131,6 +135,33 @@ const MIGRATIONS = [
   ALTER TABLE observations ADD COLUMN pulled_at INTEGER;
   ALTER TABLE rides ADD COLUMN pulled_at INTEGER;`,
   `ALTER TABLE rides ADD COLUMN name TEXT;`,
+  // _changed counts local edits, so a push only settles a row nobody touched while it was in flight.
+  // _rejected_reason is what the server said; _rejected_was is the _status the row had when it was turned down.
+  `ALTER TABLE waypoints ADD COLUMN _changed INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE waypoints ADD COLUMN _rejected_reason TEXT;
+  ALTER TABLE waypoints ADD COLUMN _rejected_was TEXT;
+  ALTER TABLE observations ADD COLUMN _changed INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE observations ADD COLUMN _rejected_reason TEXT;
+  ALTER TABLE observations ADD COLUMN _rejected_was TEXT;
+  ALTER TABLE photos ADD COLUMN _changed INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE photos ADD COLUMN _rejected_reason TEXT;
+  ALTER TABLE photos ADD COLUMN _rejected_was TEXT;
+  ALTER TABLE rides ADD COLUMN _changed INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE rides ADD COLUMN _rejected_reason TEXT;
+  ALTER TABLE rides ADD COLUMN _rejected_was TEXT;
+  -- Why the server refused the photo's file (too big, not a JPEG), so it isn't sent again
+  ALTER TABLE photos ADD COLUMN upload_error TEXT;
+  ALTER TABLE members ADD COLUMN removed INTEGER NOT NULL DEFAULT 0;`,
+  // _edited names the fields changed on this phone since the row was last in step with the server, as
+  // "|note|status|". The push sends them so the server merges field by field, and a pull leaves them alone.
+  // Rows already waiting as updates were edited before anyone kept track, so every editable field counts.
+  `ALTER TABLE waypoints ADD COLUMN _edited TEXT NOT NULL DEFAULT '|';
+  ALTER TABLE observations ADD COLUMN _edited TEXT NOT NULL DEFAULT '|';
+  ALTER TABLE photos ADD COLUMN _edited TEXT NOT NULL DEFAULT '|';
+  ALTER TABLE rides ADD COLUMN _edited TEXT NOT NULL DEFAULT '|';
+  UPDATE waypoints SET _edited = '|kind|name|latitude|longitude|note|' WHERE _status = 'updated' OR (_status = 'rejected' AND _rejected_was = 'updated');
+  UPDATE observations SET _edited = '|status|' WHERE _status = 'updated' OR (_status = 'rejected' AND _rejected_was = 'updated');
+  UPDATE rides SET _edited = '|name|' WHERE _status = 'updated' OR (_status = 'rejected' AND _rejected_was = 'updated');`,
 ];
 
 let database: SQLite.SQLiteDatabase | null = null;
@@ -154,6 +185,68 @@ function migrate(conn: SQLite.SQLiteDatabase) {
   });
 }
 
+// expo-sqlite's withTransactionAsync is a plain BEGIN/COMMIT on the one shared connection. Two writers that
+// overlap (a save during a sync, a ride point during a save) land inside each other's transaction, and one
+// ROLLBACK undoes both. So every write waits its turn here. Never call write or transaction from inside a
+// task: it would wait on itself.
+let writes: Promise<unknown> = Promise.resolve();
+
+export function write<T>(task: (conn: SQLite.SQLiteDatabase) => Promise<T>): Promise<T> {
+  const run = writes.then(() => task(db()));
+  writes = run.catch(() => {});
+  return run;
+}
+
+export function transaction<T>(task: (conn: SQLite.SQLiteDatabase) => Promise<T>): Promise<T> {
+  return write(async (conn) => {
+    let result!: T;
+    await conn.withTransactionAsync(async () => {
+      result = await task(conn);
+    });
+    return result;
+  });
+}
+
+// Screens reload on database changes. A sync or a ride writes many rows, so changes are gathered for a
+// moment and the listener runs once. `tables` narrows it to the tables the screen actually shows.
+export function onDatabaseChange(tables: readonly string[] | null, listener: () => void, waitMs = 200): { remove: () => void } {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const sub = SQLite.addDatabaseChangeListener(({ tableName }) => {
+    if (tables && !tables.includes(tableName)) return;
+    timer ??= setTimeout(() => {
+      timer = null;
+      listener();
+    }, waitMs);
+  });
+  return {
+    remove: () => {
+      sub.remove();
+      if (timer) clearTimeout(timer);
+    },
+  };
+}
+
+// What every local edit does to a row's sync columns: mark it to go up, note which fields changed, and bump
+// the change count so a push already in flight doesn't settle it as synced. Editing a rejected record sends
+// it again, as what it was. A field named twice in _edited is harmless; readers ignore repeats.
+function touch(fields: readonly string[]): string {
+  return `_status = CASE _status
+    WHEN 'created' THEN 'created'
+    WHEN 'rejected' THEN (CASE _rejected_was WHEN 'created' THEN 'created' ELSE 'updated' END)
+    ELSE 'updated' END,
+  _edited = _edited || '${fields.map((f) => `${f}|`).join('')}',
+  _changed = _changed + 1, _rejected_reason = NULL, _rejected_was = NULL`;
+}
+
+// "|note|status|note|" -> ["note", "status"]
+export function editedFields(edited: string): string[] {
+  return [...new Set(edited.split('|').filter(Boolean))];
+}
+
+// Rows a push has sent and not heard back about, as "table:id". The server may already have them, so a
+// delete in that window has to be sent rather than dropped on the phone.
+export const pushing = new Set<string>();
+
 // Same shape as WatermelonDB's ids: 16 chars, generated on the phone so a record exists before the server sees it
 export function newId(): string {
   const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
@@ -170,8 +263,7 @@ export async function createObservation(
   place: PlaceChoice = null,
 ): Promise<string> {
   const id = newId();
-  const conn = db();
-  await conn.withTransactionAsync(async () => {
+  await transaction(async (conn) => {
     let waypointId: string | null = null;
     if (place && 'waypointId' in place) waypointId = place.waypointId;
     if (place && 'create' in place) {
@@ -194,7 +286,7 @@ export async function createObservation(
     if (waypointId && observation.status === 'ok') {
       await conn.runAsync(
         `UPDATE observations
-         SET status = 'resolved', resolved_at = ?, resolved_by_id = ?, _status = CASE _status WHEN 'created' THEN 'created' ELSE 'updated' END
+         SET status = 'resolved', resolved_at = ?, resolved_by_id = ?, ${STATUS_EDIT}
          WHERE waypoint_id = ? AND status = 'open'`,
         observation.observed_at, memberId, waypointId,
       );
@@ -203,15 +295,19 @@ export async function createObservation(
   return id;
 }
 
+// Who resolved it and when are written here so they show straight away with no signal, but only `status`
+// is named as edited: the server decides resolved_by and resolved_at when status changes, and the next pull brings them.
+const STATUS_EDIT = touch(['status']);
+
 // Resolving (or reopening) is an edit like any other: it syncs up, and the last write wins.
 // Who and when are stamped here, on the phone, so they're right even with no signal.
 export async function setObservationStatus(id: string, status: ObservationStatus, memberId: string): Promise<void> {
   const resolved = status === 'resolved';
-  await db().runAsync(
-    `UPDATE observations
-     SET status = ?, resolved_at = ?, resolved_by_id = ?, _status = CASE _status WHEN 'created' THEN 'created' ELSE 'updated' END
-     WHERE id = ?`,
-    status, resolved ? Date.now() : null, resolved ? memberId : null, id,
+  await write((conn) =>
+    conn.runAsync(
+      `UPDATE observations SET status = ?, resolved_at = ?, resolved_by_id = ?, ${STATUS_EDIT} WHERE id = ?`,
+      status, resolved ? Date.now() : null, resolved ? memberId : null, id,
+    ),
   );
 }
 
@@ -221,9 +317,11 @@ export async function createWaypoint(
   memberId: string,
 ): Promise<string> {
   const id = newId();
-  await db().runAsync(
-    `INSERT INTO waypoints (id, member_id, kind, name, latitude, longitude, note, _status) VALUES (?, ?, ?, ?, ?, ?, ?, 'created')`,
-    id, memberId, waypoint.kind, waypoint.name.trim(), waypoint.latitude, waypoint.longitude, waypoint.note?.trim() || null,
+  await write((conn) =>
+    conn.runAsync(
+      `INSERT INTO waypoints (id, member_id, kind, name, latitude, longitude, note, _status) VALUES (?, ?, ?, ?, ?, ?, ?, 'created')`,
+      id, memberId, waypoint.kind, waypoint.name.trim(), waypoint.latitude, waypoint.longitude, waypoint.note?.trim() || null,
+    ),
   );
   return id;
 }
@@ -232,18 +330,27 @@ export async function createWaypoint(
 export async function updateWaypoint(id: string, changes: Partial<Pick<Waypoint, 'kind' | 'name' | 'latitude' | 'longitude' | 'note'>>): Promise<void> {
   const columns = Object.keys(changes) as (keyof typeof changes)[];
   if (columns.length === 0) return;
-  await db().runAsync(
-    `UPDATE waypoints SET ${columns.map((c) => `${c} = ?`).join(', ')}, _status = CASE _status WHEN 'created' THEN 'created' ELSE 'updated' END WHERE id = ?`,
-    ...columns.map((c) => changes[c] ?? null), id,
+  await write((conn) =>
+    conn.runAsync(
+      `UPDATE waypoints SET ${columns.map((c) => `${c} = ?`).join(', ')}, ${touch(columns)} WHERE id = ?`,
+      ...columns.map((c) => changes[c] ?? null), id,
+    ),
   );
 }
 
 // Checks made there stay, as standalone pins. A place the server never saw just goes.
 export async function deleteWaypoint(id: string): Promise<void> {
-  const conn = db();
-  await conn.withTransactionAsync(async () => {
-    await conn.runAsync(`DELETE FROM waypoints WHERE id = ? AND _status = 'created'`, id);
-    await conn.runAsync(`UPDATE waypoints SET _status = 'deleted' WHERE id = ?`, id);
+  await transaction(async (conn) => {
+    if (!pushing.has(`waypoints:${id}`)) {
+      await conn.runAsync(
+        `DELETE FROM waypoints WHERE id = ? AND (_status = 'created' OR (_status = 'rejected' AND _rejected_was = 'created'))`,
+        id,
+      );
+    }
+    await conn.runAsync(
+      `UPDATE waypoints SET _status = 'deleted', _changed = _changed + 1, _rejected_reason = NULL, _rejected_was = NULL WHERE id = ?`,
+      id,
+    );
   });
 }
 
@@ -262,20 +369,24 @@ export function liveRides() {
 }
 
 export async function renameRide(id: string, name: string): Promise<void> {
-  await db().runAsync(
-    `UPDATE rides SET name = ?, _status = CASE _status WHEN 'created' THEN 'created' ELSE 'updated' END WHERE id = ?`,
-    name.trim() || null, id,
-  );
+  await write((conn) => conn.runAsync(`UPDATE rides SET name = ?, ${touch(['name'])} WHERE id = ?`, name.trim() || null, id));
 }
 
 // Leaving a ranch: its records and sync position go, so joining another ranch (or server) starts clean.
-// The map choice stays; it belongs to the phone, not the ranch.
+// The map choice and the light/dark look stay; they belong to the phone, not the ranch.
 export async function clearRanchData(): Promise<void> {
-  await db().execAsync(`
-    DELETE FROM observations; DELETE FROM photos; DELETE FROM waypoints; DELETE FROM members;
-    DELETE FROM rides; DELETE FROM ride_points;
-    DELETE FROM sync_state WHERE key != 'map_base';
-  `);
+  await write((conn) =>
+    conn.execAsync(`
+      DELETE FROM observations; DELETE FROM photos; DELETE FROM waypoints; DELETE FROM members;
+      DELETE FROM rides; DELETE FROM ride_points;
+      DELETE FROM sync_state WHERE key NOT IN ('map_base', 'theme_mode');
+    `),
+  );
+}
+
+// The owner took a hand off the crew. The next pull says the same; this just makes the list right straight away.
+export async function markMemberRemoved(id: string): Promise<void> {
+  await write((conn) => conn.runAsync('UPDATE members SET removed = 1 WHERE id = ?', id));
 }
 
 export function liveWaypoints() {
@@ -298,16 +409,35 @@ export function photosFor(observationId: string) {
   return db().getAllAsync<Photo>(`SELECT * FROM photos WHERE observation_id = ? AND _status != 'deleted'`, observationId);
 }
 
+// Still has to go up. Rejected records don't count: they've been sent, and the server said no.
+export const UNSENT = `_status IN ('created', 'updated', 'deleted')`;
+
 export async function pendingCounts() {
   const conn = db();
   const records = await conn.getFirstAsync<{ n: number }>(
-    `SELECT (SELECT COUNT(*) FROM waypoints WHERE _status != 'synced')
-          + (SELECT COUNT(*) FROM rides WHERE _status != 'synced')
-          + (SELECT COUNT(*) FROM observations WHERE _status != 'synced')
-          + (SELECT COUNT(*) FROM photos WHERE _status != 'synced') AS n`,
+    `SELECT (SELECT COUNT(*) FROM waypoints WHERE ${UNSENT})
+          + (SELECT COUNT(*) FROM rides WHERE ${UNSENT})
+          + (SELECT COUNT(*) FROM observations WHERE ${UNSENT})
+          + (SELECT COUNT(*) FROM photos WHERE ${UNSENT}) AS n`,
   );
-  const uploads = await conn.getFirstAsync<{ n: number }>(`SELECT COUNT(*) AS n FROM photos WHERE uploaded_at IS NULL AND _status != 'deleted'`);
-  return { records: records?.n ?? 0, uploads: uploads?.n ?? 0 };
+  // Only photos this phone can send: another hand's photo that hasn't reached the server yet is a row here
+  // too, but its file isn't on this phone
+  const waiting = await conn.getAllAsync<{ id: string }>(
+    `SELECT id FROM photos WHERE uploaded_at IS NULL AND upload_error IS NULL AND _status IN ('created', 'updated', 'synced')`,
+  );
+  return { records: records?.n ?? 0, uploads: waiting.filter((p) => photoFile(p.id).exists).length };
+}
+
+// What the server turned down. It stays on this phone, and Settings lists it so nobody thinks it reached the crew.
+export type SyncProblem = { table: 'waypoints' | 'observations' | 'photos' | 'rides'; id: string; reason: string | null };
+
+export function syncProblems(): Promise<SyncProblem[]> {
+  return db().getAllAsync<SyncProblem>(
+    `SELECT 'waypoints' AS "table", id, _rejected_reason AS reason FROM waypoints WHERE _status = 'rejected'
+     UNION ALL SELECT 'observations', id, _rejected_reason FROM observations WHERE _status = 'rejected'
+     UNION ALL SELECT 'rides', id, _rejected_reason FROM rides WHERE _status = 'rejected'
+     UNION ALL SELECT 'photos', id, COALESCE(_rejected_reason, upload_error) FROM photos WHERE _status = 'rejected' OR upload_error IS NOT NULL`,
+  );
 }
 
 export async function getState(key: string): Promise<string | null> {
@@ -316,5 +446,10 @@ export async function getState(key: string): Promise<string | null> {
 }
 
 export async function setState(key: string, value: string): Promise<void> {
-  await db().runAsync('INSERT INTO sync_state (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value', key, value);
+  await write((conn) => putState(conn, key, value));
+}
+
+// For a write that's already inside write() or transaction()
+export async function putState(conn: SQLite.SQLiteDatabase, key: string, value: string): Promise<void> {
+  await conn.runAsync('INSERT INTO sync_state (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value', key, value);
 }

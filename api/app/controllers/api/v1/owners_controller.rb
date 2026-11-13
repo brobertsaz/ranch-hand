@@ -19,7 +19,7 @@ module Api
       def start_ranch(identity)
         Ranch.transaction do
           ranch = Ranch.create!(name: params[:ranch_name].to_s.strip.presence || "#{identity.name.split.first}'s Ranch")
-          ranch.members.create!(role: :owner, name: identity.name, email: identity.email, google_sub: identity.sub)
+          ranch.members.create!(role: :owner, name: identity.name.first(Member::NAME_LIMIT), email: identity.email, google_sub: identity.sub)
         end
       rescue ActiveRecord::RecordNotUnique
         # A double tap: the other request already started this owner's ranch

@@ -56,4 +56,15 @@ RSpec.describe RenderMapAreaJob do
     expect(area.reload).to be_failed
     expect(area.error).to start_with("13 tiles failed")
   end
+
+  it "marks the area failed when something outside a tile goes wrong, instead of leaving it rendering" do
+    allow(Thread).to receive(:new).and_raise(ThreadError, "can't create Thread")
+    allow(Rails.error).to receive(:report)
+
+    described_class.perform_now(area)
+
+    expect(area.reload).to be_failed
+    expect(area.error).to eq("Render stopped: can't create Thread")
+    expect(Rails.error).to have_received(:report).with(an_instance_of(ThreadError), handled: true)
+  end
 end

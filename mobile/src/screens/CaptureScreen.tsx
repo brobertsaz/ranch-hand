@@ -2,7 +2,7 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Location from 'expo-location';
 import { useNetworkState } from 'expo-network';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useImperativeHandle, useRef, useState, type Ref } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -11,18 +11,29 @@ import Icon from '../components/Icon';
 import { createObservation, liveWaypoints, newId, type Kind, type PlaceChoice, type Waypoint } from '../db';
 import { clockParts, formatDistance } from '../format';
 import { composeNote, initialStatus, nearestPlace, nextPlaceName, PLACE_KIND, WAYPOINT_INFO } from '../kinds';
-import { locate } from '../locate';
+import { locate, type Located } from '../locate';
 import { keepPhoto, photoFile } from '../photoFiles';
 import { colors, fonts, palette, sync, touch } from '../theme';
 import TagScreen, { type Fix, type PlaceMode } from './TagScreen';
+import { useNow } from '../useNow';
 
-type Props = { memberId: string; onDone: (saved: boolean) => void };
+// requestClose: Android's back button, which the map's Modal hears, goes through the same cancel as the X
+export type CaptureHandle = { requestClose: () => void };
 
-export default function CaptureScreen({ memberId, onDone }: Props) {
+type Props = { memberId: string; onDone: (saved: boolean) => void; ref?: Ref<CaptureHandle> };
+
+// When Save has to ask the sky again, it waits this long, not locate's full 20 s: the hand is standing there
+const SAVE_LOCATE_MS = 10_000;
+
+export default function CaptureScreen({ memberId, onDone, ref }: Props) {
   const [permission, requestPermission] = useCameraPermissions();
   const camera = useRef<CameraView>(null);
-  const location = useRef<Promise<Location.LocationObject | null> | null>(null);
+  // The locate in flight, if any, so Save can wait for it instead of starting a second one
+  const locating = useRef<Promise<Located | null> | null>(null);
+  const shooting = useRef(false);
   const [fix, setFix] = useState<Fix>('pending');
+  // The fix on screen is the phone's last known position, not a fresh one
+  const [staleFix, setStaleFix] = useState(false);
   const [step, setStep] = useState<'camera' | 'tag'>('camera');
   const [photo, setPhoto] = useState<{ id: string; uri: string } | null>(null);
   const [kind, setKind] = useState<Kind>('sick_animal');
@@ -50,21 +61,48 @@ export default function CaptureScreen({ memberId, onDone }: Props) {
     return null;
   }
 
+  // One locate at a time. Each call is a fresh try, so "try again" really does try again.
+  function findFix(timeoutMs?: number): Promise<Located | null> {
+    const request = Location.requestForegroundPermissionsAsync()
+      .then(({ granted }) => (granted ? locate(timeoutMs) : null))
+      .catch(() => null)
+      .then((found) => {
+        if (locating.current === request) {
+          locating.current = null;
+          setFix(found?.fix ?? null);
+          setStaleFix(found?.stale ?? false);
+        }
+        return found;
+      });
+    locating.current = request;
+    return request;
+  }
+
   useEffect(() => {
     if (permission && !permission.granted && permission.canAskAgain) requestPermission();
-    // Ask for a fix as soon as the camera opens, so it's ready by the time the form is filled in
-    const request = Location.requestForegroundPermissionsAsync().then(({ granted }) => (granted ? locate() : null));
-    location.current = request;
-    request.then((result) => location.current === request && setFix(result));
   }, [permission, requestPermission]);
 
+  // Ask for a fix as soon as the camera opens, so it's ready by the time the form is filled in
+  useEffect(() => {
+    findFix();
+  }, []);
+
   async function shoot() {
-    const picture = await camera.current?.takePictureAsync({ quality: 0.6 });
-    if (!picture) return;
-    const id = newId();
-    const file = await keepPhoto(picture.uri, id);
-    setPhoto({ id, uri: file.uri });
-    setStep('tag');
+    // A second tap while the first photo is still being written would leave an orphaned file
+    if (shooting.current) return;
+    shooting.current = true;
+    try {
+      const picture = await camera.current?.takePictureAsync({ quality: 0.6 });
+      if (!picture) return;
+      const id = newId();
+      const file = await keepPhoto(picture.uri, id);
+      setPhoto({ id, uri: file.uri });
+      setStep('tag');
+    } catch {
+      Alert.alert("Couldn't take the photo", 'Try again, or log it without a photo.');
+    } finally {
+      shooting.current = false;
+    }
   }
 
   function discardPhoto() {
@@ -84,31 +122,62 @@ export default function CaptureScreen({ memberId, onDone }: Props) {
     onDone(false);
   }
 
+  // The X and Android's back button both come here. A photo already taken is only thrown away on purpose.
+  function requestClose() {
+    if (saving) return;
+    if (!photo) return cancel();
+    Alert.alert('Discard this photo?', "It hasn't been saved yet.", [
+      { text: 'Keep it', style: 'cancel' },
+      { text: 'Discard', style: 'destructive', onPress: cancel },
+    ]);
+  }
+
+  useImperativeHandle(ref, () => ({ requestClose }));
+
+  // The fix already on screen, else the locate in flight, else a fresh try. locate itself falls back to the
+  // last known position, but only a recent and accurate one.
+  async function fixForSave(): Promise<Location.LocationObject | null> {
+    if (fix && fix !== 'pending') return fix;
+    const waited = locating.current ? await locating.current : null;
+    return (waited ?? (await findFix(SAVE_LOCATE_MS)))?.fix ?? null;
+  }
+
   async function save() {
+    if (saving) return;
     setSaving(true);
-    const result = await (location.current ?? locate());
-    if (!result) {
+    try {
+      const result = await fixForSave();
+      if (!result) {
+        // Nothing is thrown away: the photo and the form stay up for another try
+        Alert.alert(
+          'No GPS fix',
+          "The phone can't tell where you are right now, so this isn't saved yet. Your photo and notes are still here. Step into the open and tap Drop the pin again.",
+        );
+        return;
+      }
+      await createObservation(
+        {
+          kind,
+          latitude: result.coords.latitude,
+          longitude: result.coords.longitude,
+          accuracy: result.coords.accuracy,
+          // eslint-disable-next-line react-hooks/purity -- save runs on the Save tap, never during render
+          observed_at: Date.now(),
+          // Tag numbers only mean something on an animal
+          tag_number: kind === 'sick_animal' ? tagNumber.trim() || null : null,
+          note: composeNote(picks, note),
+          status: initialStatus(kind, picks),
+        },
+        photo?.id ?? null,
+        memberId,
+        placeChoice(),
+      );
+      onDone(true);
+    } catch {
+      Alert.alert("Couldn't save", 'The phone had trouble saving this. Your photo and notes are still here. Tap Drop the pin again.');
+    } finally {
       setSaving(false);
-      Alert.alert('No GPS fix yet', 'Step into the open and try again.');
-      return;
     }
-    await createObservation(
-      {
-        kind,
-        latitude: result.coords.latitude,
-        longitude: result.coords.longitude,
-        accuracy: result.coords.accuracy,
-        observed_at: Date.now(),
-        // Tag numbers only mean something on an animal
-        tag_number: kind === 'sick_animal' ? tagNumber.trim() || null : null,
-        note: composeNote(picks, note),
-        status: initialStatus(kind, picks),
-      },
-      photo?.id ?? null,
-      memberId,
-      placeChoice(),
-    );
-    onDone(true);
   }
 
   if (step === 'tag') {
@@ -116,6 +185,7 @@ export default function CaptureScreen({ memberId, onDone }: Props) {
       <TagScreen
         photoUri={photo?.uri ?? null}
         fix={fix}
+        staleFix={staleFix}
         kind={kind}
         onKind={(next) => {
           // Each kind has its own list, so picks from the last one don't carry over
@@ -145,7 +215,7 @@ export default function CaptureScreen({ memberId, onDone }: Props) {
         onNote={setNote}
         saving={saving}
         onSave={save}
-        onCancel={cancel}
+        onCancel={requestClose}
         onRetake={retake}
       />
     );
@@ -164,35 +234,32 @@ export default function CaptureScreen({ memberId, onDone }: Props) {
     );
   }
 
-  return <CameraStep camera={camera} fix={fix} onShoot={shoot} onSkip={() => setStep('tag')} onClose={cancel} />;
+  return <CameraStep camera={camera} fix={fix} staleFix={staleFix} onShoot={shoot} onSkip={() => setStep('tag')} onClose={requestClose} />;
 }
 
 type CameraStepProps = {
   camera: React.RefObject<CameraView | null>;
   fix: Fix;
+  staleFix: boolean;
   onShoot: () => void;
   onSkip: () => void;
   onClose: () => void;
 };
 
 // Mockup 2 · Snap the tag
-function CameraStep({ camera, fix, onShoot, onSkip, onClose }: CameraStepProps) {
+function CameraStep({ camera, fix, staleFix, onShoot, onSkip, onClose }: CameraStepProps) {
   const insets = useSafeAreaInsets();
   const network = useNetworkState();
   const online = Boolean(network.isInternetReachable ?? network.isConnected);
-  const [now, setNow] = useState(Date.now());
-  const clock = clockParts(now);
-
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 15_000);
-    return () => clearInterval(timer);
-  }, []);
+  const clock = clockParts(useNow(15_000));
 
   const gps =
     fix === 'pending'
       ? { label: 'Finding GPS…', color: sync.pending }
       : fix
-        ? { label: `GPS ±${Math.round(fix.coords.accuracy ?? 0)} m`, color: sync.synced }
+        ? staleFix
+          ? { label: `Last known ±${Math.round(fix.coords.accuracy ?? 0)} m`, color: sync.pending }
+          : { label: `GPS ±${Math.round(fix.coords.accuracy ?? 0)} m`, color: sync.synced }
         : { label: 'No GPS', color: sync.failed };
 
   return (

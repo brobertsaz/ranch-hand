@@ -1,6 +1,5 @@
-import { addDatabaseChangeListener } from 'expo-sqlite';
 import { StatusBar } from 'expo-status-bar';
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Alert, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -10,12 +9,12 @@ import Stamp from '../components/Stamp';
 import Icon from '../components/Icon';
 import MiniMap from '../components/MiniMap';
 import PlaceSheet from '../components/PlaceSheet';
-import { deleteWaypoint, observationsAt, photosFor, updateWaypoint, type Observation, type Waypoint } from '../db';
+import { deleteWaypoint, observationsAt, onDatabaseChange, photosFor, updateWaypoint, type Observation, type Waypoint } from '../db';
 import { relativeTo, timeAgo, type LngLat } from '../format';
 import { KIND_INFO, STATUS_LABEL, WAYPOINT_INFO } from '../kinds';
 import { locate } from '../locate';
 import { useIsOwner, useMemberNames, who } from '../members';
-import { photoFile } from '../photoFiles';
+import { onPhotoArrived, photoFile } from '../photoFiles';
 import { colors, fonts, palette, space, touch } from '../theme';
 import GuideScreen, { guideToWaypoint } from './GuideScreen';
 
@@ -45,29 +44,42 @@ export default function WaypointScreen({ waypoint, memberId, mapStyle, here, onB
   const isOwner = useIsOwner(memberId);
   const latest = history[0] ?? null;
 
-  const reload = useCallback(async () => {
-    const checks = await observationsAt(waypoint.id);
-    setHistory(checks);
-    // The newest photo taken here stands in for the place
-    for (const check of checks) {
-      const file = (await photosFor(check.id)).map((p) => photoFile(p.id)).find((f) => f.exists);
-      if (file) return setPhotoUri(file.uri);
-    }
-    setPhotoUri(null);
-  }, [waypoint.id]);
-
   useEffect(() => {
+    let gone = false;
+    const reload = async () => {
+      const checks = await observationsAt(waypoint.id);
+      if (gone) return;
+      setHistory(checks);
+      // The newest photo taken here stands in for the place
+      for (const check of checks) {
+        const file = (await photosFor(check.id)).map((p) => photoFile(p.id)).find((f) => f.exists);
+        if (file) return gone || setPhotoUri(file.uri);
+      }
+      if (!gone) setPhotoUri(null);
+    };
     reload();
-    const sub = addDatabaseChangeListener(reload);
-    return () => sub.remove();
-  }, [reload]);
+    // Checks and their photos are all this screen reads; a photo's file arriving changes no row, so listen for that too
+    const sub = onDatabaseChange(['observations', 'photos'], reload);
+    const arrivals = onPhotoArrived(reload);
+    return () => {
+      gone = true;
+      sub.remove();
+      arrivals.remove();
+    };
+  }, [waypoint.id]);
 
   async function moveHere() {
     setMoving(true);
-    const fix = await locate().catch(() => null);
+    const found = await locate().catch(() => null);
     setMoving(false);
-    if (!fix) return Alert.alert('No GPS fix', 'Step into the open and try again, or move it on the map.');
-    await updateWaypoint(waypoint.id, { latitude: fix.coords.latitude, longitude: fix.coords.longitude });
+    // A place stays put for the whole crew, so it only moves to a fresh fix, never to where the phone last was
+    if (!found || found.stale) return Alert.alert('No GPS fix', 'Step into the open and try again, or move it on the map.');
+    const { fix } = found;
+    try {
+      await updateWaypoint(waypoint.id, { latitude: fix.coords.latitude, longitude: fix.coords.longitude });
+    } catch {
+      return Alert.alert("Couldn't move it", `The phone had trouble saving. ${waypoint.name} is where it was.`);
+    }
     onChanged();
     Alert.alert('Moved', `${waypoint.name} is now where you're standing (±${Math.round(fix.coords.accuracy ?? 0)} m).`);
   }
@@ -88,7 +100,11 @@ export default function WaypointScreen({ waypoint, memberId, mapStyle, here, onB
         text: 'Delete',
         style: 'destructive',
         onPress: async () => {
-          await deleteWaypoint(waypoint.id);
+          try {
+            await deleteWaypoint(waypoint.id);
+          } catch {
+            return Alert.alert("Couldn't delete it", `The phone had trouble saving. ${waypoint.name} is still there.`);
+          }
           onChanged();
           onBack();
         },
@@ -147,7 +163,7 @@ export default function WaypointScreen({ waypoint, memberId, mapStyle, here, onB
               <MiniMap mapStyle={mapStyle} lngLat={lngLat} color={info.color} square />
               <View style={styles.flex}>
                 <Text style={styles.cardTitle}>{here ? relativeTo(here, lngLat) : 'Saved on the map'}</Text>
-                <Text style={styles.cardMeta}>{waypoint._status === 'synced' ? 'The whole crew can see it' : 'On this phone, sends with the next sync'}</Text>
+                <Text style={styles.cardMeta}>{waypoint._status === 'synced' ? 'The whole crew can see it' : waypoint._status === 'rejected' ? "Only on this phone. The server didn't take it; see Settings." : 'On this phone, sends with the next sync'}</Text>
               </View>
             </View>
           </View>
@@ -197,7 +213,12 @@ export default function WaypointScreen({ waypoint, memberId, mapStyle, here, onB
         title="Edit place"
         initial={{ kind: waypoint.kind, name: waypoint.name, note: waypoint.note }}
         onSave={async (fields) => {
-          await updateWaypoint(waypoint.id, fields);
+          try {
+            await updateWaypoint(waypoint.id, fields);
+          } catch {
+            // The sheet stays up with what was typed
+            return Alert.alert("Couldn't save the changes", 'The phone had trouble saving. Try again.');
+          }
           setEditing(false);
           onChanged();
         }}

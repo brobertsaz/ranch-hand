@@ -1,7 +1,7 @@
 import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
 
-import { db, getState, newId, setState } from './db';
+import { db, getState, newId, setState, transaction, write } from './db';
 import { distanceMeters, type LngLat } from './format';
 import { palette } from './theme';
 
@@ -36,14 +36,17 @@ TaskManager.defineTask<{ locations: Location.LocationObject[] }>(RIDE_TASK, asyn
   if (error || !data) return;
   const active = await activeRide();
   if (!active) return;
-  const conn = db();
-  for (const fix of data.locations) {
-    if ((fix.coords.accuracy ?? Infinity) > MAX_ACCURACY_METERS) continue;
-    await conn.runAsync(
-      'INSERT INTO ride_points (ride_id, latitude, longitude, accuracy, recorded_at) VALUES (?, ?, ?, ?, ?)',
-      active.id, fix.coords.latitude, fix.coords.longitude, fix.coords.accuracy, fix.timestamp,
-    );
-  }
+  const good = data.locations.filter((fix) => (fix.coords.accuracy ?? Infinity) <= MAX_ACCURACY_METERS);
+  if (good.length === 0) return;
+  // In the write line like every other write, so a fix can't land inside a sync's transaction and be rolled back with it
+  await write(async (conn) => {
+    for (const fix of good) {
+      await conn.runAsync(
+        'INSERT INTO ride_points (ride_id, latitude, longitude, accuracy, recorded_at) VALUES (?, ?, ?, ?, ?)',
+        active.id, fix.coords.latitude, fix.coords.longitude, fix.coords.accuracy, fix.timestamp,
+      );
+    }
+  });
 });
 
 export async function activeRide(): Promise<ActiveRide | null> {
@@ -58,17 +61,25 @@ export async function startRide(): Promise<ActiveRide> {
   await Location.requestBackgroundPermissionsAsync().catch(() => null);
 
   const ride = { id: newId(), startedAt: Date.now() };
+  // Saved first so the task's very first fixes have a ride to belong to, then taken back if recording
+  // never started. Otherwise the app would show a ride that records nothing.
   await setState(ACTIVE_KEY, JSON.stringify(ride));
-  await Location.startLocationUpdatesAsync(RIDE_TASK, RIDE_UPDATES);
+  try {
+    await Location.startLocationUpdatesAsync(RIDE_TASK, RIDE_UPDATES);
+  } catch (error) {
+    await write((conn) => conn.runAsync('DELETE FROM sync_state WHERE key = ?', ACTIVE_KEY));
+    throw error;
+  }
   return ride;
 }
 
-// After a reboot or force-stop the task is gone but the ride isn't; pick recording back up
+// After a reboot or force-stop the task is gone but the ride isn't; pick recording back up.
+// Throws when it can't, so the map can say the ride on screen isn't recording.
 export async function resumeRideIfNeeded(): Promise<void> {
   const active = await activeRide();
   if (!active || (await Location.hasStartedLocationUpdatesAsync(RIDE_TASK))) return;
   const { granted } = await Location.getForegroundPermissionsAsync();
-  if (!granted) return;
+  if (!granted) throw new Error('Ranch Hand needs Location to record a ride.');
   await Location.startLocationUpdatesAsync(RIDE_TASK, RIDE_UPDATES);
 }
 
@@ -103,8 +114,7 @@ export async function stopRide(memberId: string): Promise<{ id: string; distance
 
   const track = await ridePoints(active.id);
   const distance = trackDistance(track);
-  const conn = db();
-  await conn.withTransactionAsync(async () => {
+  await transaction(async (conn) => {
     if (track.length >= 2) {
       await conn.runAsync(
         `INSERT INTO rides (id, member_id, started_at, ended_at, distance_meters, track, _status) VALUES (?, ?, ?, ?, ?, ?, 'created')`,

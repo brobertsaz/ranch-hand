@@ -19,11 +19,14 @@ class NaipTiles
   class << self
     # Every [z, x, y] at those zooms that touches the box
     def tiles_in(west:, south:, east:, north:, zooms: ZOOMS)
-      zooms.flat_map do |z|
-        xs = tile_x(west, z)..tile_x(east, z)
-        ys = tile_y(north, z)..tile_y(south, z)
+      ranges_in(west:, south:, east:, north:, zooms:).flat_map do |z, (xs, ys)|
         xs.to_a.product(ys.to_a).map { |x, y| [ z, x, y ] }
       end
+    end
+
+    # The same tiles as { zoom => [ x range, y range ] }
+    def ranges_in(west:, south:, east:, north:, zooms: ZOOMS)
+      zooms.index_with { |z| [ tile_x(west, z)..tile_x(east, z), tile_y(north, z)..tile_y(south, z) ] }
     end
 
     def count_in(west:, south:, east:, north:, zooms: ZOOMS)
@@ -53,6 +56,8 @@ class NaipTiles
 
     def read(z, x, y, source = "naip") = storage.download(key(z, x, y, source))
 
+    def delete(z, x, y, source = "naip") = storage.delete(key(z, x, y, source))
+
     def fetch_and_store(z, x, y, source = ImagerySource::NAIP)
       storage.upload(key(z, x, y, source.key), StringIO.new(fetch(z, x, y, source)))
     end
@@ -69,6 +74,10 @@ class NaipTiles
       response = http_get(uri)
       return if response.is_a?(Net::HTTPNotFound) || response.is_a?(Net::HTTPNoContent)
       raise "NAIP tile #{z}/#{x}/#{y}: Planetary Computer HTTP #{response.code}" unless response.is_a?(Net::HTTPSuccess)
+      # A 200 with an error page would otherwise be stored, and served, as a tile for good
+      unless response.content_type.to_s.start_with?("image/")
+        raise "NAIP tile #{z}/#{x}/#{y}: Planetary Computer sent #{response.content_type.inspect}, not an image"
+      end
       response.body
     end
 

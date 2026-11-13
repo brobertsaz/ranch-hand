@@ -23,8 +23,9 @@ type Mode = 'welcome' | 'start' | 'join';
 
 // The first screen: the brand up top, then two ways in. Owners start a ranch with Google (free for them and
 // up to 3 hands); hands join with the code the owner shares from the Crew tab. The server address hides
-// behind a link since testers never need to change it.
-export default function SetupScreen({ onJoined }: { onJoined: (device: Device) => void }) {
+// behind a link, and only in development builds: testers and the store build never need to change it.
+// notice: why the app landed here when the phone had already joined (its saved sign-in couldn't be read)
+export default function SetupScreen({ notice = null, onJoined }: { notice?: string | null; onJoined: (device: Device) => void }) {
   const insets = useSafeAreaInsets();
   const [mode, setMode] = useState<Mode>(canStartRanch ? 'welcome' : 'join');
   const [apiUrl, setApiUrl] = useState(DEFAULT_API_URL);
@@ -98,7 +99,9 @@ export default function SetupScreen({ onJoined }: { onJoined: (device: Device) =
             ? "That code didn't match a ranch. Check it with whoever sent it."
             : e.status === 403
               ? `That ranch already has its ${FREE_HANDS} hands on the free plan. Let the owner know.`
-              : `The server had a problem (${e.status}). Try again in a minute.`
+              : e.status === 429
+                ? 'Too many tries. Wait a minute and try again.'
+                : `The server had a problem (${e.status}). Try again in a minute.`
           : "Can't reach the server. Joining needs signal once; after that the app works without it.",
       );
     } finally {
@@ -134,6 +137,8 @@ export default function SetupScreen({ onJoined }: { onJoined: (device: Device) =
         </View>
 
         <View style={[styles.panel, { paddingBottom: insets.bottom + space.xl }]}>
+          {notice && <ErrorBox text={notice} />}
+
           {mode !== 'welcome' && canStartRanch && (
             <Pressable onPress={() => go('welcome')} accessibilityRole="button" style={styles.back} hitSlop={8}>
               <Icon name="back" size={18} color={colors.textMuted} strokeWidth={2.4} />
@@ -204,6 +209,7 @@ export default function SetupScreen({ onJoined }: { onJoined: (device: Device) =
                 autoCapitalize="characters"
                 autoCorrect={false}
                 placeholder="K7PQ2M"
+                testID="invite-code"
                 placeholderTextColor={colors.placeholder}
                 accessibilityLabelledBy="code-label"
               />
@@ -216,6 +222,7 @@ export default function SetupScreen({ onJoined }: { onJoined: (device: Device) =
                 onChangeText={setName}
                 autoCapitalize="words"
                 placeholder="What the crew calls you"
+                testID="member-name"
                 placeholderTextColor={colors.textMuted}
                 accessibilityLabelledBy="name-label"
                 returnKeyType="go"
@@ -234,11 +241,14 @@ export default function SetupScreen({ onJoined }: { onJoined: (device: Device) =
             </>
           )}
 
-          <Pressable onPress={() => setShowServer((v) => !v)} accessibilityRole="button" accessibilityState={{ expanded: showServer }} style={styles.serverToggle}>
-            <Text style={styles.serverToggleText}>Server settings</Text>
-            <Icon name="chevronRight" size={16} color={colors.textMuted} strokeWidth={2.4} />
-          </Pressable>
-          {showServer && (
+          {/* A developer's control for pointing a dev build at a laptop; the store build always uses the real server */}
+          {__DEV__ && (
+            <Pressable onPress={() => setShowServer((v) => !v)} accessibilityRole="button" accessibilityState={{ expanded: showServer }} style={styles.serverToggle}>
+              <Text style={styles.serverToggleText}>Server settings</Text>
+              <Icon name="chevronRight" size={16} color={colors.textMuted} strokeWidth={2.4} />
+            </Pressable>
+          )}
+          {__DEV__ && showServer && (
             <TextInput
               style={styles.input}
               value={apiUrl}

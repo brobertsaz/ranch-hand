@@ -10,10 +10,9 @@ import {
   type OfflinePackStatus,
 } from '@maplibre/maplibre-react-native';
 import * as Location from 'expo-location';
-import { addDatabaseChangeListener } from 'expo-sqlite';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Image, Modal, PanResponder, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Image, Modal, PanResponder, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import AppButton from '../components/AppButton';
@@ -26,21 +25,22 @@ import NameRideSheet from '../components/NameRideSheet';
 import PlaceSheet, { type PlaceFields } from '../components/PlaceSheet';
 import RideSheet, { ModePill } from '../components/RideSheet';
 import TabBar, { useTabBarHeight, type Tab } from '../components/TabBar';
-import { clearRanchData, createWaypoint, getState, KINDS, updateWaypoint, liveObservations, liveRides, liveWaypoints, observationsAt, photosFor, renameRide, setState, type Kind, type Observation, type Ride, type Waypoint } from '../db';
+import { clearRanchData, createWaypoint, getState, KINDS, onDatabaseChange, updateWaypoint, liveObservations, liveRides, liveWaypoints, observationsAt, photosFor, renameRide, setState, type Kind, type Observation, type Ride, type Waypoint } from '../db';
 import { dayAndTime, distanceMeters, formatDistance, formatDuration, relativeTo, timeAgo, type LngLat } from '../format';
-import { useMemberNames, who } from '../members';
+import { useIsOwner, useMemberNames, who } from '../members';
 import { crewNews, isNew, newsSeenAt } from '../news';
 import { activeRide, resumeRideIfNeeded, ridePoints, startRide, stopRide, type ActiveRide } from '../rides';
 import { KIND_INFO, nextPlaceName, WAYPOINT_INFO } from '../kinds';
-import { locate } from '../locate';
+import { GPS_ONLY_OK, locate, type Located } from '../locate';
 import { estimateTiles, expandBounds, MIN_PACK_SPAN_KM, PACK_MAX_ZOOM, PACK_MIN_ZOOM, TILE_LIMIT, VIEW_USGS_LIMIT } from '../offline';
-import { estimateSharpening, fetchMapAreas, removeMapArea, sharpenArea, type MapArea } from '../api';
+import { deleteAccount, errorText, estimateSharpening, fetchMapAreas, leaveCrew, removeMapArea, sharpenArea, type MapArea } from '../api';
 import { deleteAllPhotos, photoFile } from '../photoFiles';
+import { stopSync } from '../sync';
 import { cumulative, placesOnTrail } from '../trail';
 import { forgetDevice, mapStyleUrl, type Device } from '../settings';
 import { colors, fonts, isDark, palette, radius, space, sync, touch } from '../theme';
-import { useSync, type SyncState } from '../useSync';
-import CaptureScreen from './CaptureScreen';
+import { signedOutText, useSync, type SyncState } from '../useSync';
+import CaptureScreen, { type CaptureHandle } from './CaptureScreen';
 import ObservationScreen from './ObservationScreen';
 import CrewScreen from './CrewScreen';
 import SettingsScreen from './SettingsScreen';
@@ -83,6 +83,8 @@ export default function MapScreen({ device, onSignOut }: Props) {
   // The ride being named: right after it stops, or from its card
   const [naming, setNaming] = useState<{ id: string; track: LngLat[]; name: string } | null>(null);
   const names = useMemberNames();
+  // Only the owner can remove a sharp area (the server agrees)
+  const isOwner = useIsOwner(device.memberId);
   // Unread count for the New tab
   const [newsCount, setNewsCount] = useState(0);
   const [filter, setFilter] = useState<Kind | 'all'>('all');
@@ -98,6 +100,7 @@ export default function MapScreen({ device, onSignOut }: Props) {
   const [details, setDetails] = useState<string[]>([]);
   const [tab, setTab] = useState<Tab>('map');
   const [capturing, setCapturing] = useState(false);
+  const capture = useRef<CaptureHandle>(null);
   const [layersOpen, setLayersOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -118,6 +121,14 @@ export default function MapScreen({ device, onSignOut }: Props) {
   // the map so an area that turned Ready shows up, and `view` puts the camera back where it was.
   const [mapKey, setMapKey] = useState(0);
   const [view, setView] = useState<{ center: [number, number]; zoom: number } | null>(null);
+  // MapLibre on iOS only applies initialViewState at the map's first layout. Our camera mounts after that (it waits
+  // for `start`), so there the map would open on the whole world. Once the map has loaded, put the camera where it
+  // belongs by hand. This holds the mapKey that has loaded.
+  const [loadedKey, setLoadedKey] = useState<number | null>(null);
+  useEffect(() => {
+    if (Platform.OS !== 'ios' || !start || loadedKey !== mapKey) return;
+    camera.current?.jumpTo(view ?? { center: start, zoom: 14 });
+  }, [start, view, loadedKey, mapKey]);
   const readyKey = useRef<string | null>(null);
   const [here, setHere] = useState<LngLat | null>(null);
   const [downloading, setDownloading] = useState<number | null>(null);
@@ -131,11 +142,14 @@ export default function MapScreen({ device, onSignOut }: Props) {
   // Putting a place under the crosshair: a new one, or an existing one being moved
   const [placing, setPlacing] = useState<{ move: Waypoint | null } | null>(null);
   // The add-a-place sheet. A place from GPS waits for its fix; one set on the map already has its spot.
-  const [adding, setAdding] = useState<{ at: LngLat | null; accuracy: number | null; fromMap: boolean; noFix?: boolean } | null>(null);
+  // stale: the spot is the phone's last known position, not a fresh fix.
+  const [adding, setAdding] = useState<{ at: LngLat | null; accuracy: number | null; fromMap: boolean; noFix?: boolean; stale?: boolean } | null>(null);
   // Kind, name and note picked before switching to the map, restored when the sheet comes back
   const [draft, setDraft] = useState<PlaceFields | null>(null);
   // A tap on a pin also reaches the map underneath; without this the map's tap clears the pin just selected
   const pinPressedAt = useRef(0);
+  // Counts selections, so a slow photo lookup for one pin can't land on the card of the pin tapped after it
+  const selection = useRef(0);
 
   const reload = useCallback(() => {
     liveObservations().then(setObservations);
@@ -150,7 +164,10 @@ export default function MapScreen({ device, onSignOut }: Props) {
       setRide(active);
       setLiveTrack(active ? await ridePoints(active.id) : []);
     };
-    resumeRideIfNeeded().catch(() => {});
+    // The ride is still on screen as recording, so say so if it isn't
+    resumeRideIfNeeded().catch((error) =>
+      Alert.alert("Your ride isn't recording", `${errorText(error)} Hold Stop to save what was recorded so far, then start a new ride.`),
+    );
     refresh();
     const timer = setInterval(refresh, 5000);
     return () => clearInterval(timer);
@@ -158,7 +175,9 @@ export default function MapScreen({ device, onSignOut }: Props) {
 
   useEffect(() => {
     reload();
-    const sub = addDatabaseChangeListener(reload);
+    // Only the tables the map draws, gathered up: a first sync or a ride's GPS points would otherwise
+    // reload every pin once per row
+    const sub = onDatabaseChange(['observations', 'waypoints', 'rides'], reload);
     // No fix (location off, or a phone that never had one): open on the newest pin so the crew's work is in view
     Location.requestForegroundPermissionsAsync()
       .then(({ granted }) => (granted ? Location.getLastKnownPositionAsync() : null))
@@ -211,24 +230,41 @@ export default function MapScreen({ device, onSignOut }: Props) {
   const detail = observations.find((o) => o.id === detailId) ?? null;
   const detailPlace = waypoints.find((w) => w.id === detailId) ?? null;
   // Pins on the same spot cover each other, so the card offers the others as buttons
-  const alsoHere = useMemo((): { id: string; label: string; color: string; select: () => void }[] => {
+  const alsoHere = useMemo((): { id: string; label: string; color: string; place?: Waypoint; sighting?: Observation }[] => {
     const at: LngLat | null = selected ? [selected.longitude, selected.latitude] : selectedPlace ? [selectedPlace.longitude, selectedPlace.latitude] : null;
     if (!at) return [];
     const near = (lng: number, lat: number) => distanceMeters(at, [lng, lat]) <= ALSO_HERE_METERS;
     return [
-      ...places.filter((w) => w.id !== selectedId && near(w.longitude, w.latitude)).map((w) => ({ id: w.id, label: w.name, color: WAYPOINT_INFO[w.kind].color, select: () => selectPlace(w) })),
+      ...places.filter((w) => w.id !== selectedId && near(w.longitude, w.latitude)).map((w) => ({ id: w.id, label: w.name, color: WAYPOINT_INFO[w.kind].color, place: w })),
       ...sightings
         .filter((o) => o.id !== selectedId && near(o.longitude, o.latitude))
         .map((o) => ({
           id: o.id,
           label: o.tag_number ? `Tag ${o.tag_number}` : (o.note ?? KIND_INFO[o.kind].label),
           color: KIND_INFO[o.kind].pinColor,
-          select: () => selectSighting(o),
+          sighting: o,
         })),
     ];
   }, [selected, selectedPlace, selectedId, places, sightings]);
   const openDetail = (id: string) => setDetails((stack) => [...stack, id]);
   const closeDetail = () => setDetails((stack) => stack.slice(0, -1));
+
+  // While a pin's card or its detail screen is up, keep `here` live so "0.3 mi NE of you" stays true as they ride
+  const watchingHere = !!selectedId || !!detailId;
+  useEffect(() => {
+    if (!watchingHere) return;
+    let gone = false;
+    let sub: Location.LocationSubscription | undefined;
+    Location.watchPositionAsync({ accuracy: Location.Accuracy.Balanced, distanceInterval: 10, ...GPS_ONLY_OK }, (fix) =>
+      setHere([fix.coords.longitude, fix.coords.latitude]),
+    )
+      .then((s) => (gone ? s.remove() : (sub = s)))
+      .catch(() => {});
+    return () => {
+      gone = true;
+      sub?.remove();
+    };
+  }, [watchingHere]);
   const openCount = observations.filter((o) => o.status === 'open').length;
   // resolved_at is stamped on the phone that resolved it, so this matches across the crew
   const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
@@ -241,7 +277,8 @@ export default function MapScreen({ device, onSignOut }: Props) {
   const following = !riding && !!followRide && tab === 'map';
   const bottomInset = riding || following ? sheetHeight : tabBarHeight;
   const pinsDropped = ride ? observations.filter((o) => o.member_id === device.memberId && o.observed_at >= ride.startedAt).length : 0;
-  const unsynced = observations.filter((o) => o._status !== 'synced').length;
+  // Still to go up. A record the server turned down isn't waiting; Settings lists those.
+  const unsynced = observations.filter((o) => o._status !== 'synced' && o._status !== 'rejected').length;
   // "To Creek gate", "Water 1 to Creek gate": the places the ride went past, first and last
   const nameSuggestions = useMemo(() => {
     if (!naming) return [];
@@ -253,6 +290,7 @@ export default function MapScreen({ device, onSignOut }: Props) {
 
   async function select(id: string, photoFrom: string[]) {
     pinPressedAt.current = Date.now();
+    const mine = ++selection.current;
     setSelectedId(id);
     setSelectedPhoto(null);
     Location.getLastKnownPositionAsync()
@@ -260,13 +298,25 @@ export default function MapScreen({ device, onSignOut }: Props) {
       .catch(() => {});
     for (const observationId of photoFrom) {
       const file = (await photosFor(observationId)).map((p) => photoFile(p.id)).find((f) => f.exists);
+      if (selection.current !== mine) return;
       if (file) return setSelectedPhoto(file.uri);
     }
   }
 
   const selectSighting = (o: Observation) => select(o.id, [o.id]);
-  // A place shows the newest photo taken there
-  const selectPlace = async (w: Waypoint) => select(w.id, (await observationsAt(w.id)).map((o) => o.id));
+  // A place shows the newest photo taken there. Selected first, so the card is up while its checks are read.
+  const selectPlace = async (w: Waypoint) => {
+    const pending = select(w.id, []);
+    const mine = selection.current;
+    await pending;
+    const checks = await observationsAt(w.id);
+    if (selection.current !== mine) return;
+    for (const check of checks) {
+      const file = (await photosFor(check.id)).map((p) => photoFile(p.id)).find((f) => f.exists);
+      if (selection.current !== mine) return;
+      if (file) return setSelectedPhoto(file.uri);
+    }
+  };
 
   function showRide(rideId: string) {
     const ride = rides.find((r) => r.id === rideId);
@@ -318,7 +368,19 @@ export default function MapScreen({ device, onSignOut }: Props) {
 
   async function endRide() {
     const track = liveTrack;
-    const saved = await stopRide(device.memberId);
+    let saved;
+    try {
+      saved = await stopRide(device.memberId);
+    } catch {
+      // stopRide turns location updates off before it saves. If the save failed the ride is still on screen
+      // as recording, so make that true again, or say plainly that it isn't.
+      const recording = await resumeRideIfNeeded().then(() => true, () => false);
+      Alert.alert(
+        "Couldn't save the ride",
+        recording ? "It's still recording. Hold Stop to try again." : "It has stopped recording, but what was recorded is still on this phone. Hold Stop to try saving it again.",
+      );
+      return;
+    }
     setRide(null);
     setLiveTrack([]);
     if (!saved) {
@@ -341,14 +403,18 @@ export default function MapScreen({ device, onSignOut }: Props) {
   }
 
   async function saveRideName(name: string) {
-    if (naming) await renameRide(naming.id, name);
+    try {
+      if (naming) await renameRide(naming.id, name);
+    } catch {
+      return Alert.alert("Couldn't save the name", 'The phone had trouble saving it. Try again.');
+    }
     setNaming(null);
     syncState.syncNow();
   }
 
   async function centerOnMe() {
     try {
-      const fix = (await Location.getLastKnownPositionAsync()) ?? (await Location.getCurrentPositionAsync());
+      const fix = (await Location.getLastKnownPositionAsync()) ?? (await Location.getCurrentPositionAsync(GPS_ONLY_OK));
       setHere([fix.coords.longitude, fix.coords.latitude]);
       camera.current?.flyTo({ center: [fix.coords.longitude, fix.coords.latitude], zoom: 15 });
     } catch {
@@ -363,11 +429,11 @@ export default function MapScreen({ device, onSignOut }: Props) {
     setAdding({ at: null, accuracy: null, fromMap: false });
     locate()
       .catch(() => null)
-      .then((fix) =>
+      .then((found: Located | null) =>
         setAdding((current) => {
           if (!current || current.fromMap) return current;
-          if (!fix) return { ...current, noFix: true };
-          return { ...current, at: [fix.coords.longitude, fix.coords.latitude], accuracy: fix.coords.accuracy };
+          if (!found) return { ...current, noFix: true };
+          return { ...current, at: [found.fix.coords.longitude, found.fix.coords.latitude], accuracy: found.fix.coords.accuracy, stale: found.stale };
         }),
       );
   }
@@ -389,14 +455,24 @@ export default function MapScreen({ device, onSignOut }: Props) {
     const at: LngLat = [center[0], center[1]];
     setPlacing(null);
     if (!placing.move) return setAdding({ at, accuracy: null, fromMap: true });
-    await updateWaypoint(placing.move.id, { longitude: at[0], latitude: at[1] });
+    try {
+      await updateWaypoint(placing.move.id, { longitude: at[0], latitude: at[1] });
+    } catch {
+      return Alert.alert("Couldn't move it", `The phone had trouble saving. ${placing.move.name} is where it was.`);
+    }
     syncState.syncNow();
     selectPlace(placing.move);
   }
 
   async function savePlace(fields: PlaceFields) {
     if (!adding?.at) return;
-    const id = await createWaypoint({ ...fields, longitude: adding.at[0], latitude: adding.at[1] }, device.memberId);
+    let id: string;
+    try {
+      id = await createWaypoint({ ...fields, longitude: adding.at[0], latitude: adding.at[1] }, device.memberId);
+    } catch {
+      // The sheet stays up with what was typed
+      return Alert.alert("Couldn't save the place", 'The phone had trouble saving it. Try again.');
+    }
     setAdding(null);
     setDraft(null);
     // So the new pin isn't hidden behind a filter
@@ -408,6 +484,7 @@ export default function MapScreen({ device, onSignOut }: Props) {
   function describeAdding(): string {
     if (!adding) return '';
     if (adding.fromMap) return 'Where you set it on the map.';
+    if (adding.at && adding.stale) return `No fresh GPS fix. This is the phone's last known spot, ±${Math.round(adding.accuracy ?? 0)} m. Check it on the map.`;
     if (adding.at) return `Where you're standing · ±${Math.round(adding.accuracy ?? 0)} m`;
     return adding.noFix ? 'No GPS fix. Set it on the map instead.' : 'Getting a GPS fix…';
   }
@@ -480,7 +557,7 @@ export default function MapScreen({ device, onSignOut }: Props) {
     try {
       estimate = await estimateSharpening(device, visibleBounds);
     } catch (error) {
-      Alert.alert("Couldn't sharpen", syncState.online ? (error as Error).message : 'This needs a signal. Try again at the house.');
+      Alert.alert("Couldn't sharpen", syncState.online ? errorText(error) : 'This needs a signal. Try again at the house.');
       return;
     }
     Alert.alert(
@@ -499,7 +576,7 @@ export default function MapScreen({ device, onSignOut }: Props) {
       const area = await sharpenArea(device, visibleBounds);
       setAreas((list) => [...list, area]);
     } catch (error) {
-      Alert.alert("Couldn't sharpen", syncState.online ? (error as Error).message : 'This needs a signal. Try again at the house.');
+      Alert.alert("Couldn't sharpen", syncState.online ? errorText(error) : 'This needs a signal. Try again at the house.');
     } finally {
       setSharpening(false);
     }
@@ -516,8 +593,8 @@ export default function MapScreen({ device, onSignOut }: Props) {
           try {
             await removeMapArea(device, area.id);
             setAreas((list) => list.filter((a) => a.id !== area.id));
-          } catch {
-            Alert.alert("Couldn't remove it", 'This needs a signal. Try again at the house.');
+          } catch (error) {
+            Alert.alert("Couldn't remove it", syncState.online ? errorText(error) : 'This needs a signal. Try again at the house.');
           }
         },
       },
@@ -529,12 +606,15 @@ export default function MapScreen({ device, onSignOut }: Props) {
     setDownloading(0);
     setDownloadTarget(area?.id ?? 'view');
     let finished = false;
-    const finish = (title: string, message: string, ok = false) => {
+    const finish = (title: string, message: string, newPackId: string | null = null) => {
       if (finished) return;
       finished = true;
       setDownloading(null);
       setDownloadTarget(null);
-      if (ok && key) setSavedAreas((keys) => new Set(keys).add(key));
+      if (newPackId && area && key) {
+        dropOlderPacks(area, newPackId);
+        setSavedAreas((keys) => new Set([...keys].filter((k) => !k.startsWith(`${area.id}@`))).add(key));
+      }
       Alert.alert(title, message);
     };
 
@@ -547,11 +627,11 @@ export default function MapScreen({ device, onSignOut }: Props) {
           maxZoom: PACK_MAX_ZOOM,
           metadata: { name: `Area ${new Date().toISOString()}`, estimatedTiles: tiles, ...(key ? { savedKey: key } : {}) },
         },
-        (_pack, status) => {
+        (pack, status) => {
           setPack(describePack(status));
           setDownloading(status.percentage);
           if (status.state === 'complete') {
-            finish('Saved for offline', `${saved} ${describePack(status)}`, true);
+            finish('Saved for offline', `${saved} ${describePack(status)}`, pack.id);
           }
         },
         (_pack, error) => {
@@ -564,9 +644,35 @@ export default function MapScreen({ device, onSignOut }: Props) {
     }
   }
 
+  // "Update" on a sharp area downloads a whole new pack. Once it's in, the area's older packs only take up space.
+  // Only after the new one finishes, so a failed update never leaves the area with no map.
+  async function dropOlderPacks(area: MapArea, keepPackId: string) {
+    try {
+      const packs = await OfflineManager.getPacks();
+      for (const old of packs) {
+        const oldKey = old.metadata?.savedKey;
+        if (old.id !== keepPackId && typeof oldKey === 'string' && oldKey.startsWith(`${area.id}@`)) await OfflineManager.deletePack(old.id);
+      }
+    } catch {
+      // The old pack stays; it's wasted space, not a broken map
+    }
+  }
+
   function chooseBase(next: 'aerial' | 'topo') {
     setBase(next);
     setState(BASE_KEY, next);
+  }
+
+  // What leaving throws away, in the confirm, so nobody loses work without being told
+  function lostOnLeaving(): string {
+    const { records, uploads } = syncState.pending;
+    const turnedDown = syncState.problems.length;
+    const parts = [
+      records > 0 && `${records} record${records === 1 ? '' : 's'}`,
+      uploads > 0 && `${uploads} photo${uploads === 1 ? '' : 's'}`,
+      turnedDown > 0 && `${turnedDown} the server turned down`,
+    ].filter(Boolean);
+    return parts.length > 0 ? ` Not synced yet, and lost if you go ahead: ${parts.join(', ')}.` : '';
   }
 
   function confirmSignOut() {
@@ -574,28 +680,100 @@ export default function MapScreen({ device, onSignOut }: Props) {
       Alert.alert('Stop your ride first', 'Hold Stop on the map, then leave the ranch.');
       return;
     }
-    const waiting = syncState.pending.records + syncState.pending.uploads;
-    const warning = waiting > 0 ? ` ${waiting} of your changes haven't synced yet and will be lost.` : '';
-    Alert.alert('Leave this ranch?', `This clears the ranch's pins, places and rides from this phone. Join again to get them back.${warning}`, [
-      { text: 'Stay', style: 'cancel' },
-      {
-        text: 'Leave',
-        style: 'destructive',
-        onPress: async () => {
-          setSettingsOpen(false);
-          await forgetDevice();
-          await clearRanchData();
-          deleteAllPhotos();
-          onSignOut();
-        },
-      },
-    ]);
+    // Leaving tells the server, which frees the hand's spot. With no signal it can't, and they should know.
+    const offline = syncState.online || syncState.signedOut ? '' : " There's no signal, so the crew list keeps showing you until the owner removes you.";
+    Alert.alert(
+      'Leave this ranch?',
+      `This clears the ranch's pins, places, rides and offline maps from this phone. Join again with an invite code to get them back.${offline}${lostOnLeaving()}`,
+      [
+        { text: 'Stay', style: 'cancel' },
+        { text: 'Leave', style: 'destructive', onPress: leave },
+      ],
+    );
+  }
+
+  async function leave() {
+    setSettingsOpen(false);
+    try {
+      // First, so a sync in flight can't write the old ranch back into the tables once they're cleared
+      await stopSync(device);
+      // Best effort: with no signal, or for an owner (the server keeps a ranch's owner), the phone still leaves
+      if (syncState.online && !syncState.signedOut) await leaveCrew(device).catch(() => {});
+      await clearThisPhone();
+    } catch {
+      Alert.alert("Couldn't leave", 'The phone had trouble clearing the ranch. Close Ranch Hand, open it again, and try once more.');
+    }
+  }
+
+  // The sign-in, the ranch's records, photos and offline maps all go, and the app is back at the setup screen
+  async function clearThisPhone() {
+    await forgetDevice();
+    await clearRanchData();
+    deleteAllPhotos();
+    await deleteOfflinePacks();
+    onSignOut();
+  }
+
+  // Settings has already asked twice. The server goes first: if it says no (or can't be reached), nothing
+  // on this phone changes, sync included.
+  async function deleteMyAccount() {
+    try {
+      await deleteAccount(device);
+    } catch (error) {
+      Alert.alert("Couldn't delete your account", `${errorText(error)} Nothing was deleted. Try again when you have a signal.`);
+      return;
+    }
+    setSettingsOpen(false);
+    try {
+      await stopSync(device);
+      await clearThisPhone();
+    } catch {
+      Alert.alert('Your account is deleted', "The phone had trouble clearing the ranch's data. Close Ranch Hand and open it again.");
+    }
+  }
+
+  // The server stopped accepting this phone. Said once when it happens; the sync pill and Settings keep saying it.
+  function explainSignedOut() {
+    if (!syncState.signedOut) return;
+    if (ride) {
+      Alert.alert(signedOutText(syncState.signedOut, device.ranchName), 'Your ride is still recording on this phone. Hold Stop to finish it before joining again.');
+      return;
+    }
+    // A bare 401 also happens when the owner deleted the whole ranch, so don't promise it's still there
+    const how = syncState.signedOut === 'removed' ? 'Ask the owner for an invite code to join again.' : 'The ranch may be gone, or this phone may have been signed out. Join again with an invite code.';
+    Alert.alert(
+      signedOutText(syncState.signedOut, device.ranchName),
+      `What's on this phone stays, but nothing syncs with the crew any more. ${how} Joining again clears this phone first.${lostOnLeaving()}`,
+      [
+        { text: 'Not now', style: 'cancel' },
+        { text: 'Clear and join again', style: 'destructive', onPress: leave },
+      ],
+    );
+  }
+  const signedOut = syncState.signedOut;
+  useEffect(() => {
+    if (signedOut) explainSignedOut();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once each time the phone turns out to be signed out
+  }, [signedOut]);
+
+  // The pill's tap: sync, unless there's something to read first
+  function onSyncPill() {
+    if (syncState.signedOut) return explainSignedOut();
+    if (syncState.online && syncState.error) {
+      return Alert.alert('Sync failed', `${syncState.error} What you've logged is safe on this phone.`, [
+        { text: 'Close', style: 'cancel' },
+        { text: 'Try again', onPress: syncState.syncNow },
+      ]);
+    }
+    if (syncState.problems.length > 0 && syncState.pending.records + syncState.pending.uploads === 0) return setSettingsOpen(true);
+    syncState.syncNow();
   }
 
   return (
     <View style={styles.screen}>
       <StatusBar style="light" />
       <Map key={mapKey} ref={map} androidView="texture" style={StyleSheet.absoluteFill} mapStyle={mapStyleUrl(device)} logo={false}
+        onDidFinishLoadingMap={() => setLoadedKey(mapKey)}
         onPress={() => {
           setFiltersOpen(false);
           if (Date.now() - pinPressedAt.current > 500) setSelectedId(null);
@@ -696,7 +874,7 @@ export default function MapScreen({ device, onSignOut }: Props) {
                 {openCount} open · {resolvedCount} resolved this week
               </Text>
             </View>
-            <SyncPill state={syncState} unsynced={unsynced} onPress={syncState.syncNow} />
+            <SyncPill state={syncState} unsynced={unsynced} onPress={onSyncPill} />
           </View>
         </View>
       )}
@@ -798,7 +976,7 @@ export default function MapScreen({ device, onSignOut }: Props) {
               label={item.label}
               color={item.color}
               on={false}
-              onPress={item.select}
+              onPress={() => (item.place ? selectPlace(item.place) : item.sighting && selectSighting(item.sighting))}
             />
           ))}
         </ScrollView>
@@ -885,9 +1063,11 @@ export default function MapScreen({ device, onSignOut }: Props) {
         />
       )}
 
-      <Modal visible={capturing} animationType="slide" statusBarTranslucent navigationBarTranslucent onRequestClose={() => setCapturing(false)}>
+      {/* Android's back button goes through the screen's own cancel, so a photo already taken isn't orphaned or lost without asking */}
+      <Modal visible={capturing} animationType="slide" statusBarTranslucent navigationBarTranslucent onRequestClose={() => capture.current?.requestClose()}>
         <SafeAreaProvider>
           <CaptureScreen
+            ref={capture}
             memberId={device.memberId}
             onDone={(saved) => {
               setCapturing(false);
@@ -965,6 +1145,11 @@ export default function MapScreen({ device, onSignOut }: Props) {
           sync={syncState}
           onHelp={() => setHelpOpen(true)}
           onLeave={confirmSignOut}
+          onSignedOut={explainSignedOut}
+          isOwner={isOwner}
+          riding={!!ride}
+          unsynced={lostOnLeaving()}
+          onDeleteAccount={deleteMyAccount}
           onClose={() => setSettingsOpen(false)}
         />
       </Modal>
@@ -1041,9 +1226,11 @@ export default function MapScreen({ device, onSignOut }: Props) {
                     icon={<Icon name="download" size={20} color={palette.white} strokeWidth={2.4} />}
                   />
                 )}
-                <Pressable onPress={() => confirmRemoveArea(area)} accessibilityRole="button" accessibilityLabel={`Remove ${area.name}`} style={styles.sheetClose}>
-                  <Icon name="close" size={20} color={colors.textMuted} strokeWidth={2.4} />
-                </Pressable>
+                {isOwner && (
+                  <Pressable onPress={() => confirmRemoveArea(area)} accessibilityRole="button" accessibilityLabel={`Remove ${area.name}`} style={styles.sheetClose}>
+                    <Icon name="close" size={20} color={colors.textMuted} strokeWidth={2.4} />
+                  </Pressable>
+                )}
               </View>
             ))}
             <AppButton
@@ -1053,7 +1240,7 @@ export default function MapScreen({ device, onSignOut }: Props) {
               disabled={sharpening}
               icon={<Icon name="plus" size={20} color={palette.white} strokeWidth={2.4} />}
             />
-            <Text style={styles.sheetHint}>Gets close-up aerial photos for the current view plus a quarter mile, from the state's own imagery where it's sharper. Do it once per pasture, with signal.</Text>
+            <Text style={styles.sheetHint}>Gets close-up aerial photos for the current view plus a quarter mile, from the state&apos;s own imagery where it&apos;s sharper. Do it once per pasture, with signal.</Text>
 
             </ScrollView>
           </View>
@@ -1065,23 +1252,31 @@ export default function MapScreen({ device, onSignOut }: Props) {
 
 function SyncPill({ state, unsynced, onPress }: { state: SyncState; unsynced: number; onPress: () => void }) {
   const photos = state.pending.uploads;
+  const turnedDown = state.problems.length;
+  // A failed run only shows with signal: with none, "Offline" is the truer word for why nothing went up
   const pill = state.syncing
-    ? { icon: 'refresh' as const, color: colors.chromeText, label: 'Syncing…', warn: false }
-    : unsynced > 0
-      ? { icon: 'cloudOff' as const, color: palette.harvest, label: `${unsynced} waiting`, warn: true }
-      : photos > 0
-        ? { icon: 'cloudOff' as const, color: palette.harvest, label: `${photos} photo${photos === 1 ? '' : 's'} waiting`, warn: true }
-        : !state.online
-          ? { icon: 'cloudOff' as const, color: palette.harvest, label: 'Offline', warn: true }
-          : { icon: 'check' as const, color: sync.synced, label: 'Synced', warn: false };
+    ? { icon: 'refresh' as const, color: colors.chromeText, label: 'Syncing…', look: null, hint: 'Sync now' }
+    : state.signedOut
+      ? { icon: 'cloudOff' as const, color: palette.white, label: 'Signed out', look: styles.syncPillFailed, hint: 'See why' }
+      : state.online && state.error
+        ? { icon: 'cloudOff' as const, color: palette.white, label: 'Sync failed', look: styles.syncPillFailed, hint: 'See why' }
+        : unsynced > 0
+          ? { icon: 'cloudOff' as const, color: palette.harvest, label: `${unsynced} waiting`, look: styles.syncPillWarn, hint: 'Sync now' }
+          : photos > 0
+            ? { icon: 'cloudOff' as const, color: palette.harvest, label: `${photos} photo${photos === 1 ? '' : 's'} waiting`, look: styles.syncPillWarn, hint: 'Sync now' }
+            : !state.online
+              ? { icon: 'cloudOff' as const, color: palette.harvest, label: 'Offline', look: styles.syncPillWarn, hint: 'Sync now' }
+              : turnedDown > 0
+                ? { icon: 'cloudOff' as const, color: palette.harvest, label: `${turnedDown} not sent`, look: styles.syncPillWarn, hint: 'See why in Settings' }
+                : { icon: 'check' as const, color: sync.synced, label: 'Synced', look: null, hint: 'Sync now' };
 
   return (
     <Pressable
       onPress={onPress}
       disabled={state.syncing}
       accessibilityRole="button"
-      accessibilityLabel={`${pill.label}. Sync now`}
-      style={[styles.syncPill, pill.warn && styles.syncPillWarn]}
+      accessibilityLabel={`${pill.label}. ${pill.hint}`}
+      style={[styles.syncPill, pill.look]}
     >
       <Icon name={pill.icon} size={18} color={pill.color} strokeWidth={2.2} />
       <Text style={styles.syncPillText}>{pill.label}</Text>
@@ -1177,6 +1372,16 @@ function PlacePeekCard({ waypoint, latest, photoUri, author, here, bottom, onPre
   );
 }
 
+// Packs are keyed by the style URL, which carries this membership's token, so after leaving they can never
+// be used again. Best effort: a pack that won't delete is wasted space, not a reason to stay signed in.
+async function deleteOfflinePacks(): Promise<void> {
+  try {
+    for (const old of await OfflineManager.getPacks()) await OfflineManager.deletePack(old.id).catch(() => {});
+  } catch {
+    // nothing to do
+  }
+}
+
 function areaOutlines(areas: MapArea[]): GeoJSON.FeatureCollection<GeoJSON.LineString> {
   return {
     type: 'FeatureCollection',
@@ -1245,6 +1450,8 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: 'rgba(245, 239, 224, 0.2)', backgroundColor: colors.chromeRaised,
   },
   syncPillWarn: { borderColor: 'rgba(227, 163, 59, 0.5)', backgroundColor: 'rgba(227, 163, 59, 0.14)' },
+  // Its own look, so a failed sync can't be mistaken for "waiting for signal"
+  syncPillFailed: { borderColor: sync.failed, backgroundColor: sync.failed },
   syncPillText: { color: colors.chromeText, fontSize: 15, fontWeight: '700' },
   chips: { gap: space.sm },
   chip: {

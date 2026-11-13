@@ -8,6 +8,8 @@ class Waypoint < ApplicationRecord
   has_many :observations, dependent: :nullify
 
   validates :id, :name, presence: true
+  validates :name, length: { maximum: 80 }
+  validates :note, length: { maximum: Syncable::NOTE_LIMIT }
   validates :kind, inclusion: { in: KINDS }
   validates :latitude, numericality: { in: -90..90 }
   validates :longitude, numericality: { in: -180..180 }
