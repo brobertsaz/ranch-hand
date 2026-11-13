@@ -54,6 +54,10 @@ export async function crewNews(myId: string, limit = 100): Promise<NewsItem[]> {
     if (o.member_id !== myId) {
       items.push({ ...base, key: `${o.id}:logged`, at: o.observed_at, memberId: o.member_id, title: subject, detail, status: o.status });
     }
+    // Someone else said they're heading to it, so you don't have to
+    if (o.status === 'open' && o.claimed_by_id && o.claimed_by_id !== myId && o.claimed_at) {
+      items.push({ ...base, key: `${o.id}:claimed`, at: o.claimed_at, memberId: o.claimed_by_id, title: `${subject} · has it`, detail, status: o.status });
+    }
     if (o.status === 'resolved' && o.resolved_by_id && o.resolved_by_id !== myId && o.resolved_at) {
       items.push({ ...base, key: `${o.id}:resolved`, at: o.resolved_at, memberId: o.resolved_by_id, title: `${subject} · ${STATUS_LABEL.resolved.toLowerCase()}`, detail });
     }

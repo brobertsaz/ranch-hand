@@ -23,6 +23,19 @@ RSpec.describe "Members", type: :request do
     expect(json).to eq("error" => "removed")
   end
 
+  it "hands back what the hand said they'd see to, and stops notifying their phone" do
+    hand.register_push!(platform: "android", token: "fcm-token")
+    open = create(:observation, member: owner, claimed_by: hand, claimed_at: 1.hour.ago, updated_at: 1.hour.ago)
+    done = create(:observation, member: owner, status: "resolved", claimed_by: hand, claimed_at: 1.hour.ago)
+
+    remove(hand)
+
+    expect(open.reload).to have_attributes(claimed_by: nil, claimed_at: nil)
+    expect(open.updated_at).to be_within(5.seconds).of(Time.current)
+    expect(done.reload.claimed_by).to eq(hand)
+    expect(hand.reload).to have_attributes(push_token: nil, push_platform: nil)
+  end
+
   it "tells the rest of the crew on their next pull" do
     remove(hand)
 

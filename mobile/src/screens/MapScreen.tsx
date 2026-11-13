@@ -35,7 +35,8 @@ import { GPS_ONLY_OK, locate, type Located } from '../locate';
 import { estimateTiles, expandBounds, MIN_PACK_SPAN_KM, PACK_MAX_ZOOM, PACK_MIN_ZOOM, TILE_LIMIT, VIEW_USGS_LIMIT } from '../offline';
 import { deleteAccount, errorText, estimateSharpening, fetchMapAreas, leaveCrew, removeMapArea, sharpenArea, type MapArea } from '../api';
 import { deleteAllPhotos, photoFile } from '../photoFiles';
-import { stopSync } from '../sync';
+import { unregisterFromPush, usePush } from '../push';
+import { fetchPhoto, stopSync } from '../sync';
 import { cumulative, placesOnTrail } from '../trail';
 import { forgetDevice, mapStyleUrl, type Device } from '../settings';
 import { colors, fonts, isDark, palette, radius, space, sync, touch } from '../theme';
@@ -247,6 +248,16 @@ export default function MapScreen({ device, onSignOut }: Props) {
     ];
   }, [selected, selectedPlace, selectedId, places, sightings]);
   const openDetail = (id: string) => setDetails((stack) => [...stack, id]);
+  usePush(device, {
+    onNews: syncState.syncNow,
+    // A tap on "Sick animal · Tag 1147 · Jess": bring it down, then open it. With no signal it isn't on this
+    // phone yet, and the map is the honest place to land.
+    onOpen: async (observationId) => {
+      await syncState.syncNow();
+      setTab('map');
+      if ((await liveObservations()).some((o) => o.id === observationId)) openDetail(observationId);
+    },
+  });
   const closeDetail = () => setDetails((stack) => stack.slice(0, -1));
 
   // While a pin's card or its detail screen is up, keep `here` live so "0.3 mi NE of you" stays true as they ride
@@ -698,6 +709,8 @@ export default function MapScreen({ device, onSignOut }: Props) {
       // First, so a sync in flight can't write the old ranch back into the tables once they're cleared
       await stopSync(device);
       // Best effort: with no signal, or for an owner (the server keeps a ranch's owner), the phone still leaves
+      // An owner can't leave on the server, so their phone has to say for itself that it's done with the news
+      if (syncState.online && !syncState.signedOut) await unregisterFromPush(device);
       if (syncState.online && !syncState.signedOut) await leaveCrew(device).catch(() => {});
       await clearThisPhone();
     } catch {
@@ -957,6 +970,7 @@ export default function MapScreen({ device, onSignOut }: Props) {
           observation={selected}
           photoUri={selectedPhoto}
           author={who(names, selected.member_id, device.memberId)}
+          claimedBy={selected.status === 'open' && selected.claimed_by_id ? who(names, selected.claimed_by_id, device.memberId) : null}
           here={here}
           bottom={bottomInset + 20}
           onPress={() => openDetail(selected.id)}
@@ -1090,6 +1104,7 @@ export default function MapScreen({ device, onSignOut }: Props) {
               memberId={device.memberId}
               mapStyle={mapStyleUrl(device)}
               here={here}
+              fetchPhoto={(photoId) => fetchPhoto(device, photoId)}
               onBack={closeDetail}
               onChanged={syncState.syncNow}
             />
@@ -1305,9 +1320,10 @@ function Chip({ label, color, on, onPress }: { label: string; color?: string; on
   );
 }
 
-type PeekProps = { observation: Observation; photoUri: string | null; author: string; here: LngLat | null; bottom: number; onPress: () => void };
+// claimedBy: "Sam" or "You", when someone has said they've got it
+type PeekProps = { observation: Observation; photoUri: string | null; author: string; claimedBy: string | null; here: LngLat | null; bottom: number; onPress: () => void };
 
-function PeekCard({ observation, photoUri, author, here, bottom, onPress }: PeekProps) {
+function PeekCard({ observation, photoUri, author, claimedBy, here, bottom, onPress }: PeekProps) {
   const info = KIND_INFO[observation.kind];
   const title = [observation.tag_number && `Tag ${observation.tag_number}`, observation.note].filter(Boolean).join(' · ') || info.label;
   const where = here ? relativeTo(here, [observation.longitude, observation.latitude]) : `±${Math.round(observation.accuracy ?? 0)} m`;
@@ -1325,7 +1341,8 @@ function PeekCard({ observation, photoUri, author, here, bottom, onPress }: Peek
           </Text>
         </View>
         <Text style={styles.peekTitle} numberOfLines={1}>{title}</Text>
-        <Text style={styles.peekSmall}>
+        <Text style={styles.peekSmall} numberOfLines={1}>
+          {claimedBy ? `${claimedBy === 'You' ? "You've" : `${claimedBy} has`} got it · ` : ''}
           {where}
           {observation._status !== 'synced' ? ' · on this phone' : ''}
         </Text>

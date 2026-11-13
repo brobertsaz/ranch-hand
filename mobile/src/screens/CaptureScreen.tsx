@@ -12,7 +12,7 @@ import { createObservation, liveWaypoints, newId, type Kind, type PlaceChoice, t
 import { clockParts, formatDistance } from '../format';
 import { composeNote, initialStatus, nearestPlace, nextPlaceName, PLACE_KIND, WAYPOINT_INFO } from '../kinds';
 import { locate, type Located } from '../locate';
-import { keepPhoto, photoFile } from '../photoFiles';
+import { keepPhoto, photoFile, shrinkPhoto } from '../photoFiles';
 import { colors, fonts, palette, sync, touch } from '../theme';
 import TagScreen, { type Fix, type PlaceMode } from './TagScreen';
 import { useNow } from '../useNow';
@@ -92,10 +92,11 @@ export default function CaptureScreen({ memberId, onDone, ref }: Props) {
     if (shooting.current) return;
     shooting.current = true;
     try {
-      const picture = await camera.current?.takePictureAsync({ quality: 0.6 });
+      // Taken near full quality and compressed once, when it's shrunk: two lossy passes would smear the tag
+      const picture = await camera.current?.takePictureAsync({ quality: 0.9 });
       if (!picture) return;
       const id = newId();
-      const file = await keepPhoto(picture.uri, id);
+      const file = await keepPhoto(await shrinkPhoto(picture.uri), id);
       setPhoto({ id, uri: file.uri });
       setStep('tag');
     } catch {

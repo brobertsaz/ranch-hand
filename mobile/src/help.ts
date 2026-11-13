@@ -69,6 +69,10 @@ export const HELP: HelpSection[] = [
         ],
       },
       {
+        title: "Say you've got it",
+        body: "Open the pin and tap I've got it before you ride out. The crew sees your name on it, so nobody else makes the trip. Tap Let it go if you can't get to it after all.",
+      },
+      {
         title: 'Mark it fixed',
         body: "Open the pin and tap Mark resolved once it's doctored or fixed. Everyone sees it change on the next sync. Tap Reopen if it wasn't really fixed.",
       },

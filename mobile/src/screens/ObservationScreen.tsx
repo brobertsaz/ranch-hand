@@ -6,7 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AppButton from '../components/AppButton';
 import Icon from '../components/Icon';
 import MiniMap from '../components/MiniMap';
-import { onDatabaseChange, photosFor, setObservationStatus, type Observation, type ObservationStatus } from '../db';
+import { claimObservation, onDatabaseChange, photosFor, setObservationStatus, type Observation, type ObservationStatus } from '../db';
 import { bearingDegrees, compassPoint, dayAndTime, distanceMeters, clockParts, formatDistance, relativeTo, timeAgo, type LngLat } from '../format';
 import { KIND_INFO, STATUS_LABEL, splitNote } from '../kinds';
 import { useMemberNames, who } from '../members';
@@ -21,16 +21,21 @@ type Props = {
   memberId: string;
   mapStyle: string;
   here: LngLat | null;
+  // Brings down a photo that syncs leave on the server (an old, settled observation). False when it can't right now.
+  fetchPhoto: (photoId: string) => Promise<boolean>;
   onBack: () => void;
   // After a local edit, so it can sync straight away when there's signal
   onChanged: () => void;
 };
 
 // Mockup 4 · Observation
-export default function ObservationScreen({ observation, placeName = null, memberId, mapStyle, here, onBack, onChanged }: Props) {
+export default function ObservationScreen({ observation, placeName = null, memberId, mapStyle, here, fetchPhoto, onBack, onChanged }: Props) {
   const insets = useSafeAreaInsets();
   // undefined: no photo was taken; null: there is one, but it hasn't downloaded to this phone yet
   const [photoUri, setPhotoUri] = useState<string | null | undefined>(undefined);
+  // Why there's no photo on screen yet: it's on its way from the server, the server couldn't be reached,
+  // or the phone that took it hasn't sent it up
+  const [photoWait, setPhotoWait] = useState<'fetching' | 'unreachable' | 'not-sent'>('not-sent');
   const [guiding, setGuiding] = useState(false);
   const info = KIND_INFO[observation.kind];
   const lngLat: LngLat = [observation.longitude, observation.latitude];
@@ -44,12 +49,23 @@ export default function ObservationScreen({ observation, placeName = null, membe
 
   useEffect(() => {
     let gone = false;
+    // One try per visit: a fetch that failed for want of signal would fail again on every reload
+    let asked = false;
     const load = () =>
       photosFor(observation.id).then((photos) => {
         if (gone) return;
         if (photos.length === 0) return setPhotoUri(undefined);
         const file = photos.map((p) => photoFile(p.id)).find((f) => f.exists);
         setPhotoUri(file?.uri ?? null);
+        if (file) return;
+        // On the server but not here: syncs only bring down what's open or recent, so ask for this one
+        const onServer = photos.find((p) => p.uploaded_at !== null && p._status === 'synced');
+        if (!onServer) return setPhotoWait('not-sent');
+        if (asked) return;
+        asked = true;
+        setPhotoWait('fetching');
+        // When it lands, onPhotoArrived reloads and the photo shows
+        fetchPhoto(onServer.id).then((ok) => !gone && !ok && setPhotoWait('unreachable'));
       });
     load();
     // "Photo arrives on the next sync" has to come true while the screen is open: the photo's row can land,
@@ -61,7 +77,18 @@ export default function ObservationScreen({ observation, placeName = null, membe
       sub.remove();
       arrivals.remove();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchPhoto is a new function on every render of the map
   }, [observation.id]);
+
+  // "I've got it", letting it go (null), or taking it over from another hand
+  async function claim(by: string | null) {
+    try {
+      await claimObservation(observation.id, by);
+    } catch {
+      return Alert.alert("Couldn't save that", 'The phone had trouble saving. Try again.');
+    }
+    onChanged();
+  }
 
   async function changeStatus(status: ObservationStatus) {
     try {
@@ -84,7 +111,15 @@ export default function ObservationScreen({ observation, placeName = null, membe
           ) : (
             <View style={styles.noPhoto}>
               <Icon name="camera" size={32} color={colors.chromeTextMuted} />
-              <Text style={styles.noPhotoText}>{photoUri === null ? 'Photo arrives on the next sync' : 'No photo'}</Text>
+              <Text style={styles.noPhotoText}>
+                {photoUri === undefined
+                  ? 'No photo'
+                  : photoWait === 'fetching'
+                    ? 'Getting the photo…'
+                    : photoWait === 'unreachable'
+                      ? "The photo isn't on this phone. It needs a signal to fetch."
+                      : 'Photo arrives on the next sync'}
+              </Text>
             </View>
           )}
           {/* A stepped fade, so the big title reads on any photo */}
@@ -148,6 +183,30 @@ export default function ObservationScreen({ observation, placeName = null, membe
             </View>
           </View>
 
+          {observation.status === 'open' && (
+            // So two hands don't both ride out to the same heifer
+            <View style={[styles.card, styles.claim]}>
+              <View style={styles.where}>
+                <Text style={styles.cardTitle}>
+                  {!observation.claimed_by_id
+                    ? 'Nobody has this yet'
+                    : observation.claimed_by_id === memberId
+                      ? "You've got this"
+                      : `${who(names, observation.claimed_by_id, memberId)} has this`}
+                </Text>
+                <Text style={styles.cardMeta}>
+                  {observation.claimed_by_id && observation.claimed_at ? `Since ${timeAgo(observation.claimed_at)}` : "Say so, and the crew won't send two."}
+                </Text>
+              </View>
+              {!observation.claimed_by_id ? (
+                <AppButton title="I've got it" onPress={() => claim(memberId)} />
+              ) : observation.claimed_by_id === memberId ? (
+                <AppButton variant="ghost" title="Let it go" onPress={() => claim(null)} />
+              ) : (
+                <AppButton variant="ghost" title="Take over" onPress={() => claim(memberId)} />
+              )}
+            </View>
+          )}
           {observation.status === 'resolved' && (
             <View style={styles.syncRow}>
               <Icon name="check" size={16} color={sync.synced} strokeWidth={3} />
@@ -221,6 +280,7 @@ const styles = StyleSheet.create({
   statValue: { fontFamily: fonts.displayBlack, fontSize: 30, lineHeight: 32, color: colors.text },
   statLabel: { fontSize: 12, fontWeight: '800', letterSpacing: 1, color: colors.textMuted },
   card: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: 12 },
+  claim: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10, paddingHorizontal: 14 },
   cardRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10, paddingHorizontal: 14 },
   resolvedText: { flex: 1, fontSize: 15, fontWeight: '700', color: colors.text },
   cardTitle: { fontSize: 15, fontWeight: '700', color: colors.text },

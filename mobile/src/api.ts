@@ -116,6 +116,24 @@ export function startRanch(apiUrl: string, idToken: string, ranchName: string) {
   });
 }
 
+// The same for an owner on iPhone, with Sign in with Apple's identity token. name is only there the first time
+// they sign in: Apple tells the app once and never puts it in the token.
+export function startRanchWithApple(apiUrl: string, identityToken: string, name: string | null, ranchName: string) {
+  return request<Joined>({ apiUrl }, '/api/v1/owners', {
+    method: 'POST',
+    body: JSON.stringify({ apple_identity_token: identityToken, name, ranch_name: ranchName }),
+  });
+}
+
+// Where the server sends this phone's notifications: its own FCM (Android) or APNs (iPhone) token
+export function registerPushToken(device: Device, platform: 'android' | 'ios', token: string) {
+  return request<void>(device, '/api/v1/push_token', { method: 'PUT', body: JSON.stringify({ platform, token }) });
+}
+
+export function forgetPushToken(device: Device) {
+  return request<void>(device, '/api/v1/push_token', { method: 'DELETE', timeoutMs: 8000 });
+}
+
 export function pullChanges(device: Device, lastPulledAt: number | null, signal?: AbortSignal) {
   const query = lastPulledAt ? `?last_pulled_at=${lastPulledAt}` : '';
   return request<{ changes: Changes; timestamp: number }>(device, `/api/v1/sync${query}`, { signal, timeoutMs: SYNC_TIMEOUT_MS });

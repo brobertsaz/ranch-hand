@@ -9,13 +9,7 @@
     "userInterfaceStyle": "light",
     "ios": {
       "bundleIdentifier": "dev.ranchhand.spike",
-      "supportsTablet": false,
-      "infoPlist": {
-        "NSLocalNetworkUsageDescription": "Ranch Hand syncs with the test server on your local network.",
-        "NSAppTransportSecurity": {
-          "NSAllowsArbitraryLoads": true
-        }
-      }
+      "supportsTablet": false
     },
     "android": {
       "package": "dev.ranchhand.spike",
@@ -60,11 +54,15 @@
         }
       ],
       [
+        "expo-notifications",
+        {
+          "defaultChannel": "crew",
+          "color": "#101713"
+        }
+      ],
+      [
         "expo-build-properties",
         {
-          "android": {
-            "usesCleartextTraffic": true
-          },
           "ios": {
             "enableSceneSupport": true
           }

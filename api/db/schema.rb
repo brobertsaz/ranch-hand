@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_12_130000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_13_150759) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -69,6 +69,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_12_130000) do
     t.string "email"
     t.string "google_sub"
     t.datetime "removed_at"
+    t.string "push_token"
+    t.string "push_platform"
+    t.string "apple_sub"
+    t.index ["apple_sub"], name: "index_members_on_apple_sub", unique: true
     t.index ["device_token"], name: "index_members_on_device_token", unique: true
     t.index ["google_sub"], name: "index_members_on_google_sub", unique: true
     t.index ["ranch_id"], name: "index_members_on_ranch_id"
@@ -91,6 +95,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_12_130000) do
     t.string "waypoint_id"
     t.datetime "resolved_at"
     t.bigint "resolved_by_id"
+    t.datetime "claimed_at"
+    t.bigint "claimed_by_id"
+    t.index ["claimed_by_id"], name: "index_observations_on_claimed_by_id"
     t.index ["member_id"], name: "index_observations_on_member_id"
     t.index ["ranch_id", "updated_at"], name: "index_observations_on_ranch_id_and_updated_at"
     t.index ["ranch_id"], name: "index_observations_on_ranch_id"
@@ -173,6 +180,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_12_130000) do
   add_foreign_key "map_areas", "ranches"
   add_foreign_key "members", "ranches"
   add_foreign_key "observations", "members"
+  add_foreign_key "observations", "members", column: "claimed_by_id"
   add_foreign_key "observations", "members", column: "resolved_by_id"
   add_foreign_key "observations", "ranches"
   add_foreign_key "observations", "waypoints"
