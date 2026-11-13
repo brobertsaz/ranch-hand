@@ -498,6 +498,93 @@ RSpec.describe "Sync", type: :request do
     end
   end
 
+  describe "claiming" do
+    let(:teammate) { create(:member, ranch: ranch, name: "Sam") }
+    let(:observation) { create(:observation, member: member) }
+
+    def claim(as:, **overrides)
+      raw = raw_observation(observation.id, claimed_by_id: as.id.to_s, claimed_at: 1_791_100_000_000, _changed: [ "claimed_by_id" ], **overrides)
+      push({ observations: { created: [], updated: [ raw ], deleted: [] } }, as: as)
+    end
+
+    it "records who said they've got it, and tells the crew on their next pull" do
+      claim(as: teammate)
+
+      expect(observation.reload).to have_attributes(claimed_by: teammate, claimed_at: Time.zone.at(1_791_100_000), status: "open")
+      pull
+      expect(json.dig("changes", "observations", "created").sole).to include("claimed_by_id" => teammate.id.to_s, "claimed_at" => 1_791_100_000_000)
+    end
+
+    it "only lets a hand claim it for themself" do
+      claim(as: teammate, claimed_by_id: member.id.to_s)
+      expect(observation.reload.claimed_by).to eq(teammate)
+
+      claim(as: member, claimed_by_id: "not-a-member")
+      expect(observation.reload.claimed_by).to eq(member)
+    end
+
+    it "lets another hand take it over, and the last one to say so has it" do
+      claim(as: teammate)
+      claim(as: member, claimed_at: 1_791_200_000_000)
+
+      expect(observation.reload).to have_attributes(claimed_by: member, claimed_at: Time.zone.at(1_791_200_000))
+    end
+
+    it "lets it go" do
+      claim(as: teammate)
+      claim(as: teammate, claimed_by_id: nil, claimed_at: nil)
+
+      expect(observation.reload).to have_attributes(claimed_by: nil, claimed_at: nil)
+    end
+
+    it "keeps the claim through someone else's edit, and through an app too old to know about claims" do
+      claim(as: teammate)
+
+      push({ observations: { created: [], updated: [ raw_observation(observation.id, note: "By the creek", claimed_by_id: nil, _changed: [ "note" ]) ], deleted: [] } })
+      expect(observation.reload).to have_attributes(note: "By the creek", claimed_by: teammate, claimed_at: Time.zone.at(1_791_100_000))
+
+      # No "_changed" list and no claim fields: the whole record is applied, and the claim isn't part of it
+      push({ observations: { created: [], updated: [ raw_observation(observation.id, note: "Worse today") ], deleted: [] } })
+      expect(observation.reload).to have_attributes(note: "Worse today", claimed_by: teammate)
+    end
+
+    it "claims a record that arrives already claimed for whoever pushed it" do
+      push({ observations: { created: [ raw_observation("mine1", claimed_by_id: teammate.id.to_s, claimed_at: 1_791_100_000_000) ], updated: [], deleted: [] } })
+
+      expect(Observation.find("mine1")).to have_attributes(claimed_by: member, claimed_at: Time.zone.at(1_791_100_000))
+    end
+  end
+
+  describe "notifying the crew" do
+    include ActiveJob::TestHelper
+
+    it "queues one notification for the new open problems in a push" do
+      changes = { observations: { created: [ raw_observation("sick1"), raw_observation("sick2") ], updated: [], deleted: [] } }
+
+      expect { push(changes) }.to have_enqueued_job(NotifyCrewJob).with(member, %w[sick1 sick2]).exactly(:once)
+    end
+
+    it "says nothing about an all-clear check, an edit, or a record that was turned down" do
+      observation = create(:observation, member: member)
+      changes = {
+        observations: {
+          created: [ raw_observation("fine1", kind: "water_check", status: "ok"), raw_observation("bad1", kind: "dragon") ],
+          updated: [ raw_observation(observation.id, note: "Worse today", _changed: [ "note" ]) ],
+          deleted: []
+        }
+      }
+
+      expect { push(changes) }.not_to have_enqueued_job(NotifyCrewJob)
+    end
+
+    it "doesn't announce the same record again when a push is retried" do
+      changes = { observations: { created: [ raw_observation("sick1") ], updated: [], deleted: [] } }
+      push(changes)
+
+      expect { push(changes) }.not_to have_enqueued_job(NotifyCrewJob)
+    end
+  end
+
   describe "merging by field" do
     let(:teammate) { create(:member, ranch: ranch, name: "Sam") }
     let(:observation) { create(:observation, member: member, note: "Limping", tag_number: "1234") }

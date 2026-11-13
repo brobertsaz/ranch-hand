@@ -20,18 +20,24 @@ class SyncPush
   LISTS = %w[created updated deleted].freeze
   # Set by the server when the status changes (see credit_resolver), so never merged in by name
   SERVER_SET_FIELDS = %w[resolved_at resolved_by_id].freeze
+  # A phone coming back into range can push a week of work. Past this many new problems the crew gets one
+  # notification that counts them, not a buzz for each.
+  NOTIFY_EACH_UP_TO = 3
 
   def initialize(member:, changes:)
     @member = member
     @ranch = member.ranch
     @changes = changes
     @rejected = []
+    @logged = []
   end
 
   # Returns the records that were skipped: [{ table:, id:, reason: }]
   def call
     check_shape!
     TABLES.each { |table, model| apply(model, table) }
+    # After the records are in, so the job never looks for one that was rolled back
+    NotifyCrewJob.perform_later(@member, @logged) if @logged.any?
     @rejected
   end
 
@@ -118,8 +124,14 @@ class SyncPush
 
     record.member ||= @member unless record.is_a?(Photo)
     record.assign_attributes(attributes)
-    credit_resolver(record) if record.is_a?(Observation)
+    if record.is_a?(Observation)
+      credit_resolver(record)
+      credit_claimer(record)
+    end
+    news = record.is_a?(Observation) && record.new_record? && record.open?
     record.save!
+    # A problem the crew hasn't heard about. Routine all-clear checks and edits aren't worth a buzz.
+    @logged << record.id if news
   end
 
   # What the phone sent, keyed by the field names it uses (which are our column names)
@@ -138,8 +150,10 @@ class SyncPush
     return fields unless model == Observation
 
     fields -= SERVER_SET_FIELDS
-    # The time on the phone when it was resolved travels with the status
-    fields.include?("status") ? fields + %w[resolved_at] : fields
+    # The time on the phone when it was resolved travels with the status, and when it was claimed with the claim
+    fields += %w[resolved_at] if fields.include?("status")
+    fields += %w[claimed_at] if fields.include?("claimed_by_id")
+    fields
   end
 
   def delete(model, id)
@@ -179,6 +193,20 @@ class SyncPush
     else
       # Already resolved, and this is some other edit: the first resolver and their time stand
       observation.restore_attributes(%w[resolved_at])
+    end
+  end
+
+  # Like resolving: a hand can only claim it for themself, whatever id the phone sent. Letting go clears it,
+  # and so does a claim that arrives with nobody's name on it.
+  def credit_claimer(observation)
+    if observation.claimed_by_id.nil?
+      observation.claimed_at = nil
+    elsif observation.claimed_by_id_changed?
+      observation.claimed_by = @member
+      observation.claimed_at ||= Time.current
+    else
+      # Still claimed by whoever had it, and this is some other edit: their time stands
+      observation.restore_attributes(%w[claimed_at])
     end
   end
 end

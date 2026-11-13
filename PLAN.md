@@ -38,7 +38,7 @@
 - **Photo:** observation, local URI, remote attachment, upload state
 - **Ride:** member, started_at, ended_at, track (GeoJSON LineString)
 
-Sync conflict policy: observations are mostly append-only, and each one has a single author. For edits, use last-write-wins per record. Resolving an observation is a status change, not a delete.
+Sync conflict policy: observations are mostly append-only, and each one has a single author. Edits merge by field, last write wins per field (see `api/app/services/sync_push.rb`). Resolving an observation is a status change, not a delete, and so is claiming one ("I've got it").
 
 ---
 

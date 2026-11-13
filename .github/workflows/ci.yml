@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  api:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: api
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: ranch_hand
+          POSTGRES_PASSWORD: ranch_hand
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ranch_hand" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      RAILS_ENV: test
+      DATABASE_PORT: 5432
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ruby/setup-ruby@v1
+        with:
+          working-directory: api
+          bundler-cache: true
+      - run: bin/rubocop
+      - run: bin/brakeman --quiet --no-pager --exit-on-warn --exit-on-error
+      - run: bin/rails db:prepare
+      - run: bundle exec rspec
+
+  mobile:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          # The sync tests run on Node's built-in SQLite, which needs 22.13 or newer
+          node-version: 22
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test

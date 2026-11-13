@@ -43,6 +43,9 @@ export type Observation = {
   waypoint_id: string | null;
   resolved_at: number | null;
   resolved_by_id: string | null;
+  // "I've got it": the hand riding out to it, and when they said so. Only shown while it's open.
+  claimed_at: number | null;
+  claimed_by_id: string | null;
   _status: SyncStatus;
 };
 
@@ -162,6 +165,9 @@ const MIGRATIONS = [
   UPDATE waypoints SET _edited = '|kind|name|latitude|longitude|note|' WHERE _status = 'updated' OR (_status = 'rejected' AND _rejected_was = 'updated');
   UPDATE observations SET _edited = '|status|' WHERE _status = 'updated' OR (_status = 'rejected' AND _rejected_was = 'updated');
   UPDATE rides SET _edited = '|name|' WHERE _status = 'updated' OR (_status = 'rejected' AND _rejected_was = 'updated');`,
+  // "I've got it": who is riding out to an open problem, so two hands don't both go
+  `ALTER TABLE observations ADD COLUMN claimed_at INTEGER;
+  ALTER TABLE observations ADD COLUMN claimed_by_id TEXT;`,
 ];
 
 let database: SQLite.SQLiteDatabase | null = null;
@@ -257,7 +263,7 @@ export function newId(): string {
 export type PlaceChoice = { waypointId: string } | { create: { kind: WaypointKind; name: string } } | null;
 
 export async function createObservation(
-  observation: Omit<Observation, 'id' | '_status' | 'member_id' | 'waypoint_id' | 'resolved_at' | 'resolved_by_id'>,
+  observation: Omit<Observation, 'id' | '_status' | 'member_id' | 'waypoint_id' | 'resolved_at' | 'resolved_by_id' | 'claimed_at' | 'claimed_by_id'>,
   photoId: string | null,
   memberId: string,
   place: PlaceChoice = null,
@@ -301,12 +307,31 @@ const STATUS_EDIT = touch(['status']);
 
 // Resolving (or reopening) is an edit like any other: it syncs up, and the last write wins.
 // Who and when are stamped here, on the phone, so they're right even with no signal.
+// Reopening also lets go of any claim: whoever had it thought it was handled.
 export async function setObservationStatus(id: string, status: ObservationStatus, memberId: string): Promise<void> {
   const resolved = status === 'resolved';
+  const reopened = status === 'open';
   await write((conn) =>
     conn.runAsync(
-      `UPDATE observations SET status = ?, resolved_at = ?, resolved_by_id = ?, ${STATUS_EDIT} WHERE id = ?`,
-      status, resolved ? Date.now() : null, resolved ? memberId : null, id,
+      `UPDATE observations SET status = ?, resolved_at = ?, resolved_by_id = ?,
+         claimed_by_id = CASE WHEN ? THEN NULL ELSE claimed_by_id END, claimed_at = CASE WHEN ? THEN NULL ELSE claimed_at END,
+         ${reopened ? REOPEN_EDIT : STATUS_EDIT}
+       WHERE id = ?`,
+      status, resolved ? Date.now() : null, resolved ? memberId : null, reopened ? 1 : 0, reopened ? 1 : 0, id,
+    ),
+  );
+}
+
+const REOPEN_EDIT = touch(['status', 'claimed_by_id']);
+const CLAIM_EDIT = touch(['claimed_by_id']);
+
+// "I've got it", or letting it go (memberId null). Taking over from another hand is the same edit: the last
+// one to say so has it. Only claimed_by_id is named as edited; the server stamps it with whoever pushed.
+export async function claimObservation(id: string, memberId: string | null): Promise<void> {
+  await write((conn) =>
+    conn.runAsync(
+      `UPDATE observations SET claimed_by_id = ?, claimed_at = ?, ${CLAIM_EDIT} WHERE id = ?`,
+      memberId, memberId ? Date.now() : null, id,
     ),
   );
 }

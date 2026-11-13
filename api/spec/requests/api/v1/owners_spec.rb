@@ -67,6 +67,40 @@ RSpec.describe "Owners", type: :request do
     expect(Ranch.count).to eq(1)
   end
 
+  describe "with Apple" do
+    let(:identity) { AppleIdentity.new(sub: "apple-456", email: "relay@privaterelay.appleid.com", name: "Bob Roberts") }
+
+    before { allow(AppleIdentity).to receive(:verify).with("apple-token", name: "Bob Roberts").and_return(identity) }
+
+    it "starts a ranch for a new owner" do
+      post "/api/v1/owners", params: { apple_identity_token: "apple-token", name: "Bob Roberts", ranch_name: "Bar T" }, as: :json
+
+      expect(response).to have_http_status(:created)
+      expect(Member.sole).to have_attributes(role: "owner", name: "Bob Roberts", email: "relay@privaterelay.appleid.com", apple_sub: "apple-456", google_sub: nil)
+      expect(Ranch.sole.name).to eq("Bar T")
+    end
+
+    it "signs a returning owner back in, when Apple no longer sends their name" do
+      owner = create(:member, role: :owner, apple_sub: "apple-456")
+      allow(AppleIdentity).to receive(:verify).with("apple-token", name: nil).and_return(identity.with(name: "Owner"))
+
+      post "/api/v1/owners", params: { apple_identity_token: "apple-token" }, as: :json
+
+      expect(response).to have_http_status(:ok)
+      expect(json["token"]).to eq(owner.device_token)
+      expect(owner.reload.name).to eq("Jess")
+    end
+
+    it "rejects a token Apple didn't sign" do
+      allow(AppleIdentity).to receive(:verify).and_raise(AppleIdentity::Invalid)
+
+      post "/api/v1/owners", params: { apple_identity_token: "forged" }, as: :json
+
+      expect(response).to have_http_status(:unauthorized)
+      expect(Ranch.count).to eq(0)
+    end
+  end
+
   it "shortens a Google name too long for a pin" do
     payload["name"] = "Bartholomew #{"x" * 80}"
 

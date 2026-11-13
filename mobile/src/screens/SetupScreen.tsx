@@ -1,11 +1,13 @@
 import { isErrorWithCode, statusCodes } from '@react-native-google-signin/google-signin';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
+import * as AppleAuthentication from 'expo-apple-authentication';
 import { BackHandler, KeyboardAvoidingView, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
 
-import { ApiError, joinRanch, startRanch, type Joined } from '../api';
+import { ApiError, joinRanch, startRanch, startRanchWithApple, type Joined } from '../api';
+import { appleSignIn, appleSignInAvailable } from '../apple';
 import AppButton from '../components/AppButton';
 import GoogleMark from '../components/GoogleMark';
 import Icon from '../components/Icon';
@@ -62,14 +64,23 @@ export default function SetupScreen({ notice = null, onJoined }: { notice?: stri
     onJoined(device);
   }
 
+  const provider = appleSignInAvailable ? 'Apple' : 'Google';
+
   async function start() {
     setBusy(true);
     setError(null);
     try {
-      const idToken = await googleIdToken();
-      if (!idToken) return;
       const url = serverUrl();
-      const result = await startRanch(url, idToken, ranchName.trim());
+      let result: Joined;
+      if (appleSignInAvailable) {
+        const apple = await appleSignIn();
+        if (!apple) return;
+        result = await startRanchWithApple(url, apple.identityToken, apple.name, ranchName.trim());
+      } else {
+        const idToken = await googleIdToken();
+        if (!idToken) return;
+        result = await startRanch(url, idToken, ranchName.trim());
+      }
       // A returning owner who already set headquarters goes straight to the map
       if (result.ranch.headquarters) await finish(toDevice(url, result));
       else setPlacing(toDevice(url, result));
@@ -77,9 +88,9 @@ export default function SetupScreen({ notice = null, onJoined }: { notice?: stri
       if (isErrorWithCode(e) && e.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
         setError('Google sign-in needs Google Play services on this phone.');
       } else if (e instanceof ApiError) {
-        setError(e.status === 401 ? "Google didn't vouch for that account. Try again, or pick another." : `The server had a problem (${e.status}). Try again in a minute.`);
+        setError(e.status === 401 ? `${provider} didn't vouch for that account. Try again, or pick another.` : `The server had a problem (${e.status}). Try again in a minute.`);
       } else {
-        setError("Can't reach Google or the server. Starting a ranch needs signal once; after that the app works without it.");
+        setError(`Can't reach ${provider} or the server. Starting a ranch needs signal once; after that the app works without it.`);
       }
     } finally {
       setBusy(false);
@@ -183,17 +194,28 @@ export default function SetupScreen({ notice = null, onJoined }: { notice?: stri
 
               {error && <ErrorBox text={error} />}
 
-              <Pressable
-                onPress={start}
-                disabled={busy}
-                accessibilityRole="button"
-                accessibilityState={{ disabled: busy }}
-                style={({ pressed }) => [styles.google, pressed && styles.pressed, busy && styles.disabled]}
-              >
-                <GoogleMark size={22} />
-                <Text style={styles.googleText}>{busy ? 'Signing in…' : 'Continue with Google'}</Text>
-              </Pressable>
-              <Text style={styles.fine}>Google only signs you in. We never post or read your mail.</Text>
+              {appleSignInAvailable ? (
+                // Apple's own button, as its guidelines require; it can't be restyled or disabled, so start() guards itself
+                <AppleAuthentication.AppleAuthenticationButton
+                  buttonType={AppleAuthentication.AppleAuthenticationButtonType.CONTINUE}
+                  buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
+                  cornerRadius={12}
+                  style={[styles.apple, busy && styles.disabled]}
+                  onPress={() => !busy && start()}
+                />
+              ) : (
+                <Pressable
+                  onPress={start}
+                  disabled={busy}
+                  accessibilityRole="button"
+                  accessibilityState={{ disabled: busy }}
+                  style={({ pressed }) => [styles.google, pressed && styles.pressed, busy && styles.disabled]}
+                >
+                  <GoogleMark size={22} />
+                  <Text style={styles.googleText}>{busy ? 'Signing in…' : 'Continue with Google'}</Text>
+                </Pressable>
+              )}
+              <Text style={styles.fine}>{provider} only signs you in. We never post or read your mail.</Text>
             </>
           )}
 
@@ -356,6 +378,7 @@ const styles = StyleSheet.create({
     minHeight: touch.primary, borderRadius: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12,
     backgroundColor: palette.white, borderWidth: 1, borderColor: 'rgba(23, 27, 24, 0.22)',
   },
+  apple: { height: touch.primary },
   googleText: { fontSize: 18, fontWeight: '700', color: '#1F1F1F' },
   fine: { fontSize: 13, color: colors.textMuted, textAlign: 'center', marginTop: space.xs },
   pressed: { opacity: 0.8 },

@@ -28,7 +28,7 @@ const MEMBER_COLUMNS = ['id', 'name', 'role', 'removed'] as const;
 const WAYPOINT_COLUMNS = ['id', 'member_id', 'kind', 'name', 'latitude', 'longitude', 'note'] as const;
 const OBSERVATION_COLUMNS = [
   'id', 'member_id', 'kind', 'latitude', 'longitude', 'accuracy', 'observed_at', 'tag_number', 'note', 'status', 'waypoint_id',
-  'resolved_at', 'resolved_by_id',
+  'resolved_at', 'resolved_by_id', 'claimed_at', 'claimed_by_id',
 ] as const;
 const RIDE_COLUMNS = ['id', 'member_id', 'started_at', 'ended_at', 'distance_meters', 'track', 'name'] as const;
 const PHOTO_COLUMNS = ['id', 'observation_id', 'uploaded_at'] as const;
@@ -175,7 +175,8 @@ async function applyRemote<T extends Record<string, unknown>>(
   // rest, and stays unsent: the push that follows sends just the edited fields, so both sides end up the same.
   // Who resolved it and when ride along with status: the server decides them from the status this phone sends,
   // so until that push lands the phone keeps its own, or a pull would blank "Resolved by you" in between.
-  const tracks = (c: string) => (c === 'resolved_at' || c === 'resolved_by_id' ? 'status' : c);
+  // When it was claimed rides with who claimed it, the same way.
+  const tracks = (c: string) => (c === 'resolved_at' || c === 'resolved_by_id' ? 'status' : c === 'claimed_at' ? 'claimed_by_id' : c);
   const mine = (c: string) => (merges ? `(${table}._status = 'updated' AND instr(${table}._edited, '|${tracks(c)}|') > 0)` : '0');
   const assignments = fields.map((c) => `${c} = CASE WHEN ${mine(c)} THEN ${table}.${c} ELSE excluded.${c} END`);
   // Every pull re-sends the last few minutes of changes and the whole crew, on purpose. A row that would end
@@ -369,37 +370,84 @@ async function uploadPhotos(device: Device, run: Run): Promise<PhotoPass> {
   return pass;
 }
 
+// A ranch's whole photo history is too much to pull over one bar of signal, and most of it is settled business.
+// A sync brings down the photos of what's still open and of anything from the last while; an older one is
+// fetched when someone opens it (fetchPhoto).
+export const PHOTO_KEEP_DAYS = 30;
+
 async function downloadPhotos(device: Device, run: Run): Promise<PhotoPass> {
-  const remote = await db().getAllAsync<Photo>(`SELECT * FROM photos WHERE uploaded_at IS NOT NULL AND _status = 'synced'`);
+  // Open problems first, then newest first, so a short window of signal brings what the next ride needs
+  const remote = await db().getAllAsync<Photo>(
+    `SELECT photos.* FROM photos JOIN observations ON observations.id = photos.observation_id
+     WHERE photos.uploaded_at IS NOT NULL AND photos._status = 'synced'
+       AND (observations.status = 'open' OR observations.observed_at >= ?)
+     ORDER BY (observations.status = 'open') DESC, observations.observed_at DESC`,
+    Date.now() - PHOTO_KEEP_DAYS * 24 * 60 * 60 * 1000,
+  );
   const pass: PhotoPass = { moved: 0, problem: null };
   let failures = 0;
 
   for (const photo of remote) {
-    const destination = photoFile(photo.id);
-    if (destination.exists) continue;
+    if (photoFile(photo.id).exists) continue;
     guard(run);
 
-    // Into a .part file first, moved into place only once it's whole: a download cut off halfway (signal
-    // dropped, app killed) must not sit under the real name looking finished
-    const partial = partialPhotoFile(photo.id);
-    const limit = deadline(PHOTO_TIMEOUT_MS, run.controller.signal);
     try {
-      if (partial.exists) partial.delete();
-      await File.downloadFileAsync(photoFileUrl(device, photo.id), partial, { headers: authHeader(device), signal: limit.signal, idempotent: true });
+      await downloadPhoto(device, photo.id, run.controller.signal);
       guard(run);
-      await partialPhotoFile(photo.id).move(destination);
-      photoArrived(photo.id);
       pass.moved++;
       failures = 0;
     } catch (error) {
-      const leftover = partialPhotoFile(photo.id);
-      if (leftover.exists) leftover.delete();
       if (stopsRun(run, error)) throw error;
-      pass.problem = `A photo didn't download. ${errorText(limit.timedOut() ? new TimeoutError() : error)}`;
+      pass.problem = `A photo didn't download. ${errorText(error)}`;
       if (++failures >= MAX_PHOTO_FAILURES) break;
-    } finally {
-      limit.clear();
     }
   }
   return pass;
+}
+
+// Downloads in flight by photo id, so a sync and an opened screen never write the same file at once
+const downloading = new Map<string, Promise<void>>();
+
+function downloadPhoto(device: Device, photoId: string, outer?: AbortSignal): Promise<void> {
+  const inFlight = downloading.get(photoId);
+  if (inFlight) return inFlight;
+
+  const task = (async () => {
+    // Into a .part file first, moved into place only once it's whole: a download cut off halfway (signal
+    // dropped, app killed) must not sit under the real name looking finished
+    const partial = partialPhotoFile(photoId);
+    const limit = deadline(PHOTO_TIMEOUT_MS, outer);
+    try {
+      if (partial.exists) partial.delete();
+      await File.downloadFileAsync(photoFileUrl(device, photoId), partial, { headers: authHeader(device), signal: limit.signal, idempotent: true });
+      // Left the ranch while it was coming down: the photos folder has been cleared and must stay that way
+      if (outer?.aborted || retired.has(keyOf(device))) throw new SyncCancelled();
+      await partialPhotoFile(photoId).move(photoFile(photoId));
+      photoArrived(photoId);
+    } catch (error) {
+      const leftover = partialPhotoFile(photoId);
+      if (leftover.exists) leftover.delete();
+      throw limit.timedOut() ? new TimeoutError() : error;
+    } finally {
+      limit.clear();
+      downloading.delete(photoId);
+    }
+  })();
+  downloading.set(photoId, task);
+  return task;
+}
+
+// An older photo, when someone opens the observation it belongs to. True once it's on this phone; false when
+// it can't be had right now (no signal, not uploaded yet), which the screen says in its own words.
+export async function fetchPhoto(device: Device, photoId: string): Promise<boolean> {
+  if (photoFile(photoId).exists) return true;
+  if (retired.has(keyOf(device))) return false;
+  const photo = await db().getFirstAsync<Photo>(`SELECT * FROM photos WHERE id = ? AND uploaded_at IS NOT NULL AND _status = 'synced'`, photoId);
+  if (!photo) return false;
+  try {
+    await downloadPhoto(device, photoId);
+    return true;
+  } catch {
+    return false;
+  }
 }

@@ -7,6 +7,8 @@ Rails.application.routes.draw do
       resources :devices, only: :create
       # The phone's own membership: deleting it leaves the ranch
       resource :device, only: :destroy
+      # Where to send this phone the crew's news
+      resource :push_token, only: %i[update destroy]
       resources :members, only: :destroy
       # Deleting your account: a hand is forgotten, an owner takes the ranch with them
       resource :account, only: :destroy
