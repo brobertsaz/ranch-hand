@@ -107,6 +107,13 @@ a { color: inherit; }
 .quick-row input { flex: 1 1 220px; width: auto; background: #F5EFE0; color: #171B18; border-color: transparent; }
 .quick-row .btn { flex: 0 0 auto; }
 .quick .error { color: #F08C7E; }
+.quick-phone { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 4px; }
+.quick-phone legend { float: left; margin: 0 6px 0 0; font-size: 0.9rem; font-weight: 500; color: var(--on-pine-muted); }
+.quick-phone legend span { font-weight: 400; }
+.quick-phone label { display: inline-flex; align-items: center; min-height: 44px; padding: 0 16px; border-radius: 999px; box-shadow: inset 0 0 0 1.5px var(--pine-line); color: var(--on-pine); font-size: 0.95rem; font-weight: 500; cursor: pointer; }
+.quick-phone input { position: absolute; opacity: 0; pointer-events: none; }
+.quick-phone label:has(input:checked) { background: var(--harvest); color: #101713; box-shadow: none; }
+.quick-phone label:has(input:focus-visible) { outline: 3px solid var(--focus); outline-offset: 3px; }
 .quick-thanks { display: grid; gap: 6px; max-width: 520px; margin-top: 34px; padding: 18px 20px; border-radius: 12px; background: var(--pine-soft); box-shadow: inset 0 0 0 1px var(--pine-line); }
 .quick-thanks a { color: var(--harvest); font-weight: 600; }
 .hero .note { font-size: 0.95rem; color: var(--on-pine-muted); margin-top: 14px; max-width: 48ch; }
@@ -361,7 +368,7 @@ footer.site .brand svg { width: 26px; height: 28px; }
 
     <div class="hero-grid">
       <div>
-        <p class="eyebrow">For working cattle ranches</p>
+        <p class="eyebrow" id="hero-eyebrow">For working cattle ranches</p>
         <h1>Mark it once. <span class="tag">Anyone can find it.</span></h1>
         <p class="lede">Out in the brush you almost have to step on a sick calf to find it again. Snap it and pin it in seconds, even with no signal. Whoever rides out next gets the photo and an arrow straight to it, and the owner sees what the crew found today and what's still open.</p>
         <form class="quick" id="quick" novalidate>
@@ -370,13 +377,19 @@ footer.site .brand svg { width: 26px; height: 28px; }
             <input id="quick-email" name="email" type="email" autocomplete="email" inputmode="email" placeholder="you@example.com" required>
             <button class="btn" type="submit">Get early access</button>
           </div>
+          <fieldset class="quick-phone">
+            <legend>Your crew's phones <span>(optional)</span></legend>
+            <label><input type="radio" name="phone" value="iphone">iPhone</label>
+            <label><input type="radio" name="phone" value="android">Android</label>
+            <label><input type="radio" name="phone" value="both">Both</label>
+          </fieldset>
           <span id="quick-err" class="error" role="alert" hidden></span>
         </form>
         <div id="quick-thanks" class="quick-thanks" role="status" hidden>
           <b>You're on the list.</b>
           <span>We'll email you when the beta opens. Got 30 seconds? <a href="#join">Tell us about your crew</a>.</span>
         </div>
-        <p class="note"><b>Free for your ranch.</b> One owner and up to three hands, free forever. Android first, iPhone next.</p>
+        <p class="note"><b>Free for your ranch.</b> One owner and up to three hands, free forever. For iPhone and Android. Ranches on this list get the first beta spots.</p>
         <div class="proof">
           <span><b>Under 10 s</b> to pin it</span>
           <span><b>No signal</b> needed in the pasture</span>
@@ -537,7 +550,7 @@ footer.site .brand svg { width: 26px; height: 28px; }
       <div>
         <p class="eyebrow">Early access</p>
         <h2 id="join-h" style="margin-top:12px">Test it on your ranch</h2>
-        <p class="lede" id="join-lede">Only your email is needed; the rest helps us build it for your crew. Android crews get a Play Store test link when the beta opens, and iPhone crews hear first when theirs is ready.</p>
+        <p class="lede" id="join-lede">Only your email is needed; the rest helps us build it for your crew. Ranches on this list get the first beta spots, with a test link for iPhone or Android.</p>
         <p class="fine price">Free for one owner and up to three hands, forever. Bigger crews pay $19.99 a month per ranch, any size. Founding ranches lock in $199 a year for as long as they stay.</p>
       </div>
 
@@ -580,7 +593,7 @@ footer.site .brand svg { width: 26px; height: 28px; }
         <div id="thanks" class="thanks" hidden>
           <span class="dot"></span>
           <h3>You're in</h3>
-          <p id="thanks-note">Thanks. We'll email you a Play Store test link for Android.</p>
+          <p id="thanks-note">Thanks. We'll email you a test link when the beta opens.</p>
         </div>
       </div>
     </div>
@@ -642,6 +655,9 @@ const WAITLIST_ENDPOINT = "https://ranch.thebob.dev/api/v1/signups";
 const linkParams = new URLSearchParams(location.search);
 const SIGNUP_SOURCE = linkParams.get("src") || linkParams.get("utm_source") || "";
 
+// Readers from Walt Cooley's article arrive on ?src=cowtech; greet them instead of the usual eyebrow
+if (SIGNUP_SOURCE === "cowtech") document.getElementById("hero-eyebrow").textContent = "Welcome, Cow Tech Report readers";
+
 const EMAIL_OK = /^\S+@\S+\.\S+$/;
 
 // Sends the answers; true when the API took them. With no endpoint (a preview) nothing is sent.
@@ -676,12 +692,14 @@ quick.addEventListener("submit", async (e) => {
   e.preventDefault();
   quickErr.hidden = true;
   const email = quick.elements.email.value.trim();
+  const phone = quick.elements.phone.value;
   if (!EMAIL_OK.test(email)) {
     showError(quickErr, "Add a working email so we can reach you.");
     quick.elements.email.focus();
     return;
   }
-  if (!(await sendSignup({ email }))) {
+  // Send phone only when picked, so an earlier answer is never blanked
+  if (!(await sendSignup(phone ? { email, phone } : { email }))) {
     showError(quickErr, "That didn't go through. Check your connection and try again.");
     return;
   }
@@ -689,8 +707,9 @@ quick.addEventListener("submit", async (e) => {
   document.getElementById("quick-thanks").hidden = false;
   // Step 2 is the form at the bottom, now only the optional crew questions
   form.elements.email.value = email;
+  if (phone) form.elements.phone.value = phone;
   document.getElementById("join-h").textContent = "You're on the list. Tell us about your crew";
-  document.getElementById("join-lede").textContent = "All optional. It takes about 30 seconds and tells us which phones to build for first.";
+  document.getElementById("join-lede").textContent = "All optional. It takes about 30 seconds and tells us what to build first.";
   form.querySelector("button").textContent = "Send my answers";
 });
 
@@ -707,12 +726,11 @@ form.addEventListener("submit", async (e) => {
     showError(err, "That didn't go through. Check your connection and try again.");
     return;
   }
-  // Android (or both) can test first; iPhone-only crews wait for the iPhone build
   const phone = form.elements.phone.value;
   document.getElementById("thanks-note").textContent =
-    phone === "iphone" ? "Thanks. We'll tell you as soon as the iPhone version is ready."
-    : phone ? "Thanks. We'll email you a Play Store test link for Android when the beta opens."
-    : "Thanks. We'll email you when the beta opens.";
+    phone === "iphone" ? "Thanks. We'll email you a TestFlight link for iPhone when the beta opens."
+    : phone === "android" ? "Thanks. We'll email you a Play Store test link for Android when the beta opens."
+    : "Thanks. We'll email you a test link when the beta opens.";
   form.hidden = true;
   thanks.hidden = false;
 });
