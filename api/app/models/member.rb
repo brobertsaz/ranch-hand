@@ -3,6 +3,7 @@ class Member < ApplicationRecord
   has_many :observations, dependent: :restrict_with_error
   has_many :waypoints, dependent: :restrict_with_error
   has_many :rides, dependent: :restrict_with_error
+  has_many :pastures, dependent: :restrict_with_error
   has_many :devices, dependent: :delete_all
 
   enum :role, { owner: "owner", hand: "hand" }, validate: true

@@ -36,7 +36,7 @@ type Props = {
   onClose: () => void;
 };
 
-const PROBLEM_LABEL: Record<SyncProblem['table'], string> = { waypoints: 'place', observations: 'pin', photos: 'photo', rides: 'ride' };
+const PROBLEM_LABEL: Record<SyncProblem['table'], string> = { waypoints: 'place', observations: 'pin', photos: 'photo', rides: 'ride', pastures: 'pasture' };
 
 // "2 pins: Not allowed" — one line per reason, so ten records refused for the same thing don't fill the screen
 function describeProblems(problems: SyncProblem[]): string[] {

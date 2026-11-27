@@ -33,6 +33,15 @@ export const HELP: HelpSection[] = [
           'Tap the X next to an area to stop it or take it off the list.',
         ],
       },
+      {
+        title: 'Put a pasture on the map',
+        steps: [
+          'On the Rides tab, tap Start a ride, then ride the pasture\'s fence line all the way round.',
+          'Stop the ride, open it on the map and tap Make it a pasture. Give it the name the crew uses.',
+          'The fence shows on everyone\'s map with the name in the middle, and the whole pasture gets sharp aerial photos once it syncs.',
+          'Standing in a pasture, tap the find-me button and the map shows all of it, fence to fence.',
+        ],
+      },
     ],
   },
   {

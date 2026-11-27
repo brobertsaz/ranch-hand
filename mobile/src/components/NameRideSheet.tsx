@@ -12,10 +12,26 @@ type Props = {
   suggestions: string[];
   onSave: (name: string) => void;
   onSkip: () => void;
+  // The same sheet names a pasture made from a ride; these default to the ride's words
+  title?: string;
+  hint?: string;
+  // A warning above the name, e.g. that the ride didn't come back to where it started
+  notice?: string | null;
+  placeholder?: string;
+  saveTitle?: string;
+  skipTitle?: string;
 };
 
 // Asked when a ride stops (and from the ride card), so the crew can find it to follow later
-export default function NameRideSheet({ visible, initialName, suggestions, onSave, onSkip }: Props) {
+export default function NameRideSheet({
+  visible, initialName, suggestions, onSave, onSkip,
+  title = 'Name this ride',
+  hint = 'So the crew can pick it out and follow it. You can skip this.',
+  notice = null,
+  placeholder = 'North pasture via the creek gate',
+  saveTitle = 'Save name',
+  skipTitle = 'Skip',
+}: Props) {
   const insets = useSafeAreaInsets();
   const [name, setName] = useState(initialName);
 
@@ -23,8 +39,9 @@ export default function NameRideSheet({ visible, initialName, suggestions, onSav
     <Modal visible={visible} transparent animationType="slide" statusBarTranslucent navigationBarTranslucent onRequestClose={onSkip} onShow={() => setName(initialName)}>
       <KeyboardAvoidingView behavior="padding" style={styles.backdrop}>
         <View style={[styles.sheet, { paddingBottom: insets.bottom + space.lg }]}>
-          <Text style={styles.title} accessibilityRole="header">Name this ride</Text>
-          <Text style={styles.hint}>So the crew can pick it out and follow it. You can skip this.</Text>
+          <Text style={styles.title} accessibilityRole="header">{title}</Text>
+          <Text style={styles.hint}>{hint}</Text>
+          {notice ? <Text style={styles.notice}>{notice}</Text> : null}
 
           {suggestions.length > 0 && (
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips} keyboardShouldPersistTaps="handled">
@@ -39,18 +56,18 @@ export default function NameRideSheet({ visible, initialName, suggestions, onSav
           <TextInput
             value={name}
             onChangeText={setName}
-            placeholder="North pasture via the creek gate"
-            placeholderTextColor={colors.textMuted}
+            placeholder={placeholder}
+            placeholderTextColor={colors.placeholder}
             maxLength={80}
             returnKeyType="done"
             onSubmitEditing={() => name.trim() && onSave(name)}
-            accessibilityLabel="Ride name"
+            accessibilityLabel={title}
             style={styles.input}
           />
 
           <View style={styles.actions}>
-            <AppButton variant="ghost" title="Skip" onPress={onSkip} style={styles.flex} />
-            <AppButton title="Save name" onPress={() => onSave(name)} disabled={!name.trim()} style={styles.flex} />
+            <AppButton variant="ghost" title={skipTitle} onPress={onSkip} style={styles.flex} />
+            <AppButton title={saveTitle} onPress={() => onSave(name)} disabled={!name.trim()} style={styles.flex} />
           </View>
         </View>
       </KeyboardAvoidingView>
@@ -65,7 +82,11 @@ const styles = StyleSheet.create({
     paddingTop: space.xl, paddingHorizontal: space.lg, gap: 12,
   },
   title: { fontFamily: fonts.display, fontSize: 30, color: colors.text },
-  hint: { fontSize: 15, color: colors.textMuted },
+  hint: { fontSize: 15, lineHeight: 21, color: colors.textMuted },
+  notice: {
+    fontSize: 15, lineHeight: 21, fontWeight: '600', color: colors.warnText, backgroundColor: colors.warnBackground,
+    borderRadius: radius.md, overflow: 'hidden', paddingVertical: 10, paddingHorizontal: 12,
+  },
   chips: { gap: space.sm },
   chip: {
     minHeight: touch.min, paddingHorizontal: 16, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.border,

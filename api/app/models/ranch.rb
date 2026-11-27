@@ -5,6 +5,7 @@ class Ranch < ApplicationRecord
   has_many :observations, dependent: :destroy
   has_many :rides, dependent: :destroy
   has_many :waypoints, dependent: :destroy
+  has_many :pastures, dependent: :destroy
   has_many :map_areas, dependent: :destroy
   has_many :members, dependent: :destroy
 

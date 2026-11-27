@@ -20,6 +20,8 @@ module Api
         end
         RenderMapAreaJob.perform_later(area)
         render json: area_json(area), status: :created
+      rescue MapArea::SwappedBox => e
+        render json: { error: e.message }, status: :unprocessable_content
       rescue ArgumentError, TypeError
         render json: { error: "Bounds must be numbers" }, status: :unprocessable_content
       end
@@ -36,6 +38,8 @@ module Api
           source_name: area.imagery.name, max_zoom: area.max_zoom, estimated_tiles: area.estimated_tiles,
           estimated_megabytes: area.estimated_megabytes, estimated_minutes: area.estimated_minutes
         )
+      rescue MapArea::SwappedBox => e
+        render json: { error: e.message }, status: :unprocessable_content
       rescue ArgumentError, TypeError
         render json: { error: "Bounds must be numbers" }, status: :unprocessable_content
       end
