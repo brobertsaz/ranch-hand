@@ -3,7 +3,7 @@ import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import type { Observation, Waypoint } from '../db';
 import { relativeTo, timeAgo, type LngLat } from '../format';
 import { KIND_INFO, WAYPOINT_INFO } from '../kinds';
-import { colors, fonts, shadow, space } from '../theme';
+import { colors, fonts, shadow, space, textSize } from '../theme';
 import Icon from './Icon';
 
 // 72 photo + 2 × 10 padding
@@ -54,7 +54,7 @@ type PlacePeekProps = {
 
 export function PlacePeekCard({ waypoint, latest, photoUri, author, here, bottom, onPress }: PlacePeekProps) {
   const info = WAYPOINT_INFO[waypoint.kind];
-  const where = here ? relativeTo(here, [waypoint.longitude, waypoint.latitude]) : 'Fixed place';
+  const where = here ? relativeTo(here, [waypoint.longitude, waypoint.latitude]) : 'A place that stays put';
   const status = latest
     ? [latest.note ?? 'Checked', latest.status === 'resolved' && 'resolved', timeAgo(latest.observed_at), author]
         .filter(Boolean)
@@ -92,7 +92,7 @@ const styles = StyleSheet.create({
   peekPlace: { borderRadius: 6 },
   peekText: { flex: 1, gap: 3, minWidth: 0 },
   peekMeta: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
-  peekBadge: { fontSize: 12, fontWeight: '800', letterSpacing: 0.3, borderRadius: 4, overflow: 'hidden', paddingVertical: 2, paddingHorizontal: 7 },
+  peekBadge: { fontSize: textSize.badge, fontWeight: '800', letterSpacing: 0.3, borderRadius: 4, overflow: 'hidden', paddingVertical: 2, paddingHorizontal: 7 },
   peekTitle: { fontFamily: fonts.display, fontSize: 24, lineHeight: 25, color: colors.text },
-  peekSmall: { fontSize: 13, color: colors.textMuted },
+  peekSmall: { fontSize: textSize.meta, color: colors.textMuted },
 });

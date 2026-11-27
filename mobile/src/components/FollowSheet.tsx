@@ -6,7 +6,7 @@ import Svg, { Path } from 'react-native-svg';
 import type { Waypoint } from '../db';
 import { bearingDegrees, formatDistance, type LngLat } from '../format';
 import { WAYPOINT_INFO } from '../kinds';
-import { colors, fonts, palette, space, sync, touch } from '../theme';
+import { colors, fonts, palette, space, sync, textSize, touch } from '../theme';
 import { cumulative, locateOnTrack, ON_TRAIL_METERS, placesOnTrail } from '../trail';
 import { turnHint, useArrowRotation, useHeading } from '../useHeading';
 import Icon from './Icon';
@@ -131,18 +131,18 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 22, borderTopRightRadius: 22, paddingTop: 12, paddingHorizontal: space.lg, gap: 14,
   },
   grabber: { alignSelf: 'center', width: 40, height: 5, borderRadius: 3, backgroundColor: 'rgba(245, 239, 224, 0.3)' },
-  label: { fontSize: 13, fontWeight: '700', letterSpacing: 1, color: colors.chromeTextMuted },
+  label: { fontSize: textSize.badge, fontWeight: '700', letterSpacing: 1, color: colors.chromeTextMuted },
   title: { fontFamily: fonts.display, fontSize: 30, lineHeight: 32, color: colors.chromeText },
   status: { flexDirection: 'row', alignItems: 'center', gap: 14 },
   flex: { flex: 1, gap: 2 },
   dial: {
     width: 84, height: 84, borderRadius: 42, backgroundColor: colors.chromeRaised,
-    borderWidth: 2, borderColor: 'rgba(245, 239, 224, 0.15)', alignItems: 'center', justifyContent: 'center',
+    borderWidth: 2, borderColor: colors.chromeBorder, alignItems: 'center', justifyContent: 'center',
   },
   dialOn: { backgroundColor: sync.synced, borderColor: sync.synced },
   headline: { fontFamily: fonts.displayBlack, fontSize: 32, lineHeight: 34, color: colors.chromeText },
   subline: { fontSize: 16, fontWeight: '700', color: colors.chromeText },
-  meta: { fontSize: 13, color: colors.chromeTextMuted },
+  meta: { fontSize: textSize.meta, color: colors.chromeTextMuted },
   places: { backgroundColor: colors.chromeRaised, borderRadius: 12, paddingVertical: 4, paddingHorizontal: 12 },
   place: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 10 },
   placeIcon: { width: 28, height: 28, borderRadius: 5, alignItems: 'center', justifyContent: 'center' },

@@ -11,6 +11,7 @@ import Chip from '../components/Chip';
 import LayersSheet from '../components/LayersSheet';
 import { PEEK_HEIGHT, PeekCard, PlacePeekCard } from '../components/PeekCard';
 import Pin from '../components/Pin';
+import SavedBanner from '../components/SavedBanner';
 import SyncPill from '../components/SyncPill';
 import FollowSheet from '../components/FollowSheet';
 import LocationDot from '../components/LocationDot';
@@ -32,7 +33,7 @@ import { unregisterFromPush, usePush } from '../push';
 import { fetchPhoto, stopSync } from '../sync';
 import { cumulative, placesOnTrail } from '../trail';
 import { forgetDevice, mapStyleUrl, type Device } from '../settings';
-import { colors, fonts, isDark, palette, radius, shadow, space, touch } from '../theme';
+import { colors, fonts, isDark, palette, radius, shadow, space, textSize, touch } from '../theme';
 import { areaBounds, areaOutlines, deleteOfflinePacks, useOfflineMaps } from '../useOfflineMaps';
 import { useRideState } from '../useRideState';
 import { signedOutText, useSync } from '../useSync';
@@ -83,6 +84,8 @@ export default function MapScreen({ device, onSignOut }: Props) {
   const [details, setDetails] = useState<string[]>([]);
   const [tab, setTab] = useState<Tab>('map');
   const [capturing, setCapturing] = useState(false);
+  // When the last pin was dropped, while its "saved" banner is up
+  const [savedAt, setSavedAt] = useState<number | null>(null);
   const capture = useRef<CaptureHandle>(null);
   const [layersOpen, setLayersOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
@@ -392,7 +395,7 @@ export default function MapScreen({ device, onSignOut }: Props) {
       id = await createWaypoint({ ...fields, longitude: adding.at[0], latitude: adding.at[1] }, device.memberId);
     } catch {
       // The sheet stays up with what was typed
-      return Alert.alert("Couldn't save the place", 'The phone had trouble saving it. Try again.');
+      return Alert.alert("Couldn't save the place", "The phone couldn't write it down, so nothing changed. Try again. If it keeps failing, check the phone isn't out of storage.");
     }
     setAdding(null);
     setDraft(null);
@@ -805,6 +808,9 @@ export default function MapScreen({ device, onSignOut }: Props) {
           onLayout={(e) => setSheetHeight(e.nativeEvent.layout.height)}
         />
       )}
+      {savedAt !== null && !placing && (
+        <SavedBanner savedAt={savedAt} online={syncState.online} bottom={bottomInset + 12} onHide={() => setSavedAt(null)} />
+      )}
       {!riding && !following && !placing && (
         <TabBar
           active={tab}
@@ -829,6 +835,7 @@ export default function MapScreen({ device, onSignOut }: Props) {
               if (saved) {
                 setTab('map');
                 centerOnMe();
+                setSavedAt(Date.now());
                 syncState.syncNow();
               }
             }}
@@ -942,7 +949,7 @@ const TOPO_PAINT = isDark
   : { 'raster-saturation': -0.35, 'raster-contrast': -0.08, 'raster-brightness-max': 0.93 };
 const TOPO_WASH = { 'fill-color': isDark ? palette.pine : palette.leather, 'fill-opacity': isDark ? 0.25 : 0.16 };
 // Aerial just gets warmer and a touch darker, like late-afternoon light, so white pins and labels pop
-const AERIAL_WASH = { 'fill-color': isDark ? palette.pine : '#4A3418', 'fill-opacity': isDark ? 0.3 : 0.14 };
+const AERIAL_WASH = { 'fill-color': isDark ? palette.pine : palette.aerialWash, 'fill-opacity': isDark ? 0.3 : 0.14 };
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.chrome },
@@ -953,7 +960,7 @@ const styles = StyleSheet.create({
   },
   headerText: { flex: 1, gap: 1 },
   ranch: { fontFamily: fonts.display, fontSize: 26, lineHeight: 28, color: colors.chromeText },
-  counts: { fontSize: 13, color: colors.chromeTextMuted },
+  counts: { fontSize: textSize.meta, color: colors.chromeTextMuted },
   chips: { gap: space.sm },
   controls: { position: 'absolute', right: 12, gap: space.sm },
   controlBadge: {
@@ -978,9 +985,9 @@ const styles = StyleSheet.create({
   filterLabelOn: { color: palette.pine, fontWeight: '800' },
   control: { width: touch.min, height: touch.min, borderRadius: 14, backgroundColor: colors.chrome, alignItems: 'center', justifyContent: 'center' },
   alsoHere: { position: 'absolute', left: 12, right: 12 },
-  alsoHereLabel: { alignSelf: 'center', color: palette.white, fontSize: 13, fontWeight: '800', textShadowColor: 'rgba(0, 0, 0, 0.7)', textShadowRadius: 4 },
+  alsoHereLabel: { alignSelf: 'center', color: palette.white, fontSize: textSize.meta, fontWeight: '800', textShadowColor: 'rgba(0, 0, 0, 0.7)', textShadowRadius: 4 },
   rideCardTitle: { fontFamily: fonts.display, fontSize: 24, lineHeight: 25, color: colors.text },
-  rideCardSmall: { fontSize: 13, color: colors.textMuted },
+  rideCardSmall: { fontSize: textSize.meta, color: colors.textMuted },
   rideCard: {
     ...shadow, position: 'absolute', left: 12, right: 12, backgroundColor: colors.surface, borderRadius: 16,
     paddingVertical: 12, paddingLeft: 16, paddingRight: 8, flexDirection: 'row', alignItems: 'flex-start', gap: 8,
@@ -988,6 +995,6 @@ const styles = StyleSheet.create({
   rideCardText: { flex: 1, gap: 2 },
   rideCardActions: { flexDirection: 'row', alignItems: 'center', gap: space.sm, marginTop: 6 },
   rideCardClose: { width: touch.min, height: touch.min, alignItems: 'center', justifyContent: 'center' },
-  areaLabel: { backgroundColor: 'rgba(16, 23, 19, 0.82)', borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 4, maxWidth: 180 },
-  areaLabelText: { color: palette.canvas, fontSize: 13, fontWeight: '700' },
+  areaLabel: { backgroundColor: colors.chromeScrim, borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 4, maxWidth: 180 },
+  areaLabelText: { color: palette.canvas, fontSize: textSize.meta, fontWeight: '700' },
 });

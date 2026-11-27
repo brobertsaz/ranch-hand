@@ -8,13 +8,14 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import AppButton from '../components/AppButton';
 import Icon from '../components/Icon';
-import { createObservation, liveWaypoints, newId, normalizeTag, type Kind, type PlaceChoice, type Waypoint } from '../db';
+import { createObservation, getState, KINDS, liveWaypoints, newId, normalizeTag, setState, type Kind, type PlaceChoice, type Waypoint } from '../db';
+import { buzzSuccess, buzzTap } from '../haptics';
 import { clockParts, formatDistance } from '../format';
 import { composeNote, initialStatus, nearestPlace, nextPlaceName, PLACE_KIND, WAYPOINT_INFO } from '../kinds';
 import { locate, type Located } from '../locate';
 import { keepPhoto, photoFile, shrinkPhoto } from '../photoFiles';
 import { tagHint } from '../tags';
-import { colors, fonts, palette, sync, touch } from '../theme';
+import { colors, fonts, palette, radius, sync, textSize, touch } from '../theme';
 import TagScreen, { type Fix, type PlaceMode } from './TagScreen';
 import { useNow } from '../useNow';
 
@@ -25,6 +26,9 @@ type Props = { memberId: string; onDone: (saved: boolean) => void; ref?: Ref<Cap
 
 // When Save has to ask the sky again, it waits this long, not locate's full 20 s: the hand is standing there
 const SAVE_LOCATE_MS = 10_000;
+
+// sync_state key for the kind this phone logged last
+const LAST_KIND = 'last_kind';
 
 export default function CaptureScreen({ memberId, onDone, ref }: Props) {
   const [permission, requestPermission] = useCameraPermissions();
@@ -37,7 +41,9 @@ export default function CaptureScreen({ memberId, onDone, ref }: Props) {
   const [staleFix, setStaleFix] = useState(false);
   const [step, setStep] = useState<'camera' | 'tag'>('camera');
   const [photo, setPhoto] = useState<{ id: string; uri: string } | null>(null);
-  const [kind, setKind] = useState<Kind>('sick_animal');
+  // Starts on whatever this phone logged last (a ride checking water logs water after water). Never a guess on
+  // a first log: with nothing picked, the pin can't drop as the wrong kind.
+  const [kind, setKind] = useState<Kind | null>(null);
   const [tagNumber, setTagNumber] = useState('');
   const [picks, setPicks] = useState<string[]>([]);
   const [note, setNote] = useState('');
@@ -57,9 +63,15 @@ export default function CaptureScreen({ memberId, onDone, ref }: Props) {
 
   useEffect(() => {
     liveWaypoints().then(setWaypoints);
+    getState(LAST_KIND)
+      .then((last) => {
+        // Only if nothing's been tapped in the meantime
+        if (last && (KINDS as readonly string[]).includes(last)) setKind((current) => current ?? (last as Kind));
+      })
+      .catch(() => {});
   }, []);
 
-  const placeKind = PLACE_KIND[kind];
+  const placeKind = kind ? PLACE_KIND[kind] : null;
   const nearby = placeKind && fix && fix !== 'pending' ? nearestPlace(waypoints, placeKind, [fix.coords.longitude, fix.coords.latitude]) : null;
   const newPlaceName = placeKind ? nextPlaceName(waypoints, placeKind) : '';
   const mode: PlaceMode = placeMode ?? (nearby ? 'existing' : 'new');
@@ -107,6 +119,7 @@ export default function CaptureScreen({ memberId, onDone, ref }: Props) {
       if (!picture) return;
       const id = newId();
       const file = await keepPhoto(await shrinkPhoto(picture.uri), id);
+      buzzTap();
       setPhoto({ id, uri: file.uri });
       setStep('tag');
     } catch {
@@ -154,7 +167,7 @@ export default function CaptureScreen({ memberId, onDone, ref }: Props) {
   }
 
   async function save() {
-    if (saving) return;
+    if (saving || !kind) return;
     setSaving(true);
     try {
       const result = await fixForSave();
@@ -183,9 +196,12 @@ export default function CaptureScreen({ memberId, onDone, ref }: Props) {
         memberId,
         placeChoice(),
       );
+      buzzSuccess();
+      // The next log starts here. Losing this is harmless, so it never holds up the save.
+      setState(LAST_KIND, kind).catch(() => {});
       onDone(true);
     } catch {
-      Alert.alert("Couldn't save", 'The phone had trouble saving this. Your photo and notes are still here. Tap Drop the pin again.');
+      Alert.alert("Couldn't save", "The phone couldn't write this pin down. Your photo and notes are still here: tap Drop the pin again. If it keeps failing, check the phone isn't out of storage.");
     } finally {
       setSaving(false);
     }
@@ -337,14 +353,15 @@ const styles = StyleSheet.create({
   bottomLeft: { left: 0, bottom: 0, borderLeftWidth: 4, borderBottomWidth: 4, borderBottomLeftRadius: 8 },
   bottomRight: { right: 0, bottom: 0, borderRightWidth: 4, borderBottomWidth: 4, borderBottomRightRadius: 8 },
   topRow: { position: 'absolute', left: 12, right: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  close: { width: touch.round, height: touch.round, borderRadius: touch.round / 2, backgroundColor: 'rgba(16, 23, 19, 0.75)', alignItems: 'center', justifyContent: 'center' },
+  close: { width: touch.round, height: touch.round, borderRadius: touch.round / 2, backgroundColor: colors.chromeScrim, alignItems: 'center', justifyContent: 'center' },
   pills: { flexDirection: 'row', gap: 8 },
-  pill: { height: 36, paddingHorizontal: 12, borderRadius: 999, backgroundColor: 'rgba(16, 23, 19, 0.82)', flexDirection: 'row', alignItems: 'center', gap: 7 },
+  // Read-only status, not buttons; minHeight so large text grows the pill instead of clipping it
+  pill: { minHeight: 40, paddingVertical: 6, paddingHorizontal: 12, borderRadius: radius.pill, backgroundColor: colors.chromeScrim, flexDirection: 'row', alignItems: 'center', gap: 7 },
   dot: { width: 9, height: 9, borderRadius: 5 },
-  pillText: { color: colors.chromeText, fontSize: 14, fontWeight: '700' },
+  pillText: { color: colors.chromeText, fontSize: textSize.meta, fontWeight: '700' },
   hintRow: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
   hint: {
-    backgroundColor: 'rgba(16, 23, 19, 0.82)', color: colors.chromeText, borderRadius: 999, overflow: 'hidden',
+    backgroundColor: colors.chromeScrim, color: colors.chromeText, borderRadius: radius.pill, overflow: 'hidden',
     paddingVertical: 10, paddingHorizontal: 18, fontFamily: fonts.display, fontSize: 20,
   },
   shutterBar: {
@@ -360,5 +377,5 @@ const styles = StyleSheet.create({
   shutterInner: { flex: 1, borderRadius: touch.shutter / 2, backgroundColor: palette.trail },
   clock: { minWidth: 88, alignItems: 'flex-end' },
   clockTime: { fontFamily: fonts.display, fontSize: 22, color: colors.chromeText, textAlign: 'center' },
-  clockCaption: { fontSize: 12, color: colors.chromeTextMuted, textAlign: 'center' },
+  clockCaption: { fontSize: textSize.meta, color: colors.chromeTextMuted, textAlign: 'center' },
 });

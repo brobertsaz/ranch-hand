@@ -15,7 +15,7 @@ import { signedOutText, type SyncState } from '../useSync';
 
 const THEME_MODES: { mode: ThemeMode; label: string }[] = [
   { mode: 'light', label: 'Light' },
-  { mode: 'dark', label: 'Dark' },
+  { mode: 'dark', label: 'Night Ride' },
   { mode: 'auto', label: 'Auto' },
 ];
 
@@ -135,7 +135,7 @@ export default function SettingsScreen({ ranchName, sync, onHelp, onLeave, onSig
                 </Pressable>
               ))}
             </View>
-            <Text style={styles.hint}>Light reads best in the sun, Dark before sunup and after dark. Auto follows your phone. Switching restarts the app.</Text>
+            <Text style={styles.hint}>Light reads best in the sun. Night Ride is for before sunup and after dark. Auto follows your phone. Switching restarts the app.</Text>
           </View>
         </View>
 

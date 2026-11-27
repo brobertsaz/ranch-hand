@@ -13,10 +13,12 @@ function connection() {
 export function readThemeMode(): ThemeMode {
   try {
     const row = connection().getFirstSync<{ value: string }>('SELECT value FROM sync_state WHERE key = ?', KEY);
-    return row?.value === 'light' || row?.value === 'dark' ? row.value : 'auto';
+    // Light until someone picks otherwise: most use is outdoors in daylight, and the phone's own dark setting
+    // (often on all day) would hand them the night look at noon
+    return row?.value === 'dark' || row?.value === 'auto' ? row.value : 'light';
   } catch {
     // First launch, before the tables exist
-    return 'auto';
+    return 'light';
   }
 }
 

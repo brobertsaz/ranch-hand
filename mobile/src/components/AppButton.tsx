@@ -3,7 +3,8 @@ import { Pressable, StyleSheet, Text, type StyleProp, type ViewStyle } from 'rea
 
 import { colors, fonts, palette, radius, touch } from '../theme';
 
-type Variant = 'primary' | 'secondary' | 'ghost' | 'chrome';
+// success: something dealt with (Mark resolved). Red stays for problems and the one main action.
+type Variant = 'primary' | 'secondary' | 'success' | 'ghost' | 'chrome';
 
 type Props = {
   title: string;
@@ -45,8 +46,9 @@ const styles = StyleSheet.create({
   large: { minHeight: touch.primary, borderRadius: 12, gap: 10 },
   primary: { backgroundColor: colors.primary },
   secondary: { backgroundColor: colors.secondary },
+  success: { backgroundColor: colors.success },
   ghost: { backgroundColor: 'transparent', borderWidth: 1, borderColor: colors.input },
-  chrome: { backgroundColor: colors.chromeRaised, borderWidth: 1, borderColor: 'rgba(245, 239, 224, 0.2)' },
+  chrome: { backgroundColor: colors.chromeRaised, borderWidth: 1, borderColor: colors.chromeBorder },
   pressed: { opacity: 0.8 },
   disabled: { opacity: 0.45 },
   label: { fontSize: 17, fontWeight: '700' },
@@ -56,6 +58,7 @@ const styles = StyleSheet.create({
 const labelStyles = StyleSheet.create({
   primary: { color: colors.primaryText },
   secondary: { color: colors.secondaryText },
+  success: { color: colors.successText },
   ghost: { color: colors.text },
   chrome: { color: palette.canvas },
 });

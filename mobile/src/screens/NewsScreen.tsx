@@ -10,7 +10,7 @@ import { getState, onDatabaseChange } from '../db';
 import { timeAgo } from '../format';
 import { useMemberNames, who } from '../members';
 import { crewNews, dayLabel, isNew, markNewsSeen, newsSeenAt, type NewsItem } from '../news';
-import { colors, fonts, palette, space, touch } from '../theme';
+import { colors, fonts, palette, radius, space, textSize, touch } from '../theme';
 import type { SyncState } from '../useSync';
 import { useNow } from '../useNow';
 
@@ -66,9 +66,10 @@ export default function NewsScreen({ memberId, ranchName, sync, onOpenObservatio
           </Pressable>
         }
         stats={[
-          { value: String(newCount), label: 'New' },
+          // Since this phone last opened the tab, so it can be 0 above a list of today's news
+          { value: String(newCount), label: 'New to you' },
           { value: String(openCount), label: 'Open', alert: openCount > 0 },
-          { value: String(fixedToday), label: 'Fixed today' },
+          { value: String(fixedToday), label: 'Resolved today' },
         ]}
       />
 
@@ -118,7 +119,7 @@ export default function NewsScreen({ memberId, ranchName, sync, onOpenObservatio
                 </View>
                 <View style={styles.rowEnd}>
                   {item.status === 'open' && <Stamp label="Open" tone="open" />}
-                  {item.status === 'resolved' && <Stamp label="Fixed" tone="done" tilt={3} />}
+                  {item.status === 'resolved' && <Stamp label="Resolved" tone="done" tilt={3} />}
                   {fresh && <View style={styles.newDot} accessibilityLabel="New" />}
                 </View>
               </Pressable>
@@ -134,7 +135,7 @@ const styles = StyleSheet.create({
   screen: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, backgroundColor: colors.background },
   flex: { flex: 1, gap: 2 },
   syncButton: {
-    minHeight: touch.round, paddingHorizontal: 14, borderRadius: 999, borderWidth: 1, borderColor: 'rgba(245, 239, 224, 0.3)',
+    minHeight: touch.round, paddingHorizontal: 14, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.chromeBorder,
     flexDirection: 'row', alignItems: 'center', gap: 8,
   },
   syncButtonText: { color: colors.chromeText, fontSize: 14, fontWeight: '700' },
@@ -144,7 +145,7 @@ const styles = StyleSheet.create({
     padding: 12, flexDirection: 'row', alignItems: 'center', gap: 12,
   },
   waitingTitle: { fontSize: 15, fontWeight: '700', color: colors.text },
-  waitingDetail: { fontSize: 13, color: colors.warnText },
+  waitingDetail: { fontSize: textSize.meta, color: colors.warnText },
   empty: { fontSize: 15, lineHeight: 21, color: colors.textMuted, paddingHorizontal: 4, paddingTop: space.sm },
   dayRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 4, marginHorizontal: 2 },
   day: { fontFamily: fonts.display, fontSize: 16, letterSpacing: 2.4, color: colors.textMuted },

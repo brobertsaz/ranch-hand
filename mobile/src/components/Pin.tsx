@@ -1,6 +1,6 @@
 import { StyleSheet, View } from 'react-native';
 
-import { palette, touch } from '../theme';
+import { palette, shadow, touch } from '../theme';
 import Icon, { type IconName } from './Icon';
 
 type Props = {
@@ -47,7 +47,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     elevation: 6,
-    shadowColor: '#000',
+    shadowColor: shadow.shadowColor,
     shadowOpacity: 0.4,
     shadowRadius: 4,
     shadowOffset: { width: 0, height: 3 },

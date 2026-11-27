@@ -10,7 +10,7 @@ import AppButton from '../components/AppButton';
 import Logo from '../components/Logo';
 import { locate } from '../locate';
 import { mapStyleUrl, type Device } from '../settings';
-import { colors, fonts, palette, radius, space, touch } from '../theme';
+import { colors, fonts, palette, radius, shadow, space, touch } from '../theme';
 
 // Middle of the lower 48, for an owner who won't share their location: they zoom in from there
 const US_CENTER: [number, number] = [-98.6, 39.8];
@@ -220,7 +220,7 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.chrome },
   mapArea: { flex: 1, backgroundColor: palette.pine },
   pinWrap: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, alignItems: 'center', justifyContent: 'center' },
-  pin: { marginBottom: PIN_HEIGHT, shadowColor: '#000', shadowOpacity: 0.4, shadowRadius: 6, shadowOffset: { width: 0, height: 3 } },
+  pin: { marginBottom: PIN_HEIGHT, shadowColor: shadow.shadowColor, shadowOpacity: 0.4, shadowRadius: 6, shadowOffset: { width: 0, height: 3 } },
   card: { position: 'absolute', left: space.md, right: space.md, backgroundColor: colors.chrome, borderRadius: radius.lg, padding: space.lg, gap: space.xs },
   title: { fontFamily: fonts.displayBlack, fontSize: 30, lineHeight: 32, color: palette.canvas },
   text: { fontSize: 16, lineHeight: 22, color: colors.chromeTextMuted },

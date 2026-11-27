@@ -15,7 +15,7 @@ import Logo from '../components/Logo';
 import { canStartRanch, googleIdToken } from '../google';
 import { DEFAULT_API_URL, saveDevice, type Device } from '../settings';
 import HeadquartersScreen from './HeadquartersScreen';
-import { colors, fonts, palette, radius, space, touch } from '../theme';
+import { colors, fonts, palette, radius, space, textSize, touch } from '../theme';
 
 // Matches Ranch#hand_limit's default on the server.
 // shortcut: the "ranch is full" message assumes the free limit, upgrade to reading hand_limit from the 403 body once paid plans exist
@@ -371,7 +371,8 @@ const styles = StyleSheet.create({
   badge: { backgroundColor: palette.harvest, borderRadius: radius.pill, paddingHorizontal: 14, paddingVertical: 6, marginTop: space.sm },
   badgeText: { fontFamily: fonts.displayBlack, fontSize: 17, letterSpacing: 1.6, color: palette.pine },
   panel: { flex: 1, paddingHorizontal: space.lg, paddingTop: space.xl, gap: space.sm },
-  back: { flexDirection: 'row', alignItems: 'center', gap: 2, alignSelf: 'flex-start', minHeight: 32, marginBottom: space.xs },
+  // 40 tall plus hitSlop 8 all round: the full 56 for a gloved thumb
+  back: { flexDirection: 'row', alignItems: 'center', gap: 2, alignSelf: 'flex-start', minHeight: 40, paddingRight: space.md },
   backText: { fontSize: 15, fontWeight: '700', color: colors.textMuted },
   choice: { minHeight: 96, borderRadius: radius.lg, padding: space.lg, flexDirection: 'row', alignItems: 'center', gap: space.md, marginBottom: space.sm },
   choiceStart: { backgroundColor: colors.primary },
@@ -385,7 +386,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface, color: colors.text, fontSize: 17,
   },
   codeInput: { fontFamily: fonts.displayBlack, fontSize: 30, letterSpacing: 2, minHeight: 60 },
-  hint: { fontSize: 13, color: colors.textMuted },
+  hint: { fontSize: textSize.meta, color: colors.textMuted },
   perks: { backgroundColor: colors.surfaceSunken, borderRadius: radius.lg, padding: space.lg, gap: space.sm, marginVertical: space.md },
   perk: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
   perkText: { flex: 1, fontSize: 16, fontWeight: '600', color: colors.text },
@@ -395,7 +396,7 @@ const styles = StyleSheet.create({
   },
   apple: { height: touch.primary },
   googleText: { fontSize: 18, fontWeight: '700', color: '#1F1F1F' },
-  fine: { fontSize: 13, color: colors.textMuted, textAlign: 'center', marginTop: space.xs },
+  fine: { fontSize: textSize.meta, color: colors.textMuted, textAlign: 'center', marginTop: space.xs },
   pressed: { opacity: 0.8 },
   disabled: { opacity: 0.45 },
   error: { backgroundColor: colors.dangerBackground, borderRadius: radius.md, padding: 12, marginVertical: space.sm },

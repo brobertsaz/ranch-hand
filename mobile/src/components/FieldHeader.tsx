@@ -3,7 +3,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { G, Path } from 'react-native-svg';
 
-import { colors, fonts, palette, space } from '../theme';
+import { colors, fonts, palette, space, textSize } from '../theme';
 
 type Stat = { value: string; label: string; alert?: boolean };
 
@@ -69,9 +69,9 @@ const styles = StyleSheet.create({
   eyebrowRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space.md, minHeight: 44 },
   eyebrow: { flex: 1, fontFamily: fonts.display, fontSize: 15, letterSpacing: 2.4, color: palette.harvest },
   title: { fontFamily: fonts.displayBlack, fontSize: 58, lineHeight: 56, color: colors.chromeText, includeFontPadding: false },
-  stats: { flexDirection: 'row', borderTopWidth: 1, borderTopColor: 'rgba(245, 239, 224, 0.2)', paddingTop: 12, marginTop: 2 },
+  stats: { flexDirection: 'row', borderTopWidth: 1, borderTopColor: colors.chromeBorder, paddingTop: 12, marginTop: 2 },
   stat: { flex: 1, gap: 2 },
   statValue: { fontFamily: fonts.displayBlack, fontSize: 38, lineHeight: 40, color: colors.chromeText, fontVariant: ['tabular-nums'] },
   statAlert: { color: palette.trail },
-  statLabel: { fontSize: 12, fontWeight: '800', letterSpacing: 1.2, color: colors.chromeTextMuted },
+  statLabel: { fontSize: textSize.badge, fontWeight: '800', letterSpacing: 1.2, color: colors.chromeTextMuted },
 });

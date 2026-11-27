@@ -42,7 +42,7 @@ export default function SyncPill({ state, unsynced, onPress }: { state: SyncStat
 const styles = StyleSheet.create({
   syncPill: {
     height: touch.round, paddingHorizontal: 16, borderRadius: radius.pill, flexDirection: 'row', alignItems: 'center', gap: 8,
-    borderWidth: 1, borderColor: 'rgba(245, 239, 224, 0.2)', backgroundColor: colors.chromeRaised,
+    borderWidth: 1, borderColor: colors.chromeBorder, backgroundColor: colors.chromeRaised,
   },
   syncPillWarn: { borderColor: 'rgba(227, 163, 59, 0.5)', backgroundColor: 'rgba(227, 163, 59, 0.14)' },
   // Its own look, so a failed sync can't be mistaken for "waiting for signal"

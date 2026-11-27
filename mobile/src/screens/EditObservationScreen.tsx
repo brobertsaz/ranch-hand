@@ -63,7 +63,7 @@ export default function EditObservationScreen({ observation, canDelete, onDone }
       await updateObservation(observation.id, next);
       onDone(Object.keys(next).length > 0 ? 'saved' : 'cancelled');
     } catch {
-      Alert.alert("Couldn't save that", 'The phone had trouble saving. Try again.');
+      Alert.alert("Couldn't save that", "The phone couldn't write that down, so nothing changed. Try again. If it keeps failing, check the phone isn't out of storage.");
     } finally {
       setSaving(false);
     }
@@ -80,7 +80,7 @@ export default function EditObservationScreen({ observation, canDelete, onDone }
             await deleteObservation(observation.id);
             onDone('deleted');
           } catch {
-            Alert.alert("Couldn't delete that", 'The phone had trouble saving. Try again.');
+            Alert.alert("Couldn't delete that", "The phone couldn't write that down, so nothing changed. Try again. If it keeps failing, check the phone isn't out of storage.");
           }
         },
       },

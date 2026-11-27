@@ -8,7 +8,7 @@ import { observationsOfTag, onDatabaseChange, type Observation } from '../db';
 import { dayAndTime, timeAgo } from '../format';
 import { KIND_INFO, STATUS_LABEL, splitNote } from '../kinds';
 import { useMemberNames, who } from '../members';
-import { colors, fonts, palette, space, sync, touch } from '../theme';
+import { colors, fonts, palette, space, sync, textSize, touch } from '../theme';
 
 // "Fri 4:45 PM" this week; further back the weekday alone could be any week, so "Oct 24 · 5:45 PM"
 function sightingDate(ms: number, now = Date.now()): string {
@@ -118,10 +118,10 @@ const styles = StyleSheet.create({
   rowPressed: { opacity: 0.7 },
   rowText: { flex: 1, gap: 3 },
   rowTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 },
-  when: { fontSize: 13, fontWeight: '800', letterSpacing: 0.6, color: colors.textMuted },
+  when: { fontSize: textSize.badge, fontWeight: '800', letterSpacing: 0.6, color: colors.textMuted },
   status: { fontFamily: fonts.display, fontSize: 14, letterSpacing: 1.2, color: colors.textMuted },
   statusOpen: { color: sync.failed },
   what: { fontFamily: fonts.display, fontSize: 22, lineHeight: 24, color: colors.text },
   note: { fontSize: 15, lineHeight: 20, color: colors.text },
-  meta: { fontSize: 13, color: colors.textMuted },
+  meta: { fontSize: textSize.meta, color: colors.textMuted },
 });

@@ -84,7 +84,11 @@ export default function RidesScreen({ memberId, riding, onStart, onBackToRide, o
           <Text style={styles.subheading} accessibilityRole="header">RECENT RIDES</Text>
           <View style={styles.rule} />
         </View>
-        {rides.length === 0 && <Text style={styles.empty}>No rides yet.</Text>}
+        {rides.length === 0 && (
+          <Text style={styles.empty}>
+            No rides yet. Tap Start a ride before you head out: it draws your track as you go, with or without signal, and the crew can follow it later.
+          </Text>
+        )}
         {rides.map((ride) => (
           <Pressable key={ride.id} onPress={() => onShowRide(ride.id)} accessibilityRole="button" accessibilityHint="Shows the track on the map" style={styles.ride}>
             <View style={styles.rideIcon}>
@@ -116,7 +120,7 @@ const styles = StyleSheet.create({
   subheadingRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: space.sm },
   subheading: { fontFamily: fonts.display, fontSize: 16, letterSpacing: 2.4, color: colors.textMuted },
   rule: { flex: 1, height: 1, backgroundColor: colors.border },
-  empty: { fontSize: 15, color: colors.textMuted },
+  empty: { fontSize: 15, lineHeight: 21, color: colors.textMuted },
   ride: {
     minHeight: 88, flexDirection: 'row', alignItems: 'center', gap: 14, padding: 10,
     backgroundColor: colors.surface, borderRadius: 16, borderBottomWidth: 2, borderBottomColor: colors.hairline,

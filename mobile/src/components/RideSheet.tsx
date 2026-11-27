@@ -4,7 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { formatClock, formatDistance, formatDuration, type LngLat } from '../format';
 import { lastFix, trackDistance, type ActiveRide } from '../rides';
-import { colors, fonts, palette, radius, space, touch } from '../theme';
+import { colors, fonts, palette, radius, space, textSize, touch } from '../theme';
 import Icon from './Icon';
 import { useNow } from '../useNow';
 
@@ -127,12 +127,12 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 22, borderTopRightRadius: 22, paddingTop: 12, paddingHorizontal: space.lg, gap: space.lg,
   },
   grabber: { alignSelf: 'center', width: 40, height: 5, borderRadius: 3, backgroundColor: 'rgba(245, 239, 224, 0.3)' },
-  label: { fontSize: 13, fontWeight: '700', letterSpacing: 1, color: colors.chromeTextMuted },
+  label: { fontSize: textSize.badge, fontWeight: '700', letterSpacing: 1, color: colors.chromeTextMuted },
   clock: { fontFamily: fonts.displayBlack, fontSize: 72, lineHeight: 72, color: colors.chromeText, fontVariant: ['tabular-nums'] },
   stats: { flexDirection: 'row', gap: 1, backgroundColor: 'rgba(245, 239, 224, 0.14)', borderRadius: 12, overflow: 'hidden' },
   stat: { flex: 1, backgroundColor: colors.chromeRaised, padding: 12, gap: 2 },
   statValue: { fontFamily: fonts.display, fontSize: 28, lineHeight: 30, color: colors.chromeText },
-  statLabel: { fontSize: 12, color: colors.chromeTextMuted },
+  statLabel: { fontSize: textSize.meta, color: colors.chromeTextMuted },
   actions: { flexDirection: 'row', gap: 10 },
   stop: {
     flex: 1, height: touch.primary, borderRadius: 12, borderWidth: 2, borderColor: 'rgba(245, 239, 224, 0.4)',

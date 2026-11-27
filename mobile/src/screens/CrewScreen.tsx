@@ -11,7 +11,7 @@ import { db, getState, markMemberRemoved, onDatabaseChange, setState, type Membe
 import { timeAgo } from '../format';
 import { initials, useIsOwner } from '../members';
 import type { Device } from '../settings';
-import { colors, fonts, palette, space, touch } from '../theme';
+import { colors, fonts, palette, space, textSize, touch } from '../theme';
 import { useNow } from '../useNow';
 
 type CrewMember = Member & { logged: number; lastOut: number | null };
@@ -245,7 +245,7 @@ const styles = StyleSheet.create({
   avatarText: { color: palette.white, fontFamily: fonts.displayBlack, fontSize: 22 },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
   name: { fontFamily: fonts.display, fontSize: 24, lineHeight: 26, color: colors.text },
-  you: { fontSize: 11, fontWeight: '800', letterSpacing: 0.5, color: palette.white, backgroundColor: palette.leather, borderRadius: 4, overflow: 'hidden', paddingHorizontal: 6, paddingVertical: 1 },
-  role: { fontSize: 11, fontWeight: '800', letterSpacing: 0.5, color: colors.textMuted, borderWidth: 1, borderColor: colors.border, borderRadius: 4, paddingHorizontal: 6, paddingVertical: 1 },
+  you: { fontSize: textSize.badge, fontWeight: '800', letterSpacing: 0.5, color: palette.white, backgroundColor: palette.leather, borderRadius: 4, overflow: 'hidden', paddingHorizontal: 6, paddingVertical: 1 },
+  role: { fontSize: textSize.badge, fontWeight: '800', letterSpacing: 0.5, color: colors.textMuted, borderWidth: 1, borderColor: colors.border, borderRadius: 4, paddingHorizontal: 6, paddingVertical: 1 },
   meta: { fontSize: 14, color: colors.textMuted },
 });
