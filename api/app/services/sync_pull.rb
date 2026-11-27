@@ -25,7 +25,8 @@ class SyncPull
         waypoints: changes_for(@ranch.waypoints),
         observations: changes_for(@ranch.observations),
         photos: changes_for(@ranch.photos),
-        rides: changes_for(@ranch.rides)
+        rides: changes_for(@ranch.rides),
+        pastures: changes_for(@ranch.pastures)
       },
       timestamp: timestamp
     }

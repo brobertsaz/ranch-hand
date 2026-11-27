@@ -16,7 +16,7 @@ class SyncPush
   class Rejected < StandardError; end
 
   # parents before children: observations point at waypoints, photos at observations
-  TABLES = { "waypoints" => Waypoint, "observations" => Observation, "photos" => Photo, "rides" => Ride }.freeze
+  TABLES = { "waypoints" => Waypoint, "observations" => Observation, "photos" => Photo, "rides" => Ride, "pastures" => Pasture }.freeze
   LISTS = %w[created updated deleted].freeze
   # Set by the server when the status changes (see credit_resolver), so never merged in by name
   SERVER_SET_FIELDS = %w[resolved_at resolved_by_id].freeze
@@ -184,6 +184,8 @@ class SyncPush
     case record
     when Waypoint then @member.owner?
     when Observation then @member.owner? || record.member_id == @member.id
+    # Whoever rode the fence, or the owner
+    when Pasture then @member.owner? || record.member_id == @member.id
     else true
     end
   end

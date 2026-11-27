@@ -49,6 +49,8 @@ class RenderMapAreaJob < ApplicationJob
     else
       map_area.update!(status: :failed, error: "#{failures.size} tiles failed, e.g. #{failures.pop}")
     end
+    # A pasture that arrived while the ranch had two renders going had to wait; this render's slot is free now
+    map_area.ranch.pastures.live.each(&:sharpen)
   rescue StandardError => error
     # Anything outside the per-tile rescue (the database, a source that's gone) would otherwise leave the area
     # "rendering" for good, with the app's progress bar stuck. update_all so a broken record can still be marked.

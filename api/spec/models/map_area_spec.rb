@@ -14,10 +14,10 @@ RSpec.describe MapArea do
     expect(RenderMapAreaJob).to have_been_enqueued.with(waiting)
   end
 
-  it "pads a box by about 400 m on every side" do
+  it "pads a box by about half a mile on every side" do
     padded = described_class.padded(west: -89.46, south: 43.0, east: -89.45, north: 43.01)
 
-    expect((43.0 - padded[:south]) * described_class::METERS_PER_DEGREE).to be_within(1).of(400)
+    expect((43.0 - padded[:south]) * described_class::METERS_PER_DEGREE).to be_within(1).of(800)
     expect(padded[:east] - -89.45).to be > (43.0 - padded[:south])
   end
 

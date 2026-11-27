@@ -16,6 +16,19 @@ RSpec.describe RenderMapAreaJob do
     expect(area.tiles).to all(satisfy { |tile| NaipTiles.stored?(*tile) })
   end
 
+  it "gives a pasture that was waiting for a free render slot its turn" do
+    allow(NaipTiles).to receive(:fetch).and_return("jpeg")
+    member = create(:member, ranch: area.ranch)
+    create(:map_area, ranch: area.ranch, status: :rendering, west: -100, east: -99.999, south: 40, north: 40.001)
+    area.update!(status: :rendering)
+    # Far from both areas, and created while both render slots were taken
+    pasture = create(:pasture, member: member, outline: [ [ -95.0, 41.0 ], [ -94.999, 41.0 ], [ -94.999, 41.001 ], [ -95.0, 41.0 ] ])
+    expect(area.ranch.map_areas.where(name: pasture.name)).not_to exist
+
+    expect { described_class.perform_now(area) }.to have_enqueued_job(described_class)
+    expect(area.ranch.map_areas.where(name: pasture.name)).to exist
+  end
+
   it "skips tiles already stored, so a rerun resumes" do
     NaipTiles.storage.upload(NaipTiles.key(18, 65931, 96321), StringIO.new("old"))
     allow(NaipTiles).to receive(:fetch).and_return("jpeg")

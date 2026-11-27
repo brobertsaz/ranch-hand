@@ -20,7 +20,12 @@ import NameRideSheet from '../components/NameRideSheet';
 import PlaceSheet, { type PlaceFields } from '../components/PlaceSheet';
 import RideSheet, { ModePill } from '../components/RideSheet';
 import TabBar, { useTabBarHeight, type Tab } from '../components/TabBar';
-import { clearRanchData, createWaypoint, getState, KINDS, onDatabaseChange, updateWaypoint, liveObservations, liveRides, liveWaypoints, observationsAt, photosFor, setState, type Kind, type Observation, type Ride, type Waypoint } from '../db';
+import {
+  clearRanchData, createPasture, createWaypoint, deletePasture, getState, KINDS, livePastures, onDatabaseChange, renamePasture, updateWaypoint,
+  liveObservations, liveRides, liveWaypoints, observationsAt, photosFor, setState, type Kind, type Observation, type Pasture, type Ride, type Waypoint,
+} from '../db';
+import { buzzSuccess } from '../haptics';
+import { acresOf, boundsOf, formatAcres, labelPoint, nextPastureName, outlineFromTrack, parseOutline, pastureAt, type Outline } from '../pasture';
 import { dayAndTime, distanceMeters, formatDistance, formatDuration, type LngLat } from '../format';
 import { endPoint, lineString } from '../geojson';
 import { useIsOwner, useMemberNames, who } from '../members';
@@ -84,6 +89,14 @@ export default function MapScreen({ device, onSignOut }: Props) {
   const [details, setDetails] = useState<string[]>([]);
   const [tab, setTab] = useState<Tab>('map');
   const [capturing, setCapturing] = useState(false);
+  const [pastures, setPastures] = useState<Pasture[]>([]);
+  // The pasture whose card is up
+  const [pastureId, setPastureId] = useState<string | null>(null);
+  // A ride being turned into a pasture, waiting for its name
+  const [makingPasture, setMakingPasture] = useState<{ suggestion: string | null; outline: Outline } | null>(null);
+  const [renamingPasture, setRenamingPasture] = useState<Pasture | null>(null);
+  // The map opens on the whole pasture the phone is standing in, once, and then leaves the view to the hand
+  const framedPasture = useRef(false);
   // When the last pin was dropped, while its "saved" banner is up
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const capture = useRef<CaptureHandle>(null);
@@ -127,6 +140,7 @@ export default function MapScreen({ device, onSignOut }: Props) {
     liveObservations().then(setObservations);
     liveWaypoints().then(setWaypoints);
     liveRides().then(setRides);
+    livePastures().then(setPastures);
     Promise.all([crewNews(device.memberId), newsSeenAt()]).then(([items, seenAt]) => setNewsCount(items.filter((i) => isNew(i, seenAt)).length));
   }, [device.memberId]);
 
@@ -134,7 +148,7 @@ export default function MapScreen({ device, onSignOut }: Props) {
     reload();
     // Only the tables the map draws, gathered up: a first sync or a ride's GPS points would otherwise
     // reload every pin once per row
-    const sub = onDatabaseChange(['observations', 'waypoints', 'rides'], reload);
+    const sub = onDatabaseChange(['observations', 'waypoints', 'rides', 'pastures'], reload);
     // No fix (location off, or a phone that never had one): open on the newest pin so the crew's work is in view
     Location.requestForegroundPermissionsAsync()
       .then(({ granted }) => (granted ? Location.getLastKnownPositionAsync() : null))
@@ -247,6 +261,28 @@ export default function MapScreen({ device, onSignOut }: Props) {
     return [last && `To ${last}`, first && last && first !== last && `${first} to ${last}`].filter((x): x is string => !!x);
   }, [naming, waypoints]);
 
+  const pastureShapes = useMemo(
+    () => pastures.map((pasture) => ({ pasture, ring: parseOutline(pasture) })).filter(({ ring }) => ring.length >= 4),
+    [pastures],
+  );
+  const pastureFeatures = useMemo<GeoJSON.FeatureCollection<GeoJSON.Polygon>>(
+    () => ({
+      type: 'FeatureCollection',
+      features: pastureShapes.map(({ pasture, ring }) => ({ type: 'Feature', properties: { id: pasture.id }, geometry: { type: 'Polygon', coordinates: [ring] } })),
+    }),
+    [pastureShapes],
+  );
+  const shownPasture = pastures.find((p) => p.id === pastureId) ?? null;
+
+  useEffect(() => {
+    // Only the first time there's a fix and pastures to look in, and never over a view the map is being restored to
+    if (framedPasture.current || view || !start || !here || pastures.length === 0) return;
+    framedPasture.current = true;
+    const inside = pastureAt(pastures, here);
+    if (inside) fitPasture(parseOutline(inside));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fitPasture only reads the camera and the tab bar's height
+  }, [start, here, pastures, view]);
+
   async function select(id: string, photoFrom: string[]) {
     pinPressedAt.current = Date.now();
     const mine = ++selection.current;
@@ -307,6 +343,59 @@ export default function MapScreen({ device, onSignOut }: Props) {
     camera.current?.fitBounds(areaBounds(area), { padding: { top: 220, right: 40, bottom: 200, left: 40 }, duration: 600 });
   }
 
+  function fitPasture(ring: LngLat[]) {
+    if (ring.length === 0) return;
+    camera.current?.fitBounds(boundsOf(ring), { padding: { top: 200, right: 50, bottom: bottomInset + 80, left: 50 }, duration: 600 });
+  }
+
+  function openPasture(pasture: Pasture) {
+    // The label is a marker over the map, so the map hears the tap too; this keeps it from clearing the card
+    pinPressedAt.current = Date.now();
+    setSelectedId(null);
+    rideState.show(null);
+    setPastureId(pasture.id);
+    fitPasture(parseOutline(pasture));
+  }
+
+  function makePasture(r: Ride) {
+    const outline = outlineFromTrack(JSON.parse(r.track) as LngLat[]);
+    if (!outline) {
+      return Alert.alert('No pasture in this ride', 'It doesn’t go around anything. Ride the whole fence line, then make the ride a pasture.');
+    }
+    setMakingPasture({ suggestion: r.name, outline });
+  }
+
+  async function savePasture(name: string) {
+    if (!makingPasture) return;
+    const { ring } = makingPasture.outline;
+    try {
+      const id = await createPasture(name, ring, device.memberId);
+      buzzSuccess();
+      setMakingPasture(null);
+      rideState.show(null);
+      setPastureId(id);
+      fitPasture(ring);
+      syncState.syncNow();
+    } catch {
+      Alert.alert("Couldn't save the pasture", "The phone couldn't write it down, so nothing changed. Try again. If it keeps failing, check the phone isn't out of storage.");
+    }
+  }
+
+  function confirmRemovePasture(pasture: Pasture) {
+    Alert.alert(`Remove ${pasture.name}?`, 'Its fence line comes off the map for the whole crew. The sharp imagery stays.', [
+      { text: 'Keep it', style: 'cancel' },
+      {
+        text: 'Remove',
+        style: 'destructive',
+        onPress: async () => {
+          await deletePasture(pasture.id);
+          setPastureId(null);
+          syncState.syncNow();
+        },
+      },
+    ]);
+  }
+
   function rideTitle(r: Ride): string {
     return r.name ?? (r.member_id === device.memberId ? 'Your ride' : `${who(names, r.member_id, device.memberId)}'s ride`);
   }
@@ -339,8 +428,12 @@ export default function MapScreen({ device, onSignOut }: Props) {
   async function centerOnMe() {
     try {
       const fix = (await Location.getLastKnownPositionAsync()) ?? (await Location.getCurrentPositionAsync(GPS_ONLY_OK));
-      setHere([fix.coords.longitude, fix.coords.latitude]);
-      camera.current?.flyTo({ center: [fix.coords.longitude, fix.coords.latitude], zoom: 15 });
+      const point: LngLat = [fix.coords.longitude, fix.coords.latitude];
+      setHere(point);
+      // In a pasture: the whole of it, fence to fence, with the dot inside. Anywhere else, about a mile across.
+      const inside = pastureAt(pastures, point);
+      if (inside) fitPasture(parseOutline(inside));
+      else camera.current?.flyTo({ center: point, zoom: 15 });
     } catch {
       Alert.alert('No location yet', 'Turn on Location for Ranch Hand, or step into the open for a GPS fix.');
     }
@@ -533,7 +626,10 @@ export default function MapScreen({ device, onSignOut }: Props) {
         onDidFinishLoadingMap={() => setLoadedKey(mapKey)}
         onPress={() => {
           setFiltersOpen(false);
-          if (Date.now() - pinPressedAt.current > 500) setSelectedId(null);
+          if (Date.now() - pinPressedAt.current > 500) {
+            setSelectedId(null);
+            setPastureId(null);
+          }
         }}
         onLongPress={(e) => !placing && startPlacing([e.nativeEvent.lngLat[0], e.nativeEvent.lngLat[1]], null)}
       >
@@ -544,14 +640,27 @@ export default function MapScreen({ device, onSignOut }: Props) {
         <GeoJSONSource id="wash" data={WORLD}>
           <Layer type="fill" id="wash" afterId={base === 'topo' ? 'topo' : 'aerial-top'} paint={base === 'topo' ? TOPO_WASH : AERIAL_WASH} />
         </GeoJSONSource>
-        {/* Where each sharp area is: a faint dashed outline, with its name on the top edge */}
+        {/* Where each sharp area is: a dashed outline, so the line where the detail stops is explained, not a mystery blur */}
         <GeoJSONSource id="sharp-areas" data={areaOutlines(offline.areas)}>
-          <Layer type="line" id="sharp-areas-line" paint={{ 'line-color': palette.canvas, 'line-width': 1.5, 'line-opacity': 0.7, 'line-dasharray': [3, 2] }} />
+          <Layer type="line" id="sharp-areas-line" paint={{ 'line-color': palette.canvas, 'line-width': 2, 'line-opacity': 0.85, 'line-dasharray': [3, 2] }} />
         </GeoJSONSource>
         {offline.areas.map((area) => (
           <Marker key={`area:${area.id}`} id={`area:${area.id}`} lngLat={[(area.west + area.east) / 2, area.north]} anchor="center" onPress={() => showArea(area)}>
             <View style={styles.areaLabel} accessibilityLabel={`${area.name} sharp area`}>
-              <Text style={styles.areaLabelText} numberOfLines={1}>{area.name}</Text>
+              <Text style={styles.areaLabelText} numberOfLines={1}>Sharp map · {area.name}</Text>
+            </View>
+          </Marker>
+        ))}
+        {/* Pastures: a faint wash inside the fence, the fence itself, and the name in the middle, at every zoom */}
+        <GeoJSONSource id="pastures" data={pastureFeatures}>
+          <Layer type="fill" id="pastures-fill" paint={{ 'fill-color': palette.harvest, 'fill-opacity': 0.08 }} />
+          <Layer type="line" id="pastures-casing" paint={{ 'line-color': palette.pine, 'line-width': 6, 'line-opacity': 0.45 }} layout={{ 'line-join': 'round' }} />
+          <Layer type="line" id="pastures-fence" paint={{ 'line-color': palette.harvest, 'line-width': 3 }} layout={{ 'line-join': 'round' }} />
+        </GeoJSONSource>
+        {pastureShapes.map(({ pasture, ring }) => (
+          <Marker key={`pasture:${pasture.id}:${pasture.name}`} id={`pasture:${pasture.id}`} lngLat={labelPoint(ring)} anchor="center" onPress={() => openPasture(pasture)}>
+            <View style={styles.pastureLabel} accessibilityRole="button" accessibilityLabel={`${pasture.name} pasture`}>
+              <Text style={styles.pastureLabelText} numberOfLines={1}>{pasture.name}</Text>
             </View>
           </Marker>
         ))}
@@ -772,9 +881,32 @@ export default function MapScreen({ device, onSignOut }: Props) {
                   onPress={() => rideState.setNaming({ id: shownRide.id, track: JSON.parse(shownRide.track) as LngLat[], name: shownRide.name ?? '' })}
                 />
               )}
+              {/* Rode a fence all the way round: that's the pasture's outline */}
+              <AppButton variant="ghost" title="Make it a pasture" onPress={() => makePasture(shownRide)} />
             </View>
           </View>
           <Pressable onPress={() => rideState.show(null)} accessibilityRole="button" accessibilityLabel="Hide this ride" style={styles.rideCardClose}>
+            <Icon name="close" size={20} color={colors.text} strokeWidth={2.4} />
+          </Pressable>
+        </View>
+      )}
+
+      {shownPasture && tab === 'map' && !placing && !riding && !following && !selected && !selectedPlace && !shownRide && (
+        <View style={[styles.rideCard, { bottom: bottomInset + 20 }]}>
+          <View style={styles.rideCardText}>
+            <Text style={styles.rideCardTitle} numberOfLines={2}>{shownPasture.name}</Text>
+            <Text style={styles.rideCardSmall}>
+              {formatAcres(acresOf(parseOutline(shownPasture)))} · fence ridden by {who(names, shownPasture.member_id, device.memberId)}
+              {shownPasture._status === 'synced' ? '' : ' · on this phone'}
+            </Text>
+            {(isOwner || shownPasture.member_id === device.memberId) && (
+              <View style={styles.rideCardActions}>
+                <AppButton variant="ghost" title="Rename" onPress={() => setRenamingPasture(shownPasture)} />
+                <AppButton variant="ghost" title="Remove" onPress={() => confirmRemovePasture(shownPasture)} />
+              </View>
+            )}
+          </View>
+          <Pressable onPress={() => setPastureId(null)} accessibilityRole="button" accessibilityLabel="Close the pasture card" style={styles.rideCardClose}>
             <Icon name="close" size={20} color={colors.text} strokeWidth={2.4} />
           </Pressable>
         </View>
@@ -903,6 +1035,42 @@ export default function MapScreen({ device, onSignOut }: Props) {
         onSave={saveRideName}
         onSkip={() => rideState.setNaming(null)}
       />
+      <NameRideSheet
+        visible={!!makingPasture}
+        title="Save as a pasture"
+        hint={
+          makingPasture
+            ? `${formatAcres(makingPasture.outline.acres)} inside the fence you rode. It goes on the whole crew's map, and once it syncs the whole pasture gets sharp aerial imagery.`
+            : ''
+        }
+        notice={
+          makingPasture && makingPasture.outline.gapMeters > PASTURE_GAP_METERS
+            ? `This ride ended ${formatDistance(makingPasture.outline.gapMeters)} from where it started, so that side is drawn as a straight line back.`
+            : null
+        }
+        initialName={makingPasture?.suggestion ?? nextPastureName(pastures)}
+        suggestions={makingPasture?.suggestion ? [nextPastureName(pastures)] : []}
+        placeholder="North Section"
+        saveTitle="Save pasture"
+        skipTitle="Cancel"
+        onSave={savePasture}
+        onSkip={() => setMakingPasture(null)}
+      />
+      <NameRideSheet
+        visible={!!renamingPasture}
+        title="Rename pasture"
+        hint="The whole crew sees the new name."
+        initialName={renamingPasture?.name ?? ''}
+        suggestions={[]}
+        placeholder="North Section"
+        skipTitle="Cancel"
+        onSave={async (name) => {
+          if (renamingPasture) await renamePasture(renamingPasture.id, name);
+          setRenamingPasture(null);
+          syncState.syncNow();
+        }}
+        onSkip={() => setRenamingPasture(null)}
+      />
 
       <Modal visible={settingsOpen} animationType="slide" statusBarTranslucent navigationBarTranslucent onRequestClose={() => setSettingsOpen(false)}>
         <SettingsScreen
@@ -939,6 +1107,9 @@ function FilterOption({ label, icon, color, onColor, on, onPress }: { label: str
     </Pressable>
   );
 }
+
+// Past this, the ride didn't come back to where it started and the closing side of the pasture is a guess
+const PASTURE_GAP_METERS = 150;
 
 // Covers the whole map for the wash layer
 const WORLD = { type: 'Feature' as const, properties: {}, geometry: { type: 'Polygon' as const, coordinates: [[[-180, -85], [180, -85], [180, 85], [-180, 85], [-180, -85]]] } };
@@ -993,8 +1164,11 @@ const styles = StyleSheet.create({
     paddingVertical: 12, paddingLeft: 16, paddingRight: 8, flexDirection: 'row', alignItems: 'flex-start', gap: 8,
   },
   rideCardText: { flex: 1, gap: 2 },
-  rideCardActions: { flexDirection: 'row', alignItems: 'center', gap: space.sm, marginTop: 6 },
+  rideCardActions: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: space.sm, marginTop: 6 },
   rideCardClose: { width: touch.min, height: touch.min, alignItems: 'center', justifyContent: 'center' },
+  // Pasture names read as field names: harvest gold, the fence's own color
+  pastureLabel: { ...shadow, backgroundColor: palette.harvest, borderRadius: radius.md, paddingHorizontal: 10, paddingVertical: 4, maxWidth: 200 },
+  pastureLabelText: { fontFamily: fonts.display, fontSize: 18, color: palette.pine },
   areaLabel: { backgroundColor: colors.chromeScrim, borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 4, maxWidth: 180 },
   areaLabelText: { color: palette.canvas, fontSize: textSize.meta, fontWeight: '700' },
 });

@@ -66,6 +66,15 @@ export type Ride = {
   _status: SyncStatus;
 };
 
+// A fenced pasture, outlined by riding its fence. outline is JSON text: [[lng, lat], ...], closed.
+export type Pasture = {
+  id: string;
+  member_id: string | null;
+  name: string;
+  outline: string;
+  _status: SyncStatus;
+};
+
 export type Photo = {
   id: string;
   observation_id: string;
@@ -168,6 +177,18 @@ const MIGRATIONS = [
   // "I've got it": who is riding out to an open problem, so two hands don't both go
   `ALTER TABLE observations ADD COLUMN claimed_at INTEGER;
   ALTER TABLE observations ADD COLUMN claimed_by_id TEXT;`,
+  `CREATE TABLE pastures (
+    id TEXT PRIMARY KEY NOT NULL,
+    member_id TEXT,
+    name TEXT NOT NULL,
+    outline TEXT NOT NULL DEFAULT '[]',
+    _status TEXT NOT NULL DEFAULT 'created',
+    _changed INTEGER NOT NULL DEFAULT 0,
+    _rejected_reason TEXT,
+    _rejected_was TEXT,
+    _edited TEXT NOT NULL DEFAULT '|',
+    pulled_at INTEGER
+  );`,
 ];
 
 let database: SQLite.SQLiteDatabase | null = null;
@@ -448,13 +469,46 @@ export async function renameRide(id: string, name: string): Promise<void> {
   await write((conn) => conn.runAsync(`UPDATE rides SET name = ?, ${touch(['name'])} WHERE id = ?`, name.trim() || null, id));
 }
 
+export function livePastures() {
+  return db().getAllAsync<Pasture>(`SELECT * FROM pastures WHERE _status != 'deleted' ORDER BY name`);
+}
+
+export async function createPasture(name: string, outline: [number, number][], memberId: string): Promise<string> {
+  const id = newId();
+  await write((conn) =>
+    conn.runAsync(
+      `INSERT INTO pastures (id, member_id, name, outline, _status) VALUES (?, ?, ?, ?, 'created')`,
+      id, memberId, name.trim(), JSON.stringify(outline),
+    ),
+  );
+  return id;
+}
+
+export async function renamePasture(id: string, name: string): Promise<void> {
+  await write((conn) => conn.runAsync(`UPDATE pastures SET name = ?, ${touch(['name'])} WHERE id = ?`, name.trim(), id));
+}
+
+// Like a place: gone at once if it never left the phone, otherwise marked so the delete goes up
+export async function deletePasture(id: string): Promise<void> {
+  await write(async (conn) => {
+    if (!pushing.has(`pastures:${id}`)) {
+      const gone = await conn.runAsync(
+        `DELETE FROM pastures WHERE id = ? AND (_status = 'created' OR (_status = 'rejected' AND _rejected_was = 'created'))`,
+        id,
+      );
+      if (gone.changes > 0) return;
+    }
+    await conn.runAsync(`UPDATE pastures SET _status = 'deleted', _changed = _changed + 1, _rejected_reason = NULL, _rejected_was = NULL WHERE id = ?`, id);
+  });
+}
+
 // Leaving a ranch: its records and sync position go, so joining another ranch (or server) starts clean.
 // The map choice and the light/dark look stay; they belong to the phone, not the ranch.
 export async function clearRanchData(): Promise<void> {
   await write((conn) =>
     conn.execAsync(`
       DELETE FROM observations; DELETE FROM photos; DELETE FROM waypoints; DELETE FROM members;
-      DELETE FROM rides; DELETE FROM ride_points;
+      DELETE FROM rides; DELETE FROM ride_points; DELETE FROM pastures;
       DELETE FROM sync_state WHERE key NOT IN ('map_base', 'theme_mode');
     `),
   );
@@ -493,6 +547,7 @@ export async function pendingCounts() {
   const records = await conn.getFirstAsync<{ n: number }>(
     `SELECT (SELECT COUNT(*) FROM waypoints WHERE ${UNSENT})
           + (SELECT COUNT(*) FROM rides WHERE ${UNSENT})
+          + (SELECT COUNT(*) FROM pastures WHERE ${UNSENT})
           + (SELECT COUNT(*) FROM observations WHERE ${UNSENT})
           + (SELECT COUNT(*) FROM photos WHERE ${UNSENT}) AS n`,
   );
@@ -505,13 +560,14 @@ export async function pendingCounts() {
 }
 
 // What the server turned down. It stays on this phone, and Settings lists it so nobody thinks it reached the crew.
-export type SyncProblem = { table: 'waypoints' | 'observations' | 'photos' | 'rides'; id: string; reason: string | null };
+export type SyncProblem = { table: 'waypoints' | 'observations' | 'photos' | 'rides' | 'pastures'; id: string; reason: string | null };
 
 export function syncProblems(): Promise<SyncProblem[]> {
   return db().getAllAsync<SyncProblem>(
     `SELECT 'waypoints' AS "table", id, _rejected_reason AS reason FROM waypoints WHERE _status = 'rejected'
      UNION ALL SELECT 'observations', id, _rejected_reason FROM observations WHERE _status = 'rejected'
      UNION ALL SELECT 'rides', id, _rejected_reason FROM rides WHERE _status = 'rejected'
+     UNION ALL SELECT 'pastures', id, _rejected_reason FROM pastures WHERE _status = 'rejected'
      UNION ALL SELECT 'photos', id, COALESCE(_rejected_reason, upload_error) FROM photos WHERE _status = 'rejected' OR upload_error IS NOT NULL`,
   );
 }

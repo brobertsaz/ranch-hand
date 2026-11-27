@@ -3,7 +3,7 @@ import { File, UploadType } from 'expo-file-system';
 import type { SQLiteDatabase } from 'expo-sqlite';
 
 import { ApiError, authHeader, deadline, errorCode, errorText, isSignedOut, PHOTO_TIMEOUT_MS, photoFileUrl, pullChanges, pushChanges, TimeoutError } from './api';
-import { db, editedFields, getState, pushing, putState, transaction, UNSENT, write, type Member, type Observation, type Photo, type Ride, type SyncStatus, type Waypoint } from './db';
+import { db, editedFields, getState, pushing, putState, transaction, UNSENT, write, type Member, type Observation, type Pasture, type Photo, type Ride, type SyncStatus, type Waypoint } from './db';
 import { partialPhotoFile, photoArrived, photoFile } from './photoFiles';
 import type { Device } from './settings';
 
@@ -15,12 +15,15 @@ type RawObservation = Omit<Observation, '_status'>;
 type RawPhoto = Omit<Photo, '_status'>;
 type RawWaypoint = Omit<Waypoint, '_status'>;
 type RawRide = Omit<Ride, '_status'>;
+type RawPasture = Omit<Pasture, '_status'>;
 export type Changes = {
   members?: TableChanges<Omit<Member, 'removed'> & { removed?: boolean }>; // pull only
   waypoints: TableChanges<RawWaypoint>;
   observations: TableChanges<RawObservation>;
   photos: TableChanges<RawPhoto>;
   rides: TableChanges<RawRide>;
+  // Optional: an older server has no pastures
+  pastures?: TableChanges<RawPasture>;
 };
 
 const NO_CHANGES = { created: [], updated: [], deleted: [] };
@@ -32,6 +35,7 @@ const OBSERVATION_COLUMNS = [
 ] as const;
 const RIDE_COLUMNS = ['id', 'member_id', 'started_at', 'ended_at', 'distance_meters', 'track', 'name'] as const;
 const PHOTO_COLUMNS = ['id', 'observation_id', 'uploaded_at'] as const;
+const PASTURE_COLUMNS = ['id', 'member_id', 'name', 'outline'] as const;
 
 // rejected: records the server turned down this run. photoProblem: why a photo didn't move, when the rest of the run worked.
 export type SyncResult = { pulled: number; pushed: number; rejected: number; uploaded: number; downloaded: number; photoProblem: string | null };
@@ -143,6 +147,7 @@ async function pull(device: Device, run: Run): Promise<number> {
     count += await applyRemote(conn, 'observations', OBSERVATION_COLUMNS, changes.observations, arrivedAt);
     count += await applyRemote(conn, 'photos', PHOTO_COLUMNS, changes.photos, arrivedAt);
     count += await applyRemote(conn, 'rides', RIDE_COLUMNS, changes.rides ?? NO_CHANGES, arrivedAt);
+    count += await applyRemote(conn, 'pastures', PASTURE_COLUMNS, changes.pastures ?? NO_CHANGES, arrivedAt);
     await putState(conn, 'last_pulled_at', String(timestamp));
   });
 
@@ -154,7 +159,7 @@ async function pull(device: Device, run: Run): Promise<number> {
 }
 
 // Tables whose rows can be edited on the phone, so a pull merges into them field by field
-const MERGES = new Set(['waypoints', 'observations', 'photos', 'rides']);
+const MERGES = new Set(['waypoints', 'observations', 'photos', 'rides', 'pastures']);
 
 // Tables whose rows feed "What's new": they note when a change from the crew reached this phone
 const TRACKS_ARRIVAL = new Set(['waypoints', 'observations', 'rides']);
@@ -204,11 +209,17 @@ async function applyRemote<T extends Record<string, unknown>>(
 
 // A row as it was when the push read it. _changed is the stamp every local edit bumps.
 type Sent = { id: string; _status: SyncStatus; _changed: number; _edited: string };
-type SentRows = { waypoints: (Waypoint & Sent)[]; observations: (Observation & Sent)[]; photos: (Photo & Sent)[]; rides: (Ride & Sent)[] };
+type SentRows = {
+  waypoints: (Waypoint & Sent)[];
+  observations: (Observation & Sent)[];
+  photos: (Photo & Sent)[];
+  rides: (Ride & Sent)[];
+  pastures: (Pasture & Sent)[];
+};
 type Table = keyof SentRows;
 type Outcome = { table: Table; row: Sent; reason?: string };
 
-const TABLES = ['waypoints', 'observations', 'photos', 'rides'] as const;
+const TABLES = ['waypoints', 'observations', 'photos', 'rides', 'pastures'] as const;
 // Records per request. The server refuses a push over 20 MB, and a season of long rides could get there.
 const PUSH_BATCH = 200;
 
@@ -221,6 +232,7 @@ async function push(device: Device, run: Run): Promise<{ pushed: number; rejecte
       observations: await conn.getAllAsync(`SELECT * FROM observations WHERE ${UNSENT}`),
       photos: await conn.getAllAsync(`SELECT * FROM photos WHERE ${UNSENT}`),
       rides: await conn.getAllAsync(`SELECT * FROM rides WHERE ${UNSENT}`),
+      pastures: await conn.getAllAsync(`SELECT * FROM pastures WHERE ${UNSENT}`),
     };
   });
   // Parents before children, across batches too: observations point at waypoints, photos at observations
@@ -254,6 +266,7 @@ async function sendBatch(device: Device, run: Run, sent: SentRows, batch: Outcom
         observations: localChanges(only('observations', sent.observations), OBSERVATION_COLUMNS),
         photos: localChanges(only('photos', sent.photos), PHOTO_COLUMNS),
         rides: localChanges(only('rides', sent.rides), RIDE_COLUMNS),
+        pastures: localChanges(only('pastures', sent.pastures), PASTURE_COLUMNS),
       },
       run.controller.signal,
     );

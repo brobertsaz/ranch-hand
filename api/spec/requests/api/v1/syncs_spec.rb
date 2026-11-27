@@ -725,6 +725,39 @@ RSpec.describe "Sync", type: :request do
     end
   end
 
+  describe "pastures" do
+    let(:outline) { [ [ -89.459, 43.0025 ], [ -89.4565, 43.0025 ], [ -89.4565, 43.004 ], [ -89.459, 43.0025 ] ] }
+
+    def raw_pasture(id, **overrides)
+      { id: id, name: "North Section", outline: outline.to_json }.merge(overrides)
+    end
+
+    it "takes a pasture ridden on one phone, sharpens it, and hands it to the crew" do
+      expect { push({ pastures: { created: [ raw_pasture("past1") ], updated: [], deleted: [] } }) }.to have_enqueued_job(RenderMapAreaJob)
+
+      expect(rejected).to eq([])
+      expect(Pasture.find("past1")).to have_attributes(member: member, ranch: ranch, name: "North Section", outline: outline)
+      pull(nil, as: create(:member, ranch: ranch))
+      expect(json.dig("changes", "pastures", "created").sole).to include("id" => "past1", "member_id" => member.id.to_s, "outline" => outline.to_json)
+    end
+
+    it "rejects an outline with too few corners" do
+      push({ pastures: { created: [ raw_pasture("past2", outline: [ [ -89.45, 43.0 ], [ -89.44, 43.0 ] ].to_json) ], updated: [], deleted: [] } })
+
+      expect(rejected).to eq([ { "table" => "pastures", "id" => "past2", "reason" => "Outline needs at least 3 corners" } ])
+    end
+
+    it "lets the hand who rode it delete it, but not another hand" do
+      mine = create(:pasture, member: member)
+      theirs = create(:pasture, member: create(:member, ranch: ranch))
+
+      push({ pastures: { created: [], updated: [], deleted: [ mine.id, theirs.id ] } })
+
+      expect(mine.reload.deleted_at).to be_present
+      expect(theirs.reload.deleted_at).to be_nil
+    end
+  end
+
   describe "rides" do
     def raw_ride(id, **overrides)
       {

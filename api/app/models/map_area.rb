@@ -1,8 +1,9 @@
 # A part of the ranch that gets sharp (zoom 17 and up) aerial tiles. A ranch has
 # several because pastures can sit miles apart.
 class MapArea < ApplicationRecord
-  # Nobody knows exactly where a pasture ends, so every area reaches a bit past what was asked for
-  MARGIN_METERS = 400
+  # Nobody knows exactly where a pasture ends, so every area reaches a bit past what was asked for. Half a mile,
+  # so a hand standing at the fence sees sharp ground over the next rise too, not a blurry seam at the wire.
+  MARGIN_METERS = 800
   # About 100,000 acres at zoom 18, and an overnight render
   MAX_TILES = 50_000
   METERS_PER_DEGREE = 111_320.0
@@ -27,9 +28,13 @@ class MapArea < ApplicationRecord
 
   scope :unfinished, -> { where(status: %i[pending rendering]) }
 
+  # A box the margin can't fix: padded, a swapped box narrower than the margin would come out looking valid
+  class SwappedBox < ArgumentError; end
+
   def self.padded(west:, south:, east:, north:, margin: MARGIN_METERS)
     # Infinity gets through Float() and then breaks the trigonometry
     raise ArgumentError, "bounds must be finite numbers" unless [ west, south, east, north, margin ].all?(&:finite?)
+    raise SwappedBox, "West must be less than east and south less than north" if west > east || south > north
 
     dlat = margin / METERS_PER_DEGREE
     dlng = dlat / Math.cos(((south + north) / 2) * Math::PI / 180)
