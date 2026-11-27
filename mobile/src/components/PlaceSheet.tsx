@@ -4,7 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { WAYPOINT_KINDS, type WaypointKind } from '../db';
 import { WAYPOINT_INFO } from '../kinds';
-import { colors, fonts, palette, radius, space, touch } from '../theme';
+import { colors, fonts, palette, radius, space, textSize, touch } from '../theme';
 import AppButton from './AppButton';
 import Icon from './Icon';
 
@@ -126,7 +126,7 @@ const styles = StyleSheet.create({
   },
   kindOn: { backgroundColor: palette.pine, borderColor: palette.pine },
   kindIcon: { width: 32, height: 32, borderRadius: 6, borderWidth: 2, borderColor: palette.white, alignItems: 'center', justifyContent: 'center' },
-  kindLabel: { fontSize: 13, fontWeight: '700', color: colors.text },
+  kindLabel: { fontSize: textSize.meta, fontWeight: '700', color: colors.text },
   kindLabelOn: { color: palette.canvas, fontWeight: '800' },
   input: {
     minHeight: touch.min, borderWidth: 1, borderColor: colors.input, borderRadius: radius.md, paddingHorizontal: 14,

@@ -7,9 +7,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AppButton from '../components/AppButton';
 import Icon from '../components/Icon';
 import { KINDS, type Kind } from '../db';
-import { formatCoords } from '../format';
 import { CONDITIONS, KIND_INFO } from '../kinds';
-import { colors, fonts, palette, space, sync, touch } from '../theme';
+import { buzzTap } from '../haptics';
+import { colors, fonts, palette, radius, space, sync, textSize, touch } from '../theme';
 
 // 'pending' until the first fix comes back; null if none arrived in time
 export type Fix = Location.LocationObject | null | 'pending';
@@ -31,7 +31,8 @@ type Props = {
   fix: Fix;
   // The fix is the phone's last known position (recent, but not fresh)
   staleFix?: boolean;
-  kind: Kind;
+  // null on a first log, until the hand picks one
+  kind: Kind | null;
   onKind: (kind: Kind) => void;
   place: PlaceProps | null;
   picks: string[];
@@ -54,7 +55,7 @@ type Props = {
 // Mockup 3 · Tag it & save. Also how a pin logged wrong is put right (see EditObservationScreen).
 export default function TagScreen(props: Props) {
   const { photoUri, fix, staleFix = false, kind, onKind, place, picks, onTogglePick, tagNumber, onTagNumber, note, onNote, tagHint = null, saving, onSave, onCancel, onRetake, editing } = props;
-  const conditions = CONDITIONS[kind];
+  const conditions = kind ? CONDITIONS[kind] : null;
   const insets = useSafeAreaInsets();
   // Most tags are numbers, and the number pad's keys are the ones a gloved thumb can hit. ABC is for "Y123".
   const [letters, setLetters] = useState(() => /[^0-9]/.test(tagNumber));
@@ -65,7 +66,8 @@ export default function TagScreen(props: Props) {
       ? { label: 'Finding GPS…', color: sync.pending }
       : fix
         ? {
-            label: `${formatCoords(fix.coords.latitude, fix.coords.longitude)} · ±${Math.round(fix.coords.accuracy ?? 0)} m${staleFix ? ' · last known' : ''}`,
+            // Accuracy is what a hand can act on; the raw lat/long is on the pin once it's saved
+            label: `${staleFix ? 'Last known spot' : 'Spot found'} · ±${Math.round(fix.coords.accuracy ?? 0)} m`,
             color: staleFix ? sync.pending : sync.synced,
           }
         : { label: 'No GPS fix yet', color: sync.failed };
@@ -73,21 +75,15 @@ export default function TagScreen(props: Props) {
   return (
     <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <StatusBar style="light" />
-      <View style={[styles.strip, { height: 210 + insets.top }]}>
-        {photoUri ? (
-          <Image source={{ uri: photoUri }} style={StyleSheet.absoluteFill} resizeMode="cover" accessibilityLabel="Photo you just took" />
-        ) : (
-          <View style={styles.noPhoto}>
-            <Icon name="camera" size={32} color={colors.chromeTextMuted} />
-            <Text style={styles.noPhotoText}>No photo</Text>
-          </View>
-        )}
+      {/* Without a photo there's nothing to look at up here, so it shrinks and the kind tiles stay in view */}
+      <View style={[styles.strip, { height: (photoUri ? 210 : NO_PHOTO_STRIP) + insets.top }]}>
+        {photoUri ? <Image source={{ uri: photoUri }} style={StyleSheet.absoluteFill} resizeMode="cover" accessibilityLabel="Photo you just took" /> : null}
         <View style={[styles.stripControls, { top: insets.top + 8 }]}>
           <Pressable onPress={onCancel} accessibilityRole="button" accessibilityLabel="Cancel" style={styles.roundButton}>
             <Icon name="close" size={20} color={colors.chromeText} strokeWidth={2.4} />
           </Pressable>
           {onRetake && (
-            <Pressable onPress={onRetake} accessibilityRole="button" style={styles.retake}>
+            <Pressable onPress={onRetake} accessibilityRole="button" accessibilityLabel={photoUri ? 'Retake the photo' : 'Add a photo'} style={styles.retake}>
               <Text style={styles.retakeText}>{photoUri ? 'Retake' : 'Add photo'}</Text>
             </Pressable>
           )}
@@ -107,7 +103,10 @@ export default function TagScreen(props: Props) {
             return (
               <Pressable
                 key={k}
-                onPress={() => onKind(k)}
+                onPress={() => {
+                  buzzTap();
+                  onKind(k);
+                }}
                 accessibilityRole="button"
                 accessibilityState={{ selected: on }}
                 style={[styles.kind, on && styles.kindOn]}
@@ -119,8 +118,8 @@ export default function TagScreen(props: Props) {
           })}
         </View>
 
-        <Text style={styles.subheading} accessibilityRole="header">{conditions.prompt}</Text>
-        <View style={styles.picks}>
+        {conditions && <Text style={styles.subheading} accessibilityRole="header">{conditions.prompt}</Text>}
+        {conditions && <View style={styles.picks}>
           {conditions.options.map((option) => {
             const on = picks.includes(option);
             return (
@@ -138,7 +137,7 @@ export default function TagScreen(props: Props) {
               </Pressable>
             );
           })}
-        </View>
+        </View>}
 
         {place && <PlacePicker {...place} />}
 
@@ -147,11 +146,13 @@ export default function TagScreen(props: Props) {
             <View style={styles.tagField}>
               <View style={styles.tagLabelRow}>
                 <Text style={styles.label} nativeID="tagLabel">Tag #</Text>
+                {/* A visible key, and hitSlop out to the full 56 a gloved thumb needs */}
                 <Pressable
                   onPress={() => setLetters((on) => !on)}
                   accessibilityRole="button"
                   accessibilityLabel={letters ? 'Switch to the number pad' : 'Switch to letters, for a tag like Y123'}
-                  hitSlop={10}
+                  hitSlop={{ top: 14, bottom: 8, left: 14, right: 14 }}
+                  style={({ pressed }) => [styles.keysButton, pressed && styles.keysPressed]}
                 >
                   <Text style={styles.keys}>{letters ? '123' : 'ABC'}</Text>
                 </Pressable>
@@ -167,27 +168,30 @@ export default function TagScreen(props: Props) {
                 autoCorrect={false}
                 maxLength={40}
                 placeholder="—"
-                placeholderTextColor={colors.textMuted}
+                placeholderTextColor={colors.placeholder}
               />
             </View>
           )}
           <View style={styles.noteField}>
-            <Text style={styles.label} nativeID="noteLabel">
-              Anything else? <Text style={styles.optional}>optional</Text>
-            </Text>
+            {/* Same height as the Tag # row and its ABC key, so the two inputs line up */}
+            <View style={styles.labelRow}>
+              <Text style={styles.labelQuiet} nativeID="noteLabel">
+                Anything else? <Text style={styles.optional}>optional</Text>
+              </Text>
+            </View>
             <TextInput
               accessibilityLabelledBy="noteLabel"
               style={styles.noteInput}
               value={note}
               onChangeText={onNote}
               placeholder="By the creek…"
-              placeholderTextColor={colors.textMuted}
+              placeholderTextColor={colors.placeholder}
             />
           </View>
         </View>
         {kind === 'sick_animal' && tagHint ? <Text style={styles.tagHint}>{tagHint}</Text> : null}
         {editing?.onDelete && (
-          <Pressable onPress={editing.onDelete} accessibilityRole="button" style={styles.delete}>
+          <Pressable onPress={editing.onDelete} accessibilityRole="button" accessibilityLabel="Delete this pin for the whole crew" style={styles.delete}>
             <Icon name="trash" size={18} color={sync.failed} strokeWidth={2.2} />
             <Text style={styles.deleteText}>Delete this pin</Text>
           </Pressable>
@@ -197,10 +201,10 @@ export default function TagScreen(props: Props) {
       <View style={[styles.saveBar, { paddingBottom: insets.bottom + space.lg }]}>
         <AppButton
           size="large"
-          title={editing ? 'Save changes' : saving ? 'Waiting for GPS…' : 'Drop the pin'}
+          title={!kind ? 'Pick what you saw' : editing ? 'Save changes' : saving ? 'Waiting for GPS…' : 'Drop the pin'}
           onPress={onSave}
-          disabled={saving}
-          icon={saving ? undefined : <Icon name="check" size={26} color={palette.white} strokeWidth={2.8} />}
+          disabled={saving || !kind}
+          icon={saving || !kind ? undefined : <Icon name="check" size={26} color={palette.white} strokeWidth={2.8} />}
         />
         <Text style={styles.caption}>
           {editing ? 'Changed on this phone now. The crew sees it when you’re back in range.' : 'Saved on this phone now. Sends to the crew when you’re back in range.'}
@@ -252,21 +256,22 @@ function PlacePicker({ label, nearby, newName, locating, mode, onMode }: PlacePr
   );
 }
 
+// Tall enough for the close and Add photo buttons over the GPS line
+const NO_PHOTO_STRIP = 124;
+
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.background },
   strip: { backgroundColor: colors.chrome },
-  noPhoto: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 6, paddingTop: 40 },
-  noPhotoText: { color: colors.chromeTextMuted, fontSize: 15, fontWeight: '600' },
   stripControls: { position: 'absolute', left: 12, right: 12, flexDirection: 'row', justifyContent: 'space-between' },
-  roundButton: { width: touch.round, height: touch.round, borderRadius: touch.round / 2, backgroundColor: 'rgba(16, 23, 19, 0.75)', alignItems: 'center', justifyContent: 'center' },
-  retake: { height: touch.round, paddingHorizontal: 18, borderRadius: 999, backgroundColor: 'rgba(16, 23, 19, 0.75)', justifyContent: 'center' },
+  roundButton: { width: touch.round, height: touch.round, borderRadius: touch.round / 2, backgroundColor: colors.chromeScrim, alignItems: 'center', justifyContent: 'center' },
+  retake: { height: touch.round, paddingHorizontal: 18, borderRadius: radius.pill, backgroundColor: colors.chromeScrim, justifyContent: 'center' },
   retakeText: { color: colors.chromeText, fontSize: 15, fontWeight: '700' },
   coords: {
     position: 'absolute', left: 12, bottom: 12, flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: 'rgba(16, 23, 19, 0.82)', borderRadius: 999, paddingVertical: 6, paddingHorizontal: 12,
+    backgroundColor: colors.chromeScrim, borderRadius: radius.pill, paddingVertical: 6, paddingHorizontal: 12,
   },
   dot: { width: 8, height: 8, borderRadius: 4 },
-  coordsText: { color: colors.chromeText, fontSize: 13, fontWeight: '600' },
+  coordsText: { color: colors.chromeText, fontSize: textSize.meta, fontWeight: '600' },
   form: { flex: 1 },
   formContent: { paddingHorizontal: space.lg, paddingTop: 20, paddingBottom: space.lg, gap: 18 },
   heading: { fontFamily: fonts.displayBlack, fontSize: 34, lineHeight: 36, color: colors.text, marginBottom: -8 },
@@ -303,9 +308,14 @@ const styles = StyleSheet.create({
   fields: { flexDirection: 'row', gap: 10 },
   tagField: { width: 132, gap: 6 },
   noteField: { flex: 1, gap: 6 },
-  label: { fontSize: 14, fontWeight: '700', color: colors.text },
-  tagLabelRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  keys: { fontSize: 13, fontWeight: '800', letterSpacing: 0.8, color: colors.primary },
+  label: { fontSize: textSize.meta, fontWeight: '700', color: colors.text },
+  // The optional field reads one step down from Tag #
+  labelQuiet: { fontSize: textSize.meta, fontWeight: '600', color: colors.textMuted },
+  tagLabelRow: { minHeight: 34, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  labelRow: { minHeight: 34, justifyContent: 'center' },
+  keysButton: { minHeight: 34, minWidth: 48, paddingHorizontal: 10, borderRadius: radius.md, borderWidth: 2, borderColor: colors.primaryInk, alignItems: 'center', justifyContent: 'center' },
+  keysPressed: { opacity: 0.6 },
+  keys: { fontSize: textSize.meta, fontWeight: '800', letterSpacing: 0.8, color: colors.primaryInk },
   tagHint: { fontSize: 14, fontWeight: '600', color: colors.textMuted, marginTop: -8 },
   delete: { minHeight: touch.min, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
   deleteText: { fontSize: 16, fontWeight: '700', color: sync.failed },

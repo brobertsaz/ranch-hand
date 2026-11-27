@@ -15,7 +15,7 @@ import { KIND_INFO, STATUS_LABEL, WAYPOINT_INFO } from '../kinds';
 import { locate } from '../locate';
 import { useIsOwner, useMemberNames, who } from '../members';
 import { onPhotoArrived, photoFile } from '../photoFiles';
-import { colors, fonts, palette, space, touch } from '../theme';
+import { colors, fonts, palette, space, textSize, touch } from '../theme';
 import GuideScreen, { guideToWaypoint } from './GuideScreen';
 
 type Props = {
@@ -217,7 +217,7 @@ export default function WaypointScreen({ waypoint, memberId, mapStyle, here, onB
             await updateWaypoint(waypoint.id, fields);
           } catch {
             // The sheet stays up with what was typed
-            return Alert.alert("Couldn't save the changes", 'The phone had trouble saving. Try again.');
+            return Alert.alert("Couldn't save the changes", "The phone couldn't write that down, so nothing changed. Try again. If it keeps failing, check the phone isn't out of storage.");
           }
           setEditing(false);
           onChanged();
@@ -230,7 +230,7 @@ export default function WaypointScreen({ waypoint, memberId, mapStyle, here, onB
 
 function StatusTag({ status }: { status: Observation['status'] }) {
   if (status === 'open') return <Stamp label="Open" tone="open" />;
-  if (status === 'resolved') return <Stamp label="Fixed" tone="done" tilt={3} />;
+  if (status === 'resolved') return <Stamp label="Resolved" tone="done" tilt={3} />;
   return <Stamp label={STATUS_LABEL[status]} tone="clear" tilt={2} />;
 }
 
@@ -242,7 +242,7 @@ const styles = StyleSheet.create({
   shade: { position: 'absolute', left: 0, right: 0, bottom: 0, backgroundColor: palette.pine },
   back: {
     position: 'absolute', left: 12, width: touch.round, height: touch.round, borderRadius: touch.round / 2,
-    backgroundColor: 'rgba(16, 23, 19, 0.75)', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: colors.chromeScrim, alignItems: 'center', justifyContent: 'center',
   },
   heroText: { paddingHorizontal: space.lg, paddingBottom: space.lg, gap: 6 },
   badges: { flexDirection: 'row', gap: space.sm },
@@ -256,7 +256,7 @@ const styles = StyleSheet.create({
   cardRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10, paddingHorizontal: 14 },
   cardDivider: { borderBottomWidth: 1, borderBottomColor: colors.hairline, paddingVertical: 12 },
   cardTitle: { fontFamily: fonts.display, fontSize: 22, lineHeight: 24, color: colors.text },
-  cardMeta: { fontSize: 13, color: colors.textMuted },
+  cardMeta: { fontSize: textSize.meta, color: colors.textMuted },
   statusDot: { width: 14, height: 14, borderRadius: 7, borderWidth: 2, borderColor: palette.white },
   subheadingRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 6 },
   subheading: { fontFamily: fonts.display, fontSize: 16, letterSpacing: 2.4, color: colors.textMuted },

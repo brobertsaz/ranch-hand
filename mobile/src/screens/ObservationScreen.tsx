@@ -7,14 +7,18 @@ import AppButton from '../components/AppButton';
 import Icon from '../components/Icon';
 import MiniMap from '../components/MiniMap';
 import { claimObservation, observationsOfTag, onDatabaseChange, photosFor, setObservationStatus, type Observation, type ObservationStatus } from '../db';
-import { bearingDegrees, compassPoint, dayAndTime, distanceMeters, clockParts, formatDistance, relativeTo, timeAgo, type LngLat } from '../format';
+import { bearingDegrees, compassPoint, dayAndTime, distanceMeters, clockParts, formatDistance, timeAgo, type LngLat } from '../format';
 import { KIND_INFO, STATUS_LABEL, splitNote } from '../kinds';
 import { useMemberNames, who } from '../members';
 import { onPhotoArrived, photoFile } from '../photoFiles';
-import { colors, fonts, palette, space, sync, touch } from '../theme';
+import { buzzSuccess } from '../haptics';
+import { colors, fonts, palette, radius, space, sync, textSize, touch } from '../theme';
 import EditObservationScreen from './EditObservationScreen';
 import GuideScreen, { guideToObservation } from './GuideScreen';
 import TagHistoryScreen from './TagHistoryScreen';
+
+// A local write failed: nothing reached the crew, and nothing on screen changed
+const SAVE_FAILED = "The phone couldn't write that down, so nothing changed. Tap it again. If it keeps failing, check the phone isn't out of storage.";
 
 type Props = {
   observation: Observation;
@@ -104,7 +108,7 @@ export default function ObservationScreen({ observation, placeName = null, membe
     try {
       await claimObservation(observation.id, by);
     } catch {
-      return Alert.alert("Couldn't save that", 'The phone had trouble saving. Try again.');
+      return Alert.alert("Couldn't save that", SAVE_FAILED);
     }
     onChanged();
   }
@@ -113,8 +117,10 @@ export default function ObservationScreen({ observation, placeName = null, membe
     try {
       await setObservationStatus(observation.id, status, memberId);
     } catch {
-      return Alert.alert("Couldn't save that", 'The phone had trouble saving. Try again.');
+      return Alert.alert("Couldn't save that", SAVE_FAILED);
     }
+    // Reopen lands right where Mark resolved was, so the undo is one tap in the same spot
+    if (status === 'resolved') buzzSuccess();
     onChanged();
   }
 
@@ -153,7 +159,8 @@ export default function ObservationScreen({ observation, placeName = null, membe
     <View style={styles.screen}>
       <StatusBar style="light" />
       <ScrollView contentContainerStyle={{ paddingBottom: space.lg }}>
-        <View style={[styles.hero, { height: 330 + insets.top }]}>
+        {/* No photo was ever taken: the title still needs its stage, but not 330 of empty black */}
+        <View style={[styles.hero, { height: (photoUri === undefined ? 230 : 330) + insets.top }]}>
           {photoUri ? (
             <Image source={{ uri: photoUri }} style={StyleSheet.absoluteFill} resizeMode="cover" accessibilityLabel={`Photo of ${info.label.toLowerCase()}`} />
           ) : (
@@ -231,9 +238,10 @@ export default function ObservationScreen({ observation, placeName = null, membe
             <View style={styles.cardRow}>
               <MiniMap mapStyle={mapStyle} lngLat={lngLat} color={info.pinColor} />
               <View style={styles.where}>
-                <Text style={styles.cardTitle}>{placeName ? `At ${placeName}` : here ? relativeTo(here, lngLat) : 'Where it was logged'}</Text>
+                {/* Distance and direction are in the numbers above; this card is the where and the when */}
+                <Text style={styles.cardTitle}>{placeName ? `At ${placeName}` : dayAndTime(observation.observed_at)}</Text>
                 <Text style={styles.cardMeta}>
-                  {dayAndTime(observation.observed_at)} · {timeAgo(observation.observed_at)}
+                  {placeName ? `${dayAndTime(observation.observed_at)} · ${timeAgo(observation.observed_at)}` : `Logged ${timeAgo(observation.observed_at)}`}
                 </Text>
               </View>
             </View>
@@ -303,6 +311,7 @@ export default function ObservationScreen({ observation, placeName = null, membe
         {observation.status === 'open' && (
           // One tap, no dialog: with gloves on a confirm is just another target to miss. Reopen undoes it.
           <AppButton
+            variant="success"
             title="Mark resolved"
             style={styles.resolve}
             icon={<Icon name="check" size={22} color={palette.white} strokeWidth={2.8} />}
@@ -323,7 +332,7 @@ const styles = StyleSheet.create({
   shade: { position: 'absolute', left: 0, right: 0, bottom: 0, backgroundColor: palette.pine },
   back: {
     position: 'absolute', left: 12, width: touch.round, height: touch.round, borderRadius: touch.round / 2,
-    backgroundColor: 'rgba(16, 23, 19, 0.75)', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: colors.chromeScrim, alignItems: 'center', justifyContent: 'center',
   },
   edit: { left: undefined, right: 12 },
   pressed: { opacity: 0.7 },
@@ -339,20 +348,20 @@ const styles = StyleSheet.create({
   picks: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
   pick: {
     fontFamily: fonts.display, fontSize: 20, color: palette.canvas, backgroundColor: colors.chromeRaised, borderWidth: 1, borderColor: colors.border,
-    borderRadius: 999, overflow: 'hidden', paddingVertical: 6, paddingHorizontal: 16,
+    borderRadius: radius.pill, overflow: 'hidden', paddingVertical: 6, paddingHorizontal: 16,
   },
   note: { fontSize: 18, lineHeight: 25, color: colors.text },
   stats: { flexDirection: 'row', borderTopWidth: 2, borderTopColor: colors.text, borderBottomWidth: 1, borderBottomColor: colors.border },
   stat: { flex: 1, paddingVertical: 10, gap: 2 },
   statDivider: { borderLeftWidth: 1, borderLeftColor: colors.border, paddingLeft: 12 },
   statValue: { fontFamily: fonts.displayBlack, fontSize: 30, lineHeight: 32, color: colors.text },
-  statLabel: { fontSize: 12, fontWeight: '800', letterSpacing: 1, color: colors.textMuted },
+  statLabel: { fontSize: textSize.badge, fontWeight: '800', letterSpacing: 1, color: colors.textMuted },
   card: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: 12 },
   claim: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10, paddingHorizontal: 14 },
   cardRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10, paddingHorizontal: 14 },
   resolvedText: { flex: 1, fontSize: 15, fontWeight: '700', color: colors.text },
   cardTitle: { fontSize: 15, fontWeight: '700', color: colors.text },
-  cardMeta: { fontSize: 13, color: colors.textMuted },
+  cardMeta: { fontSize: textSize.meta, color: colors.textMuted },
   where: { flex: 1, gap: 2 },
   syncRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
   dot: { width: 9, height: 9, borderRadius: 5 },

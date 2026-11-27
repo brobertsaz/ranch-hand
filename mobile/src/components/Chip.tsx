@@ -1,6 +1,6 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { colors, palette, radius, shadow } from '../theme';
+import { colors, palette, radius, shadow, touch } from '../theme';
 
 // A pill over the map: one of the pins sharing a spot with the one selected
 export default function Chip({ label, color, on, onPress }: { label: string; color?: string; on: boolean; onPress: () => void }) {
@@ -14,7 +14,7 @@ export default function Chip({ label, color, on, onPress }: { label: string; col
 
 const styles = StyleSheet.create({
   chip: {
-    ...shadow, height: 48, paddingHorizontal: 16, borderRadius: radius.pill, backgroundColor: 'rgba(16, 23, 19, 0.88)',
+    ...shadow, minHeight: touch.min, paddingHorizontal: 16, borderRadius: radius.pill, backgroundColor: colors.chromeScrim,
     flexDirection: 'row', alignItems: 'center', gap: 8,
   },
   // Same size on and off, so picking a filter doesn't nudge the row

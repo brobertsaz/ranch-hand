@@ -11,7 +11,7 @@ concurrency:
 
 jobs:
   api:
-    # Ruby 3.3.6 (what Bob runs) has no build for the ubuntu-26.04 image
+    # Pinned image: the Ruby Bob runs (api/.ruby-version) may have no prebuilt for the newest ubuntu image
     runs-on: ubuntu-24.04
     defaults:
       run:

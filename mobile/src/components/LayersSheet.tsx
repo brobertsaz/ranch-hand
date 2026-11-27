@@ -4,7 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { MapArea } from '../api';
 import { MIN_PACK_SPAN_KM } from '../offline';
-import { colors, fonts, palette, radius, space, touch } from '../theme';
+import { colors, fonts, palette, radius, space, textSize, touch } from '../theme';
 import { describeArea, savedKey, type OfflineMaps } from '../useOfflineMaps';
 import AppButton from './AppButton';
 import Icon from './Icon';
@@ -142,7 +142,7 @@ const styles = StyleSheet.create({
   sheetTitle: { fontFamily: fonts.display, fontSize: 26, color: colors.text },
   sheetText: { fontSize: 15, color: colors.text },
   areaName: { fontWeight: '700', textDecorationLine: 'underline' },
-  sheetHint: { fontSize: 13, color: colors.textMuted },
+  sheetHint: { fontSize: textSize.meta, color: colors.textMuted },
   baseRow: { flexDirection: 'row', gap: 10 },
   baseChoice: {
     flex: 1, minHeight: 56, borderRadius: radius.md, borderWidth: 2, borderColor: colors.border,

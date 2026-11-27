@@ -7,7 +7,7 @@ import Icon from '../components/Icon';
 import type { Observation, Waypoint } from '../db';
 import { bearingDegrees, compassPoint, distanceMeters, formatDistance, timeAgo, type LngLat } from '../format';
 import { KIND_INFO, WAYPOINT_INFO } from '../kinds';
-import { colors, fonts, palette, space, sync, touch } from '../theme';
+import { colors, fonts, palette, space, sync, textSize, touch } from '../theme';
 import { turnHint, useArrowRotation, useHeading } from '../useHeading';
 
 // What the arrow points at, and how to talk about it
@@ -78,6 +78,8 @@ export default function GuideScreen({ target: guide, onBack }: Props) {
   // Without a heading the arrow is north-up, like a paper map
   const arrowAngle = bearing === null ? null : bearing - (facing ?? 0);
   const rotate = useArrowRotation(arrowAngle);
+  // A north-up arrow followed as if it turned with you sends a rider the wrong way, so it has to look different
+  const northUp = facing === null;
 
   return (
     <View style={[styles.screen, { paddingTop: insets.top + 8, paddingBottom: insets.bottom + space.lg }]}>
@@ -108,8 +110,21 @@ export default function GuideScreen({ target: guide, onBack }: Props) {
             <Text style={styles.instruction}>{guide.arrivedNote}</Text>
           </View>
         ) : (
-          <View style={styles.pointer} accessible accessibilityLabel={`${turnHint(arrowAngle, facing !== null)}. ${formatDistance(meters)} to go, heading ${compassPoint(bearing ?? 0)}.`}>
-            <View style={styles.dial}>
+          <View
+            style={styles.pointer}
+            accessible
+            accessibilityLabel={
+              northUp
+                ? `No compass. Head ${compassPoint(bearing ?? 0)}, ${formatDistance(meters)} to go. The arrow points as if north is the top of the phone.`
+                : `${turnHint(arrowAngle, true)}. ${formatDistance(meters)} to go, heading ${compassPoint(bearing ?? 0)}.`
+            }
+          >
+            <View style={[styles.dial, northUp && styles.dialNorthUp]}>
+              {northUp && (
+                <View style={styles.north} pointerEvents="none">
+                  <Text style={styles.northText}>N</Text>
+                </View>
+              )}
               <Animated.View style={{ transform: [{ rotate }] }}>
                 <Svg width={200} height={200} viewBox="0 0 24 24">
                   <Path d="M12 2L20 21L12 16.5L4 21Z" fill={palette.trail} stroke={palette.white} strokeWidth={1.2} strokeLinejoin="round" />
@@ -118,7 +133,7 @@ export default function GuideScreen({ target: guide, onBack }: Props) {
             </View>
             <Text style={styles.distance}>{formatDistance(meters)}</Text>
             <Text style={styles.instruction}>
-              {turnHint(arrowAngle, facing !== null)} · head {compassPoint(bearing ?? 0)}
+              {northUp ? `Head ${compassPoint(bearing ?? 0)} · north is up, like a map` : `${turnHint(arrowAngle, true)} · head ${compassPoint(bearing ?? 0)}`}
             </Text>
           </View>
         )}
@@ -130,7 +145,7 @@ export default function GuideScreen({ target: guide, onBack }: Props) {
           <View style={[styles.dot, { backgroundColor: accuracy === null ? sync.pending : accuracy <= 20 ? sync.synced : sync.pending }]} />
           <Text style={styles.status}>{accuracy === null ? 'Waiting for GPS' : `GPS ±${Math.round(accuracy)} m`}</Text>
           <View style={[styles.dot, { backgroundColor: facing === null || calibrate ? sync.pending : sync.synced }]} />
-          <Text style={styles.status}>{facing === null ? 'No compass, arrow is north-up' : !hasCompass ? 'Steering by your direction of travel' : 'Compass on'}</Text>
+          <Text style={styles.status}>{facing === null ? 'No compass: the arrow doesn’t turn with you' : !hasCompass ? 'Steering by your direction of travel' : 'Compass on'}</Text>
         </View>
         {calibrate && <Text style={styles.status}>Compass is unsure. Move the phone in a figure 8 to calibrate it.</Text>}
       </View>
@@ -143,15 +158,22 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   back: { width: touch.round, height: touch.round, borderRadius: touch.round / 2, backgroundColor: colors.chromeRaised, alignItems: 'center', justifyContent: 'center' },
   headerText: { flex: 1, gap: 4, alignItems: 'flex-start' },
-  badge: { fontSize: 12, fontWeight: '800', letterSpacing: 0.5, borderRadius: 4, overflow: 'hidden', paddingVertical: 3, paddingHorizontal: 8 },
+  badge: { fontSize: textSize.badge, fontWeight: '800', letterSpacing: 0.5, borderRadius: 4, overflow: 'hidden', paddingVertical: 3, paddingHorizontal: 8 },
   title: { fontFamily: fonts.display, fontSize: 30, lineHeight: 32, color: colors.chromeText },
   middle: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   message: { color: colors.chromeText, fontSize: 18, textAlign: 'center' },
   pointer: { alignItems: 'center', gap: space.md },
   dial: {
     width: 260, height: 260, borderRadius: 130, backgroundColor: colors.chromeRaised,
-    borderWidth: 2, borderColor: 'rgba(245, 239, 224, 0.15)', alignItems: 'center', justifyContent: 'center',
+    borderWidth: 2, borderColor: colors.chromeBorder, alignItems: 'center', justifyContent: 'center',
   },
+  // A paper-map ring: harvest edge and an N at the top, nothing like the plain compass dial
+  dialNorthUp: { borderWidth: 4, borderColor: palette.harvest },
+  north: {
+    position: 'absolute', top: -18, alignSelf: 'center', width: 36, height: 36, borderRadius: 18,
+    backgroundColor: palette.harvest, alignItems: 'center', justifyContent: 'center',
+  },
+  northText: { fontFamily: fonts.displayBlack, fontSize: 22, lineHeight: 24, color: palette.pine },
   arrived: { alignItems: 'center', gap: space.md },
   arrivedRing: { width: 200, height: 200, borderRadius: 100, backgroundColor: sync.synced, alignItems: 'center', justifyContent: 'center' },
   distance: { fontFamily: fonts.displayBlack, fontSize: 64, lineHeight: 66, color: colors.chromeText },
@@ -160,5 +182,5 @@ const styles = StyleSheet.create({
   caveat: { fontSize: 16, lineHeight: 22, color: colors.chromeText },
   statusRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' },
   dot: { width: 9, height: 9, borderRadius: 5, marginLeft: 4 },
-  status: { fontSize: 13, color: colors.chromeTextMuted },
+  status: { fontSize: textSize.meta, color: colors.chromeTextMuted },
 });

@@ -1,7 +1,7 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { colors, palette } from '../theme';
+import { colors, palette, textSize } from '../theme';
 import Icon, { type IconName } from './Icon';
 
 export type Tab = 'map' | 'rides' | 'new' | 'crew';
@@ -76,13 +76,14 @@ const styles = StyleSheet.create({
     backgroundColor: colors.chrome,
   },
   tab: { flex: 1, height: 60, alignItems: 'center', justifyContent: 'center', gap: 4 },
-  label: { fontSize: 12, fontWeight: '600', color: colors.chromeTextMuted },
+  label: { fontSize: textSize.meta, fontWeight: '600', color: colors.chromeTextMuted },
   labelOn: { fontWeight: '700', color: colors.chromeText },
   badge: {
-    position: 'absolute', top: 2, right: '22%', minWidth: 18, height: 18, borderRadius: 9, paddingHorizontal: 4,
-    backgroundColor: palette.trail, alignItems: 'center', justifyContent: 'center',
+    position: 'absolute', top: 0, right: '20%', minWidth: 22, minHeight: 22, borderRadius: 11, paddingHorizontal: 5,
+    // trailDark: white count text holds 5.6:1
+    backgroundColor: palette.trailDark, alignItems: 'center', justifyContent: 'center',
   },
-  badgeText: { color: palette.white, fontSize: 11, fontWeight: '800' },
+  badgeText: { color: palette.white, fontSize: textSize.badge, fontWeight: '800' },
   cameraSlot: { width: 96, alignItems: 'center' },
   camera: {
     width: CAMERA_SIZE,

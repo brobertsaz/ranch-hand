@@ -13,7 +13,7 @@ export const palette = {
   canvasDeep: '#E9DFCA',
   card: '#FFFDF7',
   ink: '#171B18',
-  muted: '#697068', // 4.4:1 on canvas, 5.0:1 on card: use on card, or for 18pt+ text on canvas
+  muted: '#5E655D', // 5.2:1 on canvas, 4.5:1 on canvasDeep, 5.9:1 on card: fine for small text anywhere light
   trail: '#CF4A2E', // white text is 4.49:1: big bold labels only
   trailDark: '#B83F26', // white text is 5.6:1: use behind normal-size button text
   sky: '#244C57',
@@ -24,6 +24,8 @@ export const palette = {
   // Field additions for map pins: they sit on aerial imagery, so each is a different lightness
   harvest: '#E3A33B',
   creek: '#3D8EA3',
+  // Brown wash laid over the aerial map so pins and trails pop
+  aerialWash: '#4A3418',
 } as const;
 
 const lightColors = {
@@ -35,11 +37,17 @@ const lightColors = {
   border: 'rgba(23, 27, 24, 0.18)',
   // The faint line under a card, and between rows
   hairline: 'rgba(23, 27, 24, 0.1)',
-  input: 'rgba(23, 27, 24, 0.22)',
+  // 3:1 against the field: an input's edge has to be findable in the sun
+  input: 'rgba(23, 27, 24, 0.5)',
   inputBackground: palette.white,
-  placeholder: 'rgba(23, 27, 24, 0.3)',
+  placeholder: 'rgba(23, 27, 24, 0.6)', // 4.6:1
   primary: palette.trailDark,
   primaryText: palette.white,
+  // Trail red as text on the background (links, small toggles)
+  primaryInk: palette.trailDark,
+  // Done and safe: Mark resolved, so red only ever means a problem or the shutter. White text is 6.0:1.
+  success: '#3B6E4A',
+  successText: palette.white,
   secondary: palette.sky,
   secondaryText: palette.white,
   accent: palette.leather,
@@ -59,6 +67,10 @@ const lightColors = {
   chromeRaised: palette.pineSoft,
   chromeText: palette.canvas,
   chromeTextMuted: 'rgba(245, 239, 224, 0.72)',
+  // Pine glass behind buttons and pills that sit on a photo, the camera or the map
+  chromeScrim: 'rgba(16, 23, 19, 0.82)',
+  // Edges and grabbers on the dark chrome
+  chromeBorder: 'rgba(245, 239, 224, 0.2)',
   scrim: 'rgba(10, 16, 12, 0.6)',
   statusBar: 'dark' as 'dark' | 'light',
 };
@@ -74,11 +86,15 @@ const darkColors: ColorSet = {
   textMuted: '#A9B0A6',
   border: 'rgba(245, 239, 224, 0.16)',
   hairline: 'rgba(245, 239, 224, 0.08)',
-  input: 'rgba(245, 239, 224, 0.28)',
+  input: 'rgba(245, 239, 224, 0.4)',
   inputBackground: '#1D2822',
-  placeholder: 'rgba(245, 239, 224, 0.4)',
+  placeholder: 'rgba(245, 239, 224, 0.55)',
   primary: palette.trailDark,
   primaryText: palette.white,
+  // trailDark is 3.4:1 on the night background; this is 7.4:1
+  primaryInk: '#FF7A5C',
+  success: '#3B6E4A',
+  successText: palette.white,
   secondary: '#2E6573',
   secondaryText: palette.white,
   accent: '#C4824F',
@@ -95,11 +111,13 @@ const darkColors: ColorSet = {
   chromeRaised: palette.pineSoft,
   chromeText: palette.canvas,
   chromeTextMuted: 'rgba(245, 239, 224, 0.72)',
+  chromeScrim: 'rgba(16, 23, 19, 0.82)',
+  chromeBorder: 'rgba(245, 239, 224, 0.2)',
   scrim: 'rgba(0, 0, 0, 0.7)',
   statusBar: 'light',
 };
 
-// Light, Dark, or follow the phone. Read once at launch: every StyleSheet is built from these colors when its
+// Light, Night Ride (dark), or follow the phone. Light unless chosen otherwise: it's the one that reads in the sun. Read once at launch: every StyleSheet is built from these colors when its
 // file loads, so switching restarts the app (see setThemeMode).
 export const themeMode: ThemeMode = readThemeMode();
 export const isDark = themeMode === 'dark' || (themeMode === 'auto' && Appearance.getColorScheme() === 'dark');
@@ -133,7 +151,10 @@ export const radius = { sm: 4, md: 8, lg: 14, pill: 999 } as const;
 export const space = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32 } as const;
 
 // Gloves and sunlight: big targets, heavy type. Nothing tappable under `min`; the main action on a screen is `primary`.
-export const touch = { min: 56, primary: 64, shutter: 88, round: 52 } as const;
+export const touch = { min: 56, primary: 64, shutter: 88, round: 56 } as const;
+
+// The type scale. Nothing on a field screen goes under `meta`; `badge` is only for short all-caps labels in a pill.
+export const textSize = { badge: 13, meta: 14, small: 15, body: 16, lead: 18, title: 20, heading: 24, display: 34 } as const;
 
 // Under anything that floats over the map: cards, chips, the header
 export const shadow = { elevation: 8, shadowColor: '#0A100C', shadowOpacity: 0.35, shadowRadius: 12, shadowOffset: { width: 0, height: 6 } };
@@ -145,5 +166,5 @@ export const fonts = {
   body: undefined, // system font (SF Pro / Roboto)
 } as const;
 
-export const theme = { palette, colors, kindColors, waypointColors, sync, radius, space, touch, fonts };
+export const theme = { palette, colors, kindColors, waypointColors, sync, radius, space, touch, textSize, fonts };
 export default theme;
